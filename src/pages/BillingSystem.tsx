@@ -1,0 +1,343 @@
+import { useState, useCallback, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { useOrgContext } from "@/hooks/useOrgContext";
+import DashboardLayout from "@/components/Layout/DashboardLayout";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Home, FileText, Receipt, IndianRupee, CreditCard, Settings, FileX2 } from "lucide-react";
+import { useBillingData } from "@/hooks/useBillingData";
+import { BillingDashboard } from "@/components/Billing/BillingDashboard";
+import { BillingDocumentList } from "@/components/Billing/BillingDocumentList";
+import { BillingDocumentView } from "@/components/Billing/BillingDocumentView";
+import { BillingCreateDocument } from "@/components/Billing/BillingCreateDocument";
+import { BillingPaymentsList } from "@/components/Billing/BillingPaymentsList";
+import { BillingSettingsPanel } from "@/components/Billing/BillingSettings";
+import { LoadingState } from "@/components/common/LoadingState";
+import type { BillingDocument, BillingDocumentType, BillingClient } from "@/types/billing";
+import { INDIAN_STATES } from "@/types/billing";
+
+type BillingView = "dashboard" | "proformas" | "invoices" | "credit_notes" | "payments" | "settings";
+
+// Map CRM client state name to state code
+function getStateCode(stateName: string | null): string {
+  if (!stateName) return "";
+  const found = INDIAN_STATES.find(s => s.name.toLowerCase() === stateName.toLowerCase());
+  return found?.code || "";
+}
+
+export default function BillingSystem() {
+  const { effectiveOrgId } = useOrgContext();
+  const [view, setView] = useState<BillingView>("dashboard");
+  const [viewDocId, setViewDocId] = useState<string | null>(null);
+  const [createDocType, setCreateDocType] = useState<BillingDocumentType | null>(null);
+  const [editDoc, setEditDoc] = useState<BillingDocument | null>(null);
+  const [invoiceStatusFilter, setInvoiceStatusFilter] = useState<string | undefined>(undefined);
+
+  const {
+    documents, payments, settings, loading: billingLoading, busy: billingBusy,
+    addDocument, updateDocument, deleteDocument, convertDocument,
+    recordPayment, updateSettings, getDocumentPayments, getNextDocNumber,
+    issueCreditNote,
+  } = useBillingData();
+
+  const queryClient = useQueryClient();
+
+  // Fetch CRM clients from Supabase. Use select("*") so the query is resilient
+  // both before and after the billing-fields migration has run — missing
+  // columns simply come back undefined rather than failing the whole query
+  // and blanking the client dropdown.
+  const { data: crmClients = [], isLoading: clientsLoading } = useQuery({
+    queryKey: ["billing-crm-clients", effectiveOrgId],
+    queryFn: async () => {
+      if (!effectiveOrgId) return [];
+      const { data, error } = await supabase
+        .from("clients")
+        .select("*")
+        .eq("org_id", effectiveOrgId)
+        .order("company", { ascending: true });
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!effectiveOrgId,
+  });
+
+  // Map CRM clients to BillingClient format. Prefer billing-specific fields
+  // when set; fall back to general address/postal_code so clients without
+  // explicit billing details still pre-fill from the contact record.
+  const clients: BillingClient[] = useMemo(() => {
+    return crmClients.map(c => ({
+      id: c.id,
+      company: c.company || `${c.first_name} ${c.last_name || ""}`.trim(),
+      first_name: c.first_name,
+      last_name: c.last_name || undefined,
+      email: c.email || undefined,
+      phone: c.phone || undefined,
+      gstin: c.gstin || undefined,
+      pan: c.pan || undefined,
+      invoice_company_name: c.invoice_company_name || undefined,
+      billing_address: c.billing_address || c.address || undefined,
+      city: c.city || undefined,
+      state: c.state || undefined,
+      pin_code: c.postal_code || undefined,
+      billing_state_code: c.billing_state_code || getStateCode(c.state),
+      status: c.status || "active",
+    }));
+  }, [crmClients]);
+
+  // Persist updated billing details back to the clients table so the next
+  // invoice for this client (on any device) pre-fills automatically.
+  const handleUpdateClientBilling = useCallback(async (
+    clientId: string,
+    details: {
+      gstin?: string;
+      pan?: string;
+      invoice_company_name?: string;
+      billing_address?: string;
+      billing_state_code?: string;
+      state?: string;
+      city?: string;
+      pin_code?: string;
+    },
+  ) => {
+    if (!clientId) return;
+    const update: Record<string, string | null> = {};
+    if (details.gstin !== undefined) update.gstin = details.gstin || null;
+    if (details.pan !== undefined) update.pan = details.pan || null;
+    if (details.invoice_company_name !== undefined) update.invoice_company_name = details.invoice_company_name || null;
+    if (details.billing_address !== undefined) update.billing_address = details.billing_address || null;
+    if (details.billing_state_code !== undefined) update.billing_state_code = details.billing_state_code || null;
+    if (details.state !== undefined) update.state = details.state || null;
+    if (details.city !== undefined) update.city = details.city || null;
+    if (details.pin_code !== undefined) update.postal_code = details.pin_code || null;
+    if (Object.keys(update).length === 0) return;
+    const { error } = await supabase.from("clients").update(update).eq("id", clientId);
+    if (error) {
+      console.error("Failed to persist client billing details:", error);
+      return;
+    }
+    queryClient.invalidateQueries({ queryKey: ["billing-crm-clients", effectiveOrgId] });
+  }, [queryClient, effectiveOrgId]);
+
+  const navigate = useCallback((v: BillingView) => {
+    setView(v);
+    setViewDocId(null);
+    setCreateDocType(null);
+    if (v !== "invoices") setInvoiceStatusFilter(undefined);
+  }, []);
+
+  const handleDashboardCardClick = useCallback((filter: string) => {
+    if (filter === "credit_notes") {
+      setView("credit_notes");
+      setViewDocId(null);
+      setCreateDocType(null);
+      return;
+    }
+    setInvoiceStatusFilter(filter);
+    setView("invoices");
+    setViewDocId(null);
+    setCreateDocType(null);
+  }, []);
+
+  const handleViewDoc = useCallback((id: string) => {
+    setViewDocId(id);
+    setCreateDocType(null);
+  }, []);
+
+  const handleCreateDoc = useCallback((docType: BillingDocumentType) => {
+    setCreateDocType(docType);
+    setViewDocId(null);
+  }, []);
+
+  const handleBack = useCallback(() => {
+    setViewDocId(null);
+    setCreateDocType(null);
+    setEditDoc(null);
+  }, []);
+
+  const handleEditDoc = useCallback((doc: BillingDocument) => {
+    setEditDoc(doc);
+    setCreateDocType(doc.doc_type);
+    setViewDocId(null);
+  }, []);
+
+  const handleDeleteDoc = useCallback((id: string) => {
+    deleteDocument(id);
+    if (viewDocId === id) setViewDocId(null);
+  }, [deleteDocument, viewDocId]);
+
+  const handleSaveDoc = useCallback(async (doc: BillingDocument): Promise<{ success: boolean; error?: string }> => {
+    if (editDoc) {
+      return await updateDocument(doc.id, doc);
+    }
+    return await addDocument(doc);
+  }, [editDoc, updateDocument, addDocument]);
+
+  const handleIssueCreditNote = useCallback((doc: BillingDocument) => {
+    updateDocument(doc.id, { status: "cancelled" });
+    const cn = issueCreditNote(doc);
+    setViewDocId(cn.id);
+    setCreateDocType(null);
+    setEditDoc(null);
+  }, [issueCreditNote, updateDocument]);
+
+  const handleConvert = useCallback(async (doc: BillingDocument) => {
+    const newDoc = await convertDocument(doc, "invoice");
+    if (newDoc?.id && newDoc.id !== doc.id) {
+      setViewDocId(newDoc.id);
+    }
+  }, [convertDocument]);
+
+  const handleRecordPayment = useCallback((payment: { document_id: string; amount: number; tds_amount?: number; payment_date: string; payment_mode: string; reference_number: string; notes: string; org_id: string }) => {
+    recordPayment(payment as any);
+  }, [recordPayment]);
+
+  if (clientsLoading || billingLoading) {
+    return (
+      <DashboardLayout>
+        <LoadingState message="Loading billing data..." />
+      </DashboardLayout>
+    );
+  }
+
+  const renderContent = () => {
+    if (viewDocId) {
+      const doc = documents.find(d => d.id === viewDocId);
+      if (!doc) return <div className="text-center text-muted-foreground py-8">Document not found</div>;
+      const convertedInvoice = doc.doc_type === "proforma"
+        ? documents.find(d => d.doc_type === "invoice" && d.converted_from_id === doc.id)
+        : undefined;
+      return (
+        <BillingDocumentView
+          doc={doc}
+          payments={getDocumentPayments(doc.id)}
+          settings={settings}
+          onBack={handleBack}
+          onRecordPayment={handleRecordPayment}
+          onEdit={handleEditDoc}
+          onDelete={handleDeleteDoc}
+          onIssueCreditNote={handleIssueCreditNote}
+          onConvertToInvoice={doc.doc_type === "proforma" ? handleConvert : undefined}
+          onStatusUpdate={(id, updates) => updateDocument(id, updates)}
+          convertedInvoice={convertedInvoice ? { id: convertedInvoice.id, doc_number: convertedInvoice.doc_number } : undefined}
+          onOpenDoc={setViewDocId}
+          busy={billingBusy}
+        />
+      );
+    }
+
+    if (createDocType) {
+      const advanceInfo = editDoc
+        ? (() => {
+            const fromPayments = getDocumentPayments(editDoc.id)
+              .filter(p => p.payment_mode === "advance")
+              .reduce((s, p) => s + (p.amount || 0), 0);
+            if (fromPayments > 0) return { total: fromPayments, hasPaymentRecord: true };
+            // Proformas carry advance in amount_paid when no payment record exists
+            const fromDoc = editDoc.doc_type === "proforma" ? (editDoc.amount_paid || 0) : 0;
+            return { total: fromDoc, hasPaymentRecord: false };
+          })()
+        : { total: 0, hasPaymentRecord: false };
+      const existingAdvanceTotal = advanceInfo.total;
+      const advanceHasPaymentRecord = advanceInfo.hasPaymentRecord;
+      return (
+        <BillingCreateDocument
+          docType={createDocType}
+          clients={clients}
+          settings={settings}
+          documents={documents}
+          getNextDocNumber={getNextDocNumber}
+          onSave={handleSaveDoc}
+          onBack={handleBack}
+          editDoc={editDoc || undefined}
+          onUpdateSettings={updateSettings}
+          onUpdateClientBilling={handleUpdateClientBilling}
+          onRecordAdvance={async (p) => {
+            await recordPayment({
+              document_id: p.document_id,
+              amount: p.amount,
+              tds_amount: 0,
+              payment_date: p.payment_date,
+              payment_mode: "advance",
+              reference_number: p.reference_number || "",
+              notes: p.notes || "",
+              org_id: p.org_id,
+            } as any);
+          }}
+          existingAdvanceTotal={existingAdvanceTotal}
+          advanceHasPaymentRecord={advanceHasPaymentRecord}
+        />
+      );
+    }
+
+    switch (view) {
+      case "dashboard":
+        return (
+          <BillingDashboard
+            documents={documents}
+            onCreateInvoice={() => handleCreateDoc("proforma")}
+            onViewDocument={handleViewDoc}
+            onCardClick={handleDashboardCardClick}
+          />
+        );
+      case "proformas":
+        return (
+          <BillingDocumentList
+            documents={documents}
+            docType="proforma"
+            onView={handleViewDoc}
+            onCreate={() => handleCreateDoc("proforma")}
+            onConvert={handleConvert}
+            onDelete={handleDeleteDoc}
+          />
+        );
+      case "invoices":
+        return (
+          <BillingDocumentList
+            documents={documents}
+            docType="invoice"
+            onView={handleViewDoc}
+            onCreate={() => handleCreateDoc("invoice")}
+            initialStatusFilter={invoiceStatusFilter}
+            onDelete={handleDeleteDoc}
+          />
+        );
+      case "credit_notes":
+        return (
+          <BillingDocumentList
+            documents={documents}
+            docType="credit_note"
+            onView={handleViewDoc}
+            onCreate={() => handleCreateDoc("credit_note")}
+            onDelete={handleDeleteDoc}
+          />
+        );
+      case "payments":
+        return <BillingPaymentsList payments={payments} documents={documents} />;
+      case "settings":
+        return <BillingSettingsPanel settings={settings} onSave={updateSettings} />;
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <DashboardLayout>
+      <div className="space-y-4">
+        {!viewDocId && !createDocType && (
+          <Tabs value={view} onValueChange={v => navigate(v as BillingView)}>
+            <TabsList className="bg-muted/50 h-auto flex-wrap gap-0.5">
+              <TabsTrigger value="dashboard" className="gap-1.5 text-xs"><Home className="h-3.5 w-3.5" />Dashboard</TabsTrigger>
+              <TabsTrigger value="proformas" className="gap-1.5 text-xs"><Receipt className="h-3.5 w-3.5" />Proforma Inv.</TabsTrigger>
+              <TabsTrigger value="invoices" className="gap-1.5 text-xs"><IndianRupee className="h-3.5 w-3.5" />Tax Invoices</TabsTrigger>
+              <TabsTrigger value="credit_notes" className="gap-1.5 text-xs"><FileX2 className="h-3.5 w-3.5" />Credit Notes</TabsTrigger>
+              <TabsTrigger value="payments" className="gap-1.5 text-xs"><CreditCard className="h-3.5 w-3.5" />Payments</TabsTrigger>
+              <TabsTrigger value="settings" className="gap-1.5 text-xs"><Settings className="h-3.5 w-3.5" />Settings</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        )}
+
+        {renderContent()}
+      </div>
+    </DashboardLayout>
+  );
+}

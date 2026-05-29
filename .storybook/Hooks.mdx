@@ -1,0 +1,317 @@
+import { Meta } from '@storybook/blocks';
+
+<Meta title="Hooks/Overview" />
+
+# Custom React Hooks
+
+This project includes standardized hooks for common patterns. All hooks are fully typed
+with TypeScript and include comprehensive JSDoc documentation.
+
+## Data Management
+
+### useOrgData
+Fetches organization-scoped data with automatic filtering and error handling.
+
+```typescript
+const { data, isLoading, error, refetch } = useOrgData({
+  table: 'contacts',
+  select: '*',
+  filters: [{ column: 'status', value: 'active' }],
+});
+```
+
+**Features:**
+- Automatic organization context filtering
+- Built on React Query for caching
+- TypeScript generic support
+- Realtime subscription option
+
+### useParallelQueries
+Execute multiple database queries in parallel for optimal performance.
+
+```typescript
+const results = useParallelQueries([
+  { table: 'contacts', select: '*' },
+  { table: 'campaigns', select: '*' },
+  { table: 'templates', select: 'id, name' },
+]);
+
+// Access individual results
+const { data: contacts } = results[0];
+const { data: campaigns } = results[1];
+```
+
+**Benefits:**
+- Executes queries simultaneously
+- Reduces total loading time
+- Maintains individual loading states
+- Handles errors independently
+
+### useRealtimeSync
+Subscribe to real-time database changes with automatic updates.
+
+```typescript
+const { data, isLoading } = useRealtimeSync({
+  table: 'messages',
+  event: '*', // or 'INSERT', 'UPDATE', 'DELETE'
+  filter: { user_id: currentUserId },
+});
+```
+
+**Use Cases:**
+- Live chat messages
+- Activity feeds
+- Collaborative editing
+- Status updates
+
+## UI State Management
+
+### useDialogState
+Manage dialog/modal state with create and edit modes.
+
+```typescript
+const {
+  isOpen,
+  isEditing,
+  editingItem,
+  formData,
+  openDialog,
+  closeDialog,
+  updateFormData,
+} = useDialogState({ name: '', email: '' });
+
+// Open for create
+openDialog();
+
+// Open for edit
+openDialog(existingItem);
+```
+
+**Features:**
+- Separate create/edit modes
+- Form data management
+- Type-safe updates
+- Auto-reset on close
+
+### useInlineEdit
+Handle inline editing workflows with save/cancel functionality.
+
+```typescript
+const {
+  isEditing,
+  editValue,
+  startEdit,
+  updateEdit,
+  saveEdit,
+  cancelEdit,
+} = useInlineEdit<ContactType>();
+
+// Start editing
+startEdit(itemId, currentValue);
+
+// Save changes
+await saveEdit(itemId, async (id, value) => {
+  await updateContact(id, value);
+});
+```
+
+**Use Cases:**
+- Table cell editing
+- Quick updates
+- Inline forms
+
+### useDragDropOrder
+Drag-and-drop reordering with database persistence.
+
+```typescript
+const {
+  items,
+  activeId,
+  handleDragStart,
+  handleDragEnd,
+  handleDragCancel,
+} = useDragDropOrder<ItemType>();
+
+// Update database on reorder
+await handleDragEnd(event, async (reorderedItems) => {
+  await updateOrder(reorderedItems);
+});
+```
+
+**Features:**
+- Built on @dnd-kit
+- Optimistic updates
+- Automatic state management
+- Error handling
+
+## Utilities
+
+### useNotification
+Standardized toast notifications across the application.
+
+```typescript
+const notify = useNotification();
+
+notify.success('Saved!', 'Your changes have been saved');
+notify.error('Failed', errorObject);
+notify.info('Note', 'This is informational');
+
+const confirmed = notify.confirm('Delete this item?');
+```
+
+**Benefits:**
+- Consistent styling
+- Error formatting
+- Async confirmation
+- Type-safe API
+
+### useAutoRefresh
+Auto-refresh data at specified intervals.
+
+```typescript
+const { lastRefresh, manualRefresh } = useAutoRefresh({
+  enabled: true,
+  intervalMs: 30000, // 30 seconds
+  onRefresh: () => refetchData(),
+});
+
+// Manually trigger refresh
+manualRefresh();
+```
+
+**Use Cases:**
+- Dashboard metrics
+- Live statistics
+- Status polling
+
+### useModuleTracking
+Automatic module usage tracking for analytics.
+
+```typescript
+// Add to root layout - no parameters needed
+function DashboardLayout() {
+  useModuleTracking();
+  return <Outlet />;
+}
+```
+
+**Tracks:**
+- Page visits
+- Visit counts
+- Last accessed time
+- Navigation patterns
+
+### useTopModules
+Get user's most frequently visited modules.
+
+```typescript
+const { data: topModules, isLoading } = useTopModules(8);
+
+return (
+  <div>
+    {topModules?.map(mod => (
+      <Link to={mod.module_path}>
+        {mod.module_name}
+      </Link>
+    ))}
+  </div>
+);
+```
+
+**Returns:**
+- Module metadata
+- Visit counts
+- Icons
+- Paths
+
+### useOrgContext
+Access organization context and admin status.
+
+```typescript
+const {
+  userOrgId,
+  effectiveOrgId,
+  isPlatformAdmin,
+  isImpersonating,
+  isLoading,
+} = useOrgContext();
+
+if (isLoading) return <LoadingState />;
+```
+
+**Features:**
+- Multi-tenant support
+- Admin impersonation
+- Cross-tab sync
+- Session persistence
+
+## Best Practices
+
+### Error Handling
+All hooks that interact with the database include built-in error handling:
+
+```typescript
+const { data, error, isError } = useOrgData({
+  table: 'contacts',
+  select: '*',
+});
+
+if (isError) {
+  return <ErrorState error={error} />;
+}
+```
+
+### Loading States
+Use loading states to provide user feedback:
+
+```typescript
+const { data, isLoading } = useTopModules();
+
+if (isLoading) {
+  return <LoadingState />;
+}
+
+return <ModulesList modules={data} />;
+```
+
+### Type Safety
+All hooks are fully typed - use generics for type safety:
+
+```typescript
+interface Contact {
+  id: string;
+  name: string;
+  email: string;
+}
+
+const { data } = useOrgData<Contact>({
+  table: 'contacts',
+  select: '*',
+});
+
+// data is typed as Contact[]
+```
+
+### Cleanup
+Hooks automatically clean up subscriptions and listeners:
+
+```typescript
+// Realtime subscriptions are automatically cleaned up
+useRealtimeSync({ table: 'messages' });
+
+// No manual cleanup needed
+```
+
+## Performance Tips
+
+1. **Use useParallelQueries** for multiple independent queries
+2. **Enable staleTime** in React Query for frequently accessed data
+3. **Debounce** user input before triggering queries
+4. **Use useAutoRefresh** instead of constant polling
+5. **Implement pagination** for large datasets
+
+## Testing
+
+All hooks include unit tests with > 80% coverage. See test files:
+- `src/hooks/*.test.ts`
+- `src/test/test-utils.tsx` for test utilities

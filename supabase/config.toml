@@ -1,0 +1,207 @@
+project_id = "mlvgqudcwlkolsbighnn"
+
+[functions.mkt-product-manager]
+verify_jwt = false
+
+[functions.mkt-source-leads]
+verify_jwt = false
+
+[functions.mkt-arohan-chat]
+verify_jwt = false
+
+# External webhooks — these endpoints are hit by third-party services
+# (Exotel, Resend, Razorpay) that don't send a Supabase JWT, so
+# JWT verification must be disabled. Without these entries the webhooks
+# return 401 and DLRs / status callbacks are silently dropped — that's
+# the recurring "WhatsApp delivered = 0" symptom.
+[functions.mkt-whatsapp-webhook]
+verify_jwt = false
+
+[functions.mkt-email-webhook]
+verify_jwt = false
+
+[functions.mkt-bolna-webhook]
+verify_jwt = false
+
+[functions.razorpay-webhook]
+verify_jwt = false
+
+[functions.mkt-evolve-icp]
+verify_jwt = false
+
+[functions.mkt-submit-whatsapp-templates]
+verify_jwt = false
+
+[functions.mkt-sync-whatsapp-status]
+verify_jwt = false
+
+[functions.mkt-backfill-events]
+verify_jwt = false
+
+[functions.check-next-actions]
+verify_jwt = false
+
+[functions.outbound-webhook-handler]
+verify_jwt = false
+
+[functions.manage-user]
+verify_jwt = true
+
+[functions.submit-public-form]
+verify_jwt = false
+
+[functions.manage-resend-domain]
+verify_jwt = true
+
+[functions.send-bulk-email]
+verify_jwt = true
+
+[functions.send-email]
+verify_jwt = true
+
+[functions.webhook-receiver]
+verify_jwt = false
+
+[functions.queue-manager]
+verify_jwt = true
+
+[functions.analyze-lead]
+verify_jwt = true
+
+[functions.indiamart-webhook]
+verify_jwt = false
+
+[functions.sync-exotel-whatsapp-templates]
+verify_jwt = true
+
+[functions.send-whatsapp-message]
+verify_jwt = true
+
+[functions.whatsapp-webhook]
+verify_jwt = false
+
+[functions.exotel-list-exophones]
+verify_jwt = true
+
+[functions.bulk-whatsapp-sender]
+verify_jwt = true
+
+[functions.retry-failed-whatsapp]
+verify_jwt = false
+
+[functions.email-inbound-webhook]
+verify_jwt = false
+
+[functions.mkt-handle-email-reply]
+verify_jwt = false
+
+[functions.mkt-handle-whatsapp-reply]
+verify_jwt = false
+
+[functions.exotel-make-call]
+verify_jwt = true
+
+[functions.exotel-webhook]
+verify_jwt = false
+
+[functions.exotel-get-recording]
+verify_jwt = true
+
+[functions.exotel-sync-call-logs]
+verify_jwt = true
+
+[functions.bulk-import-trigger]
+verify_jwt = true
+
+[functions.process-bulk-import]
+verify_jwt = false
+
+[functions.rollback-bulk-import]
+verify_jwt = true
+
+[functions.crm-bridge-api]
+verify_jwt = false
+
+[functions.chat-campaign-assistant]
+verify_jwt = true
+
+[functions.delete-user]
+verify_jwt = true
+
+[functions.send-subscription-email]
+verify_jwt = true
+
+[functions.google-calendar-oauth]
+verify_jwt = true
+
+[functions.automation-trigger-handler]
+verify_jwt = false
+
+[functions.automation-email-sender]
+verify_jwt = false
+
+[functions.email-tracking]
+verify_jwt = false
+
+[functions.unsubscribe]
+verify_jwt = false
+
+[functions.blog-webhook]
+verify_jwt = false
+
+[functions.daily-lead-scoring]
+verify_jwt = false
+
+[functions.analyze-campaign-performance]
+verify_jwt = false
+
+[functions.analyze-pipeline-performance]
+verify_jwt = false
+
+[functions.enrich-contact]
+verify_jwt = true
+
+[functions.bulk-enrich-contacts]
+verify_jwt = true
+
+[functions.send-sms]
+verify_jwt = true
+
+[functions.sms-webhook]
+verify_jwt = false
+
+[functions.bulk-sms-sender]
+verify_jwt = true
+
+[functions.extract-invoice-client-data]
+verify_jwt = true
+
+[functions.process-invoice-import]
+verify_jwt = true
+
+[functions.capture-carry-forward]
+verify_jwt = true
+
+[functions.freeze-monthly-actuals]
+verify_jwt = false
+
+[functions.get-monthly-actuals]
+verify_jwt = true
+
+[functions.auto-sync-stale-calls]
+verify_jwt = true
+
+[functions.create-exotel-whatsapp-template]
+verify_jwt = false
+
+[functions.submit-help-ticket]
+verify_jwt = false
+
+[functions.track-ticket]
+verify_jwt = false
+
+[functions.ticket-status-notify]
+verify_jwt = false
+
+[functions.ticket-email-reply]
+verify_jwt = false

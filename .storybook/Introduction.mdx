@@ -1,0 +1,88 @@
+import { Meta } from '@storybook/blocks';
+
+<Meta title="Introduction" />
+
+# CRM Platform Component Library
+
+Welcome to the component documentation for the CRM Platform. This Storybook contains
+all reusable UI components, organized by category.
+
+## Component Categories
+
+### UI Components
+Core design system components (buttons, inputs, cards, etc.) that follow shadcn/ui patterns.
+Built with Radix UI primitives and styled with Tailwind CSS.
+
+### Common Components
+Reusable business logic components (data tables, empty states, loading states, etc.)
+that are used across multiple features.
+
+### Feature Components
+Domain-specific components for contacts, email automation, campaigns, reporting, etc.
+
+## Development Guidelines
+
+### Using Components
+All components are importable from their respective directories:
+
+```typescript
+import { Button } from '@/components/ui/button';
+import { DataTable } from '@/components/common/DataTable';
+import { LeadScoreCard } from '@/components/Contact/LeadScoreCard';
+```
+
+### Styling
+Components use Tailwind CSS with semantic design tokens defined in `index.css`.
+Always use CSS variables for colors rather than hardcoded values:
+
+```typescript
+// ✅ Good - uses design system
+className="bg-primary text-primary-foreground"
+
+// ❌ Bad - hardcoded colors
+className="bg-blue-500 text-white"
+```
+
+### TypeScript
+All components are fully typed with TypeScript. Refer to each component's
+"Controls" tab to see available props and their types.
+
+### Accessibility
+Components follow WCAG 2.1 Level AA guidelines and use Radix UI primitives
+for accessible interactions (keyboard navigation, screen readers, focus management).
+
+## Architecture
+
+### Design System
+The project uses a centralized design system defined in:
+- `src/index.css` - CSS variables for colors, spacing, typography
+- `tailwind.config.ts` - Tailwind configuration extending the design system
+
+### State Management
+- **React Query** (`@tanstack/react-query`) for server state
+- **Custom Hooks** for shared logic and patterns
+- **Supabase** for backend data persistence
+
+### Key Patterns
+1. **Dialog State Management** - `useDialogState` hook
+2. **Data Fetching** - `useOrgData` and `useParallelQueries` hooks
+3. **Realtime Updates** - `useRealtimeSync` hook
+4. **Notifications** - `useNotification` hook
+
+## Contributing
+
+When adding new components:
+
+1. **Create the component** with proper TypeScript types
+2. **Add JSDoc comments** for documentation
+3. **Write a story** to showcase variants and use cases
+4. **Follow naming conventions** (PascalCase for components)
+5. **Use semantic tokens** for all styling
+6. **Ensure accessibility** (ARIA labels, keyboard navigation)
+
+## Resources
+
+- [Tailwind CSS Documentation](https://tailwindcss.com)
+- [Radix UI Primitives](https://www.radix-ui.com)
+- [shadcn/ui](https://ui.shadcn.com)
+- [React Query](https://tanstack.com/query)

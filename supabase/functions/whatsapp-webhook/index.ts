@@ -1,0 +1,313 @@
+import { getSupabaseClient } from '../_shared/supabaseClient.ts';
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+const RATE_LIMIT_WEBHOOKS_PER_MINUTE = 100;
+
+// Exotel WhatsApp webhook payload structure
+interface ExotelWebhookPayload {
+  whatsapp?: {
+    messages?: Array<{
+      callback_type: 'dlr' | 'icm'; // dlr = delivery report, icm = incoming message
+      sid: string;
+      to: string;
+      from?: string;
+      exo_status_code: number;
+      exo_detailed_status: string;
+      description: string;
+      timestamp: string;
+      custom_data?: string;
+      // For incoming messages
+      content?: {
+        type: string;
+        text?: { body: string };
+        image?: { link: string; caption?: string };
+        document?: { link: string; filename?: string };
+      };
+      profile_name?: string;
+    }>;
+  };
+}
+
+// Rate limiting for webhook calls (IP-based)
+async function checkWebhookRateLimit(supabaseClient: any, ipAddress: string): Promise<boolean> {
+  const oneMinuteAgo = new Date(Date.now() - 60 * 1000).toISOString();
+  
+  const { count } = await supabaseClient
+    .from('rate_limit_log')
+    .select('*', { count: 'exact', head: true })
+    .eq('ip_address', ipAddress)
+    .eq('operation', 'webhook_whatsapp')
+    .gte('created_at', oneMinuteAgo);
+  
+  return (count || 0) < RATE_LIMIT_WEBHOOKS_PER_MINUTE;
+}
+
+// Map Exotel status codes to our status
+function mapExotelStatus(exoStatusCode: number): string {
+  switch (exoStatusCode) {
+    case 30001: return 'sent';
+    case 30002: return 'delivered';
+    case 30003: return 'read';
+    case 30004:
+    case 30005:
+    case 30006:
+    case 30007:
+    case 30008:
+    case 30009:
+    case 30010:
+    case 30011:
+    case 30012:
+    case 30013:
+    case 30014:
+    case 30015:
+    case 30016:
+    case 30017:
+    case 30018:
+    case 30019:
+    case 30020:
+    case 30021:
+    case 30022:
+    case 30023:
+    case 30024:
+    case 30025:
+    case 30026:
+    case 30027:
+    case 30028:
+    case 30029:
+      return 'failed';
+    default:
+      return 'unknown';
+  }
+}
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  try {
+    const supabaseClient = getSupabaseClient();
+
+    // Get client IP for rate limiting
+    const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0] || 
+                     req.headers.get('x-real-ip') || 
+                     'unknown';
+
+    // Check rate limit
+    const withinLimit = await checkWebhookRateLimit(supabaseClient, clientIp);
+    if (!withinLimit) {
+      console.error('Webhook rate limit exceeded from IP:', clientIp);
+      return new Response(
+        JSON.stringify({ error: 'Rate limit exceeded' }),
+        {
+          status: 429,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    const payload: ExotelWebhookPayload = await req.json();
+    
+    console.log('Received Exotel WhatsApp webhook:', JSON.stringify(payload, null, 2));
+
+    // Log rate limit
+    await supabaseClient
+      .from('rate_limit_log')
+      .insert({
+        org_id: null,
+        operation: 'webhook_whatsapp',
+        ip_address: clientIp,
+      });
+
+    // Process each message in the payload
+    const messages = payload?.whatsapp?.messages || [];
+    
+    for (const webhookData of messages) {
+      const { callback_type, sid, exo_status_code, exo_detailed_status, description, timestamp, custom_data } = webhookData;
+      
+      // Handle incoming messages (icm)
+      if (callback_type === 'icm' && webhookData.content) {
+        console.log('Received inbound message:', webhookData);
+        
+        const phoneNumber = webhookData.from || '';
+        const messageText = webhookData.content.text?.body || 
+                           webhookData.content.image?.caption || 
+                           '';
+        
+        // Find existing contact by phone number (E.164 — confirmed storage format)
+        const { data: contacts } = await supabaseClient
+          .from('contacts')
+          .select('id, org_id')
+          .eq('phone', phoneNumber)
+          .limit(1);
+        
+        let contactId = contacts?.[0]?.id;
+        let orgId = contacts?.[0]?.org_id;
+        
+        // If contact doesn't exist, try to auto-create
+        if (!contactId || !orgId) {
+          console.log('Contact not found for phone:', phoneNumber);
+          
+          // Get active Exotel settings with WhatsApp enabled to determine org
+          const { data: exotelSettings } = await supabaseClient
+            .from('exotel_settings')
+            .select('org_id')
+            .eq('is_active', true)
+            .eq('whatsapp_enabled', true)
+            .limit(1);
+          
+          if (!exotelSettings || exotelSettings.length === 0) {
+            console.log('No active Exotel WhatsApp settings found');
+            continue;
+          }
+          
+          orgId = exotelSettings[0].org_id;
+          console.log('Creating new contact for phone:', phoneNumber, 'in org:', orgId);
+          
+          // Parse name from webhook
+          let firstName = webhookData.profile_name || phoneNumber;
+          let lastName = '';
+          
+          if (webhookData.profile_name) {
+            const nameParts = webhookData.profile_name.trim().split(' ');
+            firstName = nameParts[0] || phoneNumber;
+            lastName = nameParts.slice(1).join(' ') || '';
+          }
+          
+          // Create new contact
+          const { data: newContact, error: createError } = await supabaseClient
+            .from('contacts')
+            .insert({
+              org_id: orgId,
+              phone: phoneNumber,
+              first_name: firstName,
+              last_name: lastName || null,
+              source: 'whatsapp_inbound',
+              status: 'new',
+            })
+            .select('id')
+            .single();
+          
+          if (createError) {
+            console.error('Error creating contact:', createError);
+            continue;
+          }
+          
+          contactId = newContact.id;
+          console.log('Created new contact:', contactId);
+        }
+        
+        // Store inbound message
+        const { error: insertError } = await supabaseClient
+          .from('whatsapp_messages')
+          .insert({
+            org_id: orgId,
+            contact_id: contactId,
+            conversation_id: phoneNumber,
+            direction: 'inbound',
+            message_content: messageText,
+            sender_name: webhookData.profile_name,
+            phone_number: phoneNumber,
+            media_url: webhookData.content.image?.link || webhookData.content.document?.link,
+            media_type: webhookData.content.type,
+            exotel_message_id: sid,
+            exotel_status_code: exo_status_code?.toString(),
+            status: 'received',
+            sent_at: new Date(timestamp),
+          });
+        
+        if (insertError) {
+          console.error('Error inserting inbound message:', insertError);
+        } else {
+          console.log('Stored inbound message from:', phoneNumber);
+        }
+
+        // --- Marketing reply attribution ---
+        try {
+          const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+          const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+          fetch(`${supabaseUrl}/functions/v1/mkt-handle-whatsapp-reply`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceKey}` },
+            body: JSON.stringify({
+              phone: phoneNumber,
+              message_text: messageText,
+              profile_name: webhookData.profile_name,
+              exotel_sid: sid,
+            }),
+          }).catch(err => console.error('[whatsapp-webhook] mkt attribution error:', err));
+        } catch { /* non-blocking */ }
+
+        continue;
+      }
+      
+      // Handle delivery reports (dlr)
+      if (callback_type === 'dlr' && sid) {
+        const messageStatus = mapExotelStatus(exo_status_code);
+        const timestampDate = new Date(timestamp);
+
+        // Find the message by exotel_message_id
+        const { data: message, error: fetchError } = await supabaseClient
+          .from('whatsapp_messages')
+          .select('*')
+          .eq('exotel_message_id', sid)
+          .single();
+
+        if (fetchError || !message) {
+          console.error('Message not found for SID:', sid, fetchError);
+          continue;
+        }
+
+        // Prepare update data based on status
+        const updateData: any = { 
+          status: messageStatus,
+          exotel_status_code: exo_status_code.toString(),
+        };
+
+        if (messageStatus === 'delivered' || messageStatus === 'sent') {
+          updateData.delivered_at = timestampDate.toISOString();
+        } else if (messageStatus === 'read') {
+          updateData.read_at = timestampDate.toISOString();
+          if (!message.delivered_at) {
+            updateData.delivered_at = timestampDate.toISOString();
+          }
+        } else if (messageStatus === 'failed') {
+          updateData.error_message = `${exo_detailed_status}: ${description}`;
+        }
+
+        // Update the message status
+        const { error: updateError } = await supabaseClient
+          .from('whatsapp_messages')
+          .update(updateData)
+          .eq('id', message.id);
+
+        if (updateError) {
+          console.error('Error updating message:', updateError);
+        } else {
+          console.log(`Updated message ${message.id} to status: ${messageStatus}`);
+        }
+      }
+    }
+
+    return new Response(
+      JSON.stringify({ success: true, message: 'Webhook processed' }),
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      }
+    );
+  } catch (error) {
+    console.error('Error processing webhook:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    return new Response(
+      JSON.stringify({ error: errorMessage }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      }
+    );
+  }
+});
