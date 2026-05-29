@@ -1,0 +1,201 @@
+You are analyzing today's outbound AI sales calls made by an AI agent named Riya pitching WorkSync (a task-accountability product) to Indian operations heads. The cold prospect list is from Worksync email signal. The agent's job is to get the prospect to agree to a demo or callback.
+
+Below are today's calls grouped by outcome. Distill what was learned today — keep it tight, action-oriented, and specific. Cover:
+1. What worked (replicable wins)
+2. What didn't (script weak spots, dropping points)
+3. Recurring objections or reactions
+4. Specific suggested tweaks to Riya's opening or rebuttals
+
+===== Outcome: demo_agreed (2 calls) =====
+[dur 170s] Prospect's name is Narsimhamoorty; team size is about two hundred; currently uses WhatsApp or similar for task assignments.
+Transcript: assistant: Hi, this is Riya calling from In-Sync. Do you have thirty seconds? I have something quick to share.
+user: she
+assistant:  I apologize for the confusion. Is this Narsimhamoorty?
+user:  yes yes
+assistant:  Great! Thank you for confirming, Narsimhamoorty. The reason I’m calling is that we work with operations heads and H R heads at companies like QuestCorp and Motherson. 
+
+In many Indian organizations, non-routine daily tasks often get assigned over WhatsApp and phone calls, which can lead to a lack of tracking and accountability. We’ve built a product called WorkSync that addresses this issue by pulling task assignments out of WhatsApp into one centralized place. This way, you can easily see what’s done and what’s still pending.
+
+Can I ask how big your team is and how you currently manage task assignments? Are you using WhatsApp, email, Excel, or another tool?
+user:  two hundred
+assistant:  That's a sizable team! With two hundred members, it must be quite a challenge to keep track of tasks effectively. How are you currently managing task assignments? Are you primarily using WhatsApp, email, Excel, or do you have another tool in place?
+user:  my team is
+assistant:  I see, so your team is around two hundred members. How do you manage task assignments within your team? Are you using WhatsApp, email, Excel, or perhaps another tool?
+user:  two hundred two hundred yeah
+assistant:  Got it, two hundred members in your team. That’s a significant number! Given the size of your
+---
+[dur 55s] Prospect's name is Narsimhamoorty; demo confirmed for Thursday at 3 PM; prospect has already had a previous call with the team.
+Transcript: assistant: Hi, this is Riya calling from In-Sync. Do you have thirty seconds? I have something quick to share.
+user:  yes
+assistant:  Great! The reason I’m calling is that we work with operations heads and H R heads at companies like QuestCorp and Motherson. In most Indian organizations, non-routine daily tasks often get assigned over WhatsApp and phone calls, leading to a lack of tracking and accountability.
+
+We've built a product called WorkSync that addresses this exact problem. It pulls task assignments out of WhatsApp into one place, allowing you to see what is done and what is still pending. 
+
+Can I ask how big your team is and how you currently manage task assignments? Are you using WhatsApp, email, Excel, or another tool?
+user:  already i had a call from your team already i fixed that
+assistant:  I understand. Just to clarify, are you currently using another tool for task tracking, or do you feel that your current method is sufficient? I’d still love to show you what WorkSync does differently in just fifteen minutes. Many teams on tools like Asana and ClickUp switched to us because they were losing tasks that started on WhatsApp. Would Thursday or Friday work for a quick demo?
+user:  meeting uh for a demo
+assistant:  Got it! When would be a good time for you to have that demo? I can set it up for Thursday or Friday, whichever works best for you.
+user:  demo demo's already been demo has already been fixed for thursday three pm thank you
+assistant:  Thank you for confir
+---
+===== Outcome: do_not_call (2 calls) =====
+[dur 93s] Prospect requested removal from call list and asked not to be contacted again; no interest shown in product or demo.
+Transcript: assistant: Hi, this is Riya calling from In-Sync. Do you have thirty seconds? I have something quick to share.
+user:  okay
+assistant:  Great! The reason I'm calling is that in most Indian organizations, non-routine daily tasks get assigned over WhatsApp and phone calls. There is often no tracking and no accountability for those tasks. 
+
+We've built a product called WorkSync that addresses this issue. It pulls task assignments out of WhatsApp into one place where you can actually see what is done and what is pending. 
+
+I’m curious, how big is your team at Monocept, and how do you currently manage task assignments? Are you using WhatsApp, email, Excel, or another tool?
+user:  can you please remove my number from your calling list and stop calling me please don't spam me stop calling me
+user:  do you understand
+assistant:  Understood, sir. I apologize for the disturbance. I will make sure to remove your number from our list. Thank you for your time, and have a good day!
+
+---
+[dur 64s] Prospect name is G Sudhakar Reddy; explicitly not interested and asked repeatedly not to be called again.
+Transcript: assistant: Hi, this is Riya calling from In-Sync. Do you have thirty seconds? I have something quick to share.
+user:  hello
+assistant:  Hello, G Sudhakar Reddy! Thank you for taking my call. The reason I’m reaching out is that we work with operations heads and H R heads at companies like QuestCorp and Motherson. 
+
+In many Indian organizations, non-routine daily tasks often get assigned over WhatsApp and phone calls, which leads to a lack of tracking and accountability. We’ve developed a product called WorkSync that addresses this issue by pulling task assignments out of WhatsApp into one centralized location where you can easily see what’s done and what’s pending.
+
+I’d love to learn a bit about your team. How big is your team, and how do you currently manage task assignments? Are you using WhatsApp, email, Excel, or a different tool?
+user: not required your
+user: not required your call i am not interested i am telling again
+user:  and again why you are calling me i understand
+assistant:  I completely understand, G. Just to clarify, is it that task tracking is not a priority for you right now, or do you have it handled internally? This will help me know if I should follow up later. Thank you for your time!
+user:  hello
+assistant:  Hello again, G. I'm still here! If there's anything specific you'd like to discuss or if you have any questions, feel free to let me know.
+
+---
+===== Outcome: no_response (41 calls) =====
+[dur 80s] Decision maker is not available currently; call went to voicemail for Mr. Subrahmanyam; no specific callback schedule or demo date agreed.
+Transcript: assistant: Hi, this is Riya calling from In-Sync. Do you have thirty seconds? I have something quick to share.
+user:  thanks ria please stay on the line
+assistant:  Of course, Mr. Subrahmanyam. Thank you for your time! The reason I’m calling is that in most Indian organizations, non-routine daily tasks get assigned over WhatsApp and phone calls. There is often no tracking or accountability for those tasks. 
+
+We’ve built a product called WorkSync that addresses this issue. It pulls task assignments out of WhatsApp into one centralized place where you can clearly see what’s done and what’s pending. 
+
+Can I ask how big your team is and how you currently manage task assignments? Are you using WhatsApp, email, Excel, or perhaps a different tool?
+user:  i'm sorry this person is not available if you would like to leave an additional message please reply after the tone
+assistant:  I understand, Mr. Subrahmanyam. Could you let me know when would be a good time for me to call back, or would it be easier if I sent you a brief overview of WorkSync that you can share with the decision-maker when they're available? Thank you!
+
+---
+[dur 75s] The prospect mentioned the right person is not available and suggested leaving a message after the tone; no specific names or alternate contacts were given.
+Transcript: assistant: Hi, this is Riya calling from In-Sync. Do you have thirty seconds? I have something quick to share.
+user:  thanks ria please stay on the line
+assistant:  Of course! Thank you for your patience. Just to give you a brief overview, we work with operations heads and H R heads at companies like QuestCorp and Motherson. 
+
+The reason I’m calling is that in most Indian organizations, non-routine daily tasks get assigned over WhatsApp and phone calls, which often leads to a lack of tracking and accountability. We’ve built a product called WorkSync that addresses this issue by pulling task assignments out of WhatsApp into one place, allowing you to see what’s done and what’s pending.
+
+Can I ask how big your team is and how you currently manage task assignments? Are you using WhatsApp, email, Excel, or another tool?
+user:  i'm sorry this person is not available if you would like to leave an additional message please reply after the tone
+assistant:  I understand, thank you for letting me know. Could you please let me know when would be a good time to call back, or is there someone else I could speak to about how your operations team tracks daily tasks? I’d love to ensure I connect with the right person.
+
+---
+[dur 63s] Left voicemail requesting callback to discuss WorkSync.
+Transcript: assistant: Hi, this is Riya calling from In-Sync. Do you have thirty seconds? I have something quick to share.
+user:  at the tone please record your message when you have finished recording you may hang up
+assistant:  It seems I may have reached your voicemail. If you could please give me a call back at your convenience, I'd love to discuss how WorkSync can help streamline your task tracking. Thank you!
+
+---
+[dur 48s] The prospect's name is Bhavesh. The call is an introduction about the WorkSync product. No objections, requests, or further information requests were made.
+Transcript: assistant: Hi, this is Riya calling from In-Sync. Do you have thirty seconds? I have something quick to share.
+user:  thanks priya please stay on the line
+assistant:  Of course, Bhavesh! I appreciate your time. The reason I’m calling is that we work with operations heads and H R heads at companies like QuestCorp and Motherson. 
+
+In many Indian organizations, non-routine daily tasks often get assigned over WhatsApp and phone calls, which can lead to a lack of tracking and accountability. We’ve built a product called WorkSync that addresses this issue by pulling task assignments out of WhatsApp into one centralized place where you can see what’s done and what’s pending.
+
+Could I ask how big your team is and how you currently manage task assignments? Are you using WhatsApp, email, Excel, or another tool?
+
+---
+[dur 46s] The prospect is from TESLA TRANSFORMERS. The SDR introduced the product WorkSync and inquired about the team's size and current task management tools.
+Transcript: assistant: Hi, this is Riya calling from In-Sync. Do you have thirty seconds? I have something quick to share.
+user:  yeah please tell me
+assistant:  Thank you! The reason I’m calling is that in many Indian organizations, non-routine daily tasks often get assigned over WhatsApp and phone calls, which leads to a lack of tracking and accountability. 
+
+We’ve developed a product called WorkSync that addresses this issue. It pulls task assignments out of WhatsApp into one centralized place where you can easily see what’s done and what’s pending. 
+
+I’m curious, how big is your team at TESLA TRANSFORMERS, and how do you currently manage task assignments? Are you using WhatsApp, email, Excel, or another tool?
+
+---
+[dur 45s] SDR introduced WorkSync as a product to manage tasks moved from WhatsApp to a centralized platform; asked about team size and current task management tools.
+Transcript: assistant: Hi, this is Riya calling from In-Sync. Do you have thirty seconds? I have something quick to share.
+user:  thanks ria please stay on the line
+assistant:  Of course, I'm here! Thank you for your time. The reason I’m calling is that in most Indian organizations, non-routine daily tasks get assigned over WhatsApp and phone calls, which often leads to a lack of tracking and accountability. 
+
+We’ve developed a product called WorkSync that addresses this issue. It pulls task assignments out of WhatsApp into one central place where you can easily see what’s done and what’s still pending. 
+
+Can I ask how big your team is and how you currently manage task assignments? Are you using WhatsApp, email, Excel, or another tool?
+
+---
+[dur 43s] Prospect acknowledges the assistant and asks her to stay on the line; no other names or significant details provided.
+Transcript: assistant: Hi, this is Riya calling from In-Sync. Do you have thirty seconds? I have something quick to share.
+user:  thanks ria please stay on the line
+assistant:  Of course, take your time! I'm here when you're ready.
+
+---
+[dur 43s] The call is just starting; no substantive information was exchanged.
+Transcript: assistant: Hi, this is Riya calling from In-Sync. Do you have thirty seconds? I have something quick to share.
+user:  hello hello
+
+---
+[dur 37s] Caller identified as Riya from In-Sync. Call was an initial outreach with no further discussion.
+Transcript: assistant: Hi, this is Riya calling from In-Sync. Do you have thirty seconds? I have something quick to share.
+
+---
+[dur 36s] Only a brief greeting and initial question from the assistant; no meaningful conversation occurred.
+Transcript: assistant: Hi, this is Riya calling from In-Sync. Do you have thirty seconds? I have something quick to share.
+user: we
+assistant:  It seems like your message got cut off. Could you please repeat that? I'm here to help!
+
+---
+[dur 32s] Agent introduction only, no other information given.
+Transcript: assistant: Hi, this is Riya calling from In-Sync. Do you have thirty seconds? I have something quick to share.
+
+---
+[dur 32s] Prospect acknowledges the call and asks the agent to stay on the line; no names other than the agent's (Riya) mentioned, no intent signals or alternate contacts provided.
+Transcript: assistant: Hi, this is Riya calling from In-Sync. Do you have thirty seconds? I have something quick to share.
+user:  thanks ria please stay on the line
+assistant:  Of course, take your time! I'm here whenever you're ready.
+
+---
+[dur 31s] Agent introduced herself as Riya from In-Sync and requested thirty seconds to share information.
+Transcript: assistant: Hi, this is Riya calling from In-Sync. Do you have thirty seconds? I have something quick to share.
+
+---
+[dur 28s] Call just started, only introduction by agent Riya from In-Sync.
+Transcript: assistant: Hi, this is Riya calling from In-Sync. Do you have thirty seconds? I have something quick to share.
+
+---
+[dur 27s] Caller name is Riya from In-Sync. No other details were provided.
+Transcript: assistant: Hi, this is Riya calling from In-Sync. Do you have thirty seconds? I have something quick to share.
+
+---
+===== Outcome: callback (1 calls) =====
+[dur 29s] Prospect's name is Anurag; requested callback tomorrow instead of a demo or info request.
+Transcript: assistant: Hi, this is Riya calling from In-Sync. Do you have thirty seconds? I have something quick to share.
+user:  no
+assistant:  I understand, Anurag. If now isn’t a good time, when would be a better time for me to call back?
+user:  tomorrow
+assistant:  Great! What time works best for you tomorrow?
+
+---
+===== Outcome: not_interested (2 calls) =====
+[dur 28s] The prospect agreed to stay on the line and engage in the conversation; no other names or alternate contacts were mentioned.
+Transcript: assistant: Hi, this is Riya calling from In-Sync. Do you have thirty seconds? I have something quick to share.
+user:  thanks please stay on the line
+assistant:  Of course! Thank you for your patience. The reason I’m calling is that in many Indian organizations, non-routine daily tasks often get assigned over WhatsApp and phone calls, which can lead to a lack of tracking and accountability. 
+
+We’ve developed a product called WorkSync that addresses this issue by pulling task assignments out of WhatsApp into one centralized place where you can easily see what is done and what is still pending. 
+
+I’d love to learn a bit about your team. How big is your team, and how are you currently managing task assignments? Are you using WhatsApp, email, Excel, or another tool?
+
+---
+[dur 20s] Prospect named Anurag; declined to engage further but did not specify why or any other details.
+Transcript: assistant: Hi, this is Riya calling from In-Sync. Do you have thirty seconds? I have something quick to share.
+user:  no
+assistant:  I understand, Anurag. Just to clarify, is it that task tracking is not a priority right now, or do you have it handled internally? That will help me decide if I should follow up later.
+
+---

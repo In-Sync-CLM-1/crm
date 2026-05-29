@@ -1,3 +1,10 @@
+# Environment variables
+.env
+.env.*
+
+# Local migration scratch (may contain credentials)
+migration/
+
 # Logs
 logs
 *.log
@@ -22,26 +29,5 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-
-# Environment variables
-.env
-.env.local
-.env.*.local
-
-# Supabase migration working files (dumps, audit, verify) — never commit
-migration/
-
-# Cloudflare wrangler local state
-.wrangler/
-
-# Local agent / Claude config (per-machine)
-.claude/
-
-# Archived migration dumps and one-off scripts with hardcoded JWTs
-_archive_2026-05-22/
-
-# Ad-hoc scratch / seed / debug scripts (loose tokens often pasted here)
-tmp/
-
-# Large local data caches (regenerated on demand)
-.voices.json
+# Supabase CLI temp linked-project state (machine-local)
+supabase/.temp/
