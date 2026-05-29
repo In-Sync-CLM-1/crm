@@ -114,7 +114,7 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
   </div>
 </div>
 <script>
-const CONFIG={SUPABASE_URL:'https://mlvgqudcwlkolsbighnn.supabase.co',SUPABASE_ANON_KEY:'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1sdmdxdWRjd2xrb2xzYmlnaG5uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg5ODkzOTEsImV4cCI6MjA5NDU2NTM5MX0.azuJWfQ9ANcvgRPhSmoRCXYpN_xHe21DO07HGy0fjUk'};
+const CONFIG={SUPABASE_URL:'https://mlvgqudcwlkolsbighnn.supabase.co',SUPABASE_ANON_KEY:'sb_publishable_U5yMuEUTQPjh8BCHX5HYyA_-VqpQdFs'};
 function formatCurrency(p){var r=Math.round(p/100);if(Math.abs(r)>=100000)return'\\u20B9'+(r/100000).toFixed(2)+'L';return'\\u20B9'+r.toLocaleString('en-IN')}
 function formatCurrencyRupees(r){r=Math.round(r);if(Math.abs(r)>=100000)return'\\u20B9'+(r/100000).toFixed(2)+'L';return'\\u20B9'+r.toLocaleString('en-IN')}
 function formatPercent(d){return(d*100).toFixed(1)+'%'}
