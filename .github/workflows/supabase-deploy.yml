@@ -54,6 +54,6 @@ jobs:
         run: |
           case "${{ steps.changed.outputs.mode }}" in
             all) echo "Deploying all"; supabase functions deploy --project-ref "$SUPABASE_PROJECT_ID" ;;
-            changed) for s in ${{ steps.changed.outputs.slugs }}; do echo "Deploying $s"; supabase functions deploy "$s" --project-ref "$SUPABASE_PROJECT_ID"; done ;;
+            changed) for s in ${{ steps.changed.outputs.slugs }}; do if [ -d "supabase/functions/$s" ]; then echo "Deploying $s"; supabase functions deploy "$s" --project-ref "$SUPABASE_PROJECT_ID"; else echo "Skipping $s (removed from repo)"; fi; done ;;
             none) echo "No edge functions changed" ;;
           esac
