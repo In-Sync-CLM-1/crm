@@ -352,15 +352,22 @@ async function queryGoogleAds(
 ): Promise<Array<Record<string, unknown>>> {
   const cleanCustomerId = customerId.replace(/-/g, '');
 
+  // When the account is reached through a Manager (MCC) account, Google requires
+  // the manager's id in the login-customer-id header. Sourced from env, dashes stripped.
+  const loginCustomerId = Deno.env.get('GOOGLE_ADS_LOGIN_CUSTOMER_ID')?.replace(/-/g, '');
+
+  const headers: Record<string, string> = {
+    'Authorization': `Bearer ${accessToken}`,
+    'developer-token': developerToken,
+    'Content-Type': 'application/json',
+  };
+  if (loginCustomerId) headers['login-customer-id'] = loginCustomerId;
+
   const response = await fetch(
-    `https://googleads.googleapis.com/v16/customers/${cleanCustomerId}/googleAds:searchStream`,
+    `https://googleads.googleapis.com/v21/customers/${cleanCustomerId}/googleAds:searchStream`,
     {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'developer-token': developerToken,
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify({ query }),
     }
   );
