@@ -36,3 +36,4 @@ mkt-ga4-sync-daily|mkt-ga4-sync||0 4 * * *
 mkt-daily-lead-refresh|mkt-daily-lead-refresh||0 1 * * *
 mkt-outreach-executor|mkt-outreach-executor||*/5 * * * *
 call-intelligence-daily|transcribe-and-analyze-call||15 2 * * *
+health-sentinel|health-sentinel||30 2 * * *
