@@ -507,12 +507,15 @@ const AUTO_FIXERS: Record<string, (ref: string) => Promise<{ fixed: boolean; not
 async function notifyWhatsApp(text: string): Promise<string> {
   const tpl = Deno.env.get("HEALTH_WA_TEMPLATE");
   if (!tpl) return "wa skipped (no approved template yet)";
-  const sid = Deno.env.get("EXOTEL_SID"), key = Deno.env.get("EXOTEL_API_KEY"), tok = Deno.env.get("EXOTEL_API_TOKEN");
-  const waba = Deno.env.get("EXOTEL_WABA"), from = Deno.env.get("EXOTEL_SENDER_NUMBER");
+  // MUST use the WA-flavoured creds (SID without trailing 'm'); the bare EXOTEL_*
+  // pair is VOICE and 401s on the WhatsApp API. See exotel-voice-vs-wa-creds.
+  const sid = Deno.env.get("EXOTEL_WA_SID"), key = Deno.env.get("EXOTEL_WA_API_KEY"), tok = Deno.env.get("EXOTEL_WA_API_TOKEN");
+  const from = Deno.env.get("EXOTEL_SENDER_NUMBER");
+  if (!sid || !key || !tok || !from) return "wa skipped (WA creds missing)";
   try {
     const r = await fetch(`https://${key}:${tok}@api.exotel.com/v2/accounts/${sid}/messages`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ custom_data: "sentinel", whatsapp: { messages: [{ from, to: OPS_WA, content: { type: "template", template: { name: tpl, language: { code: "en" }, components: [{ type: "body", parameters: [{ type: "text", text: text.slice(0, 600) }] }] } }, waba_id: waba }] } }),
+      body: JSON.stringify({ custom_data: "sentinel", whatsapp: { messages: [{ from, to: OPS_WA, content: { type: "template", template: { name: tpl, language: { code: "en" }, components: [{ type: "body", parameters: [{ type: "text", text: text.slice(0, 600) }] }] } } }] } }),
     });
     return `wa ${r.status}`;
   } catch (e) { return `wa err ${e}`; }
