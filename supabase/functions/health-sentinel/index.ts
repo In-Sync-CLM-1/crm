@@ -186,6 +186,8 @@ type ModSpec =
   | { m: string; table: string; cols?: string[] }
   | { m: string; view: string; cols?: string[] }
   | { m: string; rpc: string };
+// Helper for existence-only module lists (no column assertions): [label, table][].
+const tbl = (pairs: [string, string][]): ModSpec[] => pairs.map(([m, table]) => ({ m, table }));
 const MODULE_MAP: Record<string, ModSpec[]> = {
   ejzjrvazegaxrhqizgaa: [ // globalcrm
     { m: "Dashboard", rpc: `get_dashboard_stats('${GC_ORG}'::uuid)` },
@@ -213,11 +215,150 @@ const MODULE_MAP: Record<string, ModSpec[]> = {
     { m: "Billing", table: "organization_subscriptions", cols: ["subscription_status", "wallet_balance", "next_billing_date"] },
     { m: "Reports", rpc: `get_pipeline_performance_report('${GC_ORG}'::uuid)` },
   ],
+  // The other products are NOT sales CRMs — each has its own modules. Maps below
+  // are built from each project's REAL table inventory (existence-probed; exact
+  // names, so no false reds — a red here means a table genuinely vanished).
+  rdhvkluvkieajtmpljyz: tbl([ // work (Work-Sync — task mgmt)
+    ["Tasks", "tasks"], ["Task milestones", "task_milestones"], ["Task comments", "task_comments"],
+    ["Task attachments", "task_attachments"], ["Task watchers", "task_watchers"], ["Support tickets", "support_tickets"],
+    ["Payments", "payments"], ["Teams", "teams"], ["Team members", "team_members"], ["Designations", "designations"],
+    ["Feature permissions", "feature_permissions"], ["Reporting hierarchy", "reporting_hierarchy"],
+    ["Notifications", "notifications"], ["Users", "profiles"], ["Roles", "user_roles"],
+  ]),
+  jmxpudhpdltktuupfbxs: tbl([ // fieldsync (field service)
+    ["Leads", "leads"], ["Lead activities", "lead_activities"], ["Customers", "customers"], ["Visits", "visits"],
+    ["Visit photos", "visit_photos"], ["Daily plans", "daily_plans"], ["Plan enrollments", "plan_enrollments"],
+    ["Order collections", "order_collections"], ["Invoices", "invoices"], ["Payments", "payment_transactions"],
+    ["Dispositions", "dispositions"], ["Sub-dispositions", "sub_dispositions"], ["Branches", "branches"],
+    ["Agent locations", "agent_locations"], ["Travel reimbursements", "travel_reimbursements"],
+    ["Incentive targets", "monthly_incentive_targets"], ["Attendance", "attendance"], ["Subscription plans", "subscription_plans"],
+    ["Form templates", "form_templates"], ["Visit checklists", "visit_checklist_templates"], ["Routes", "route_deviations"],
+    ["Users", "profiles"], ["Roles", "user_roles"],
+  ]),
+  gwfofzqrfpwojejjodgz: tbl([ // event (event mgmt)
+    ["Events", "events"], ["Sessions", "sessions"], ["Session speakers", "session_speakers"], ["Speakers", "speakers"],
+    ["Registrations", "registrations"], ["Attendee schedules", "attendee_schedules"], ["Check-ins", "check_ins"],
+    ["Invitations", "invitations"], ["Badges", "badges"], ["Badge awards", "badge_awards"], ["Certificates", "certificates"],
+    ["Certificate templates", "certificate_templates"], ["Rewards", "rewards"], ["Reward claims", "reward_claims"],
+    ["Meeting bookings", "meeting_bookings"], ["Meeting requests", "meeting_requests"], ["Meeting slots", "meeting_slots"],
+    ["Sponsors", "sponsors"], ["Content library", "content_library"], ["Landing pages", "landing_pages"],
+    ["Engagement scores", "engagement_scores"], ["Billing accounts", "billing_accounts"], ["Users", "profiles"], ["Roles", "user_roles"],
+  ]),
+  hmqwmmlqfrrktfsiowdh: tbl([ // expense
+    ["Expense claims", "travel_expense_claims"], ["Expense items", "travel_expense_items"], ["Teams", "teams"],
+    ["Team members", "team_members"], ["Org memberships", "org_memberships"], ["Users", "profiles"], ["Roles", "user_roles"],
+  ]),
+  fibpamjksquymscdlfal: tbl([ // vendorverification (vendor empanelment)
+    ["Vendors", "vendors"], ["Vendor documents", "vendor_documents"], ["Verifications", "vendor_verifications"],
+    ["Vendor users", "vendor_users"], ["Vendor invitations", "vendor_invitations"], ["Categories", "vendor_categories"],
+    ["Category documents", "category_documents"], ["Document types", "document_types"], ["Document analyses", "document_analyses"],
+    ["Consent records", "consent_records"], ["Data requests", "data_requests"], ["Fraud alerts", "fraud_alerts"],
+    ["Breach notifications", "breach_notifications"], ["Coupons", "coupons"], ["Subscriptions", "org_subscriptions"],
+    ["Billing", "billing_transactions"], ["WhatsApp", "whatsapp_messages"], ["WhatsApp templates", "whatsapp_templates"],
+    ["Webhooks", "webhook_endpoints"], ["Workflows", "workflow_assignments"], ["Tenants", "tenants"],
+    ["Users", "profiles"], ["Roles", "user_roles"],
+  ]),
+  zcmfxpknsybponbudyqb: tbl([ // smbconnect
+    ["Companies", "companies"], ["Members", "members"], ["Associations", "associations"],
+    ["Association managers", "association_managers"], ["Connections", "connections"], ["Posts", "posts"],
+    ["Post comments", "post_comments"], ["Events", "events"], ["Event registrations", "event_registrations"],
+    ["Event coupons", "event_coupons"], ["Email campaigns", "email_campaigns"], ["Email lists", "email_lists"],
+    ["Email templates", "email_templates"], ["Email conversations", "email_conversations"], ["WhatsApp", "whatsapp_messages"],
+    ["WhatsApp lists", "whatsapp_lists"], ["WhatsApp templates", "whatsapp_templates"], ["Chats", "chats"],
+    ["Messages", "messages"], ["Member invitations", "member_invitations"], ["Certifications", "certifications"],
+    ["Skills", "skills"], ["Key functionaries", "key_functionaries"], ["Analytics events", "analytics_events"],
+    ["Admin users", "admin_users"], ["Company admins", "company_admins"], ["Users", "profiles"],
+  ]),
+  htdwkhtfdifwajdkkpul: tbl([ // ats (applicant tracking)
+    ["Candidates", "candidates"], ["Candidate resumes", "candidate_resumes"], ["Jobs", "jobs"], ["Mandates", "mandates"],
+    ["Mandate candidates", "mandate_candidates"], ["Clients", "clients"], ["Pipeline stages", "pipeline_stages"],
+    ["Call logs", "call_logs"], ["Call dispositions", "call_dispositions"], ["Sites", "sites"],
+    ["Site coordinators", "site_coordinators"], ["Site headcount", "site_headcount_agreements"], ["General tasks", "general_tasks"],
+    ["Public applications", "public_job_applications"], ["Email templates", "email_templates"], ["SMS templates", "sms_templates"],
+    ["WhatsApp templates", "whatsapp_templates"], ["Teams", "teams"], ["Designations", "designations"],
+    ["Webhook connectors", "webhook_connectors"], ["Bulk import", "bulk_import_history"], ["Project teams", "project_team_members"],
+    ["Users", "profiles"], ["Roles", "user_roles"],
+  ]),
+  upnhhrhobvdmpfnldvgb: tbl([ // website (core marketing site)
+    ["Blogs", "blogs"], ["Contacts", "contacts"], ["Demo requests", "demo_requests"], ["Events", "events"],
+    ["Tickets", "tickets"], ["Support tickets", "support_tickets"], ["Tutorials", "tutorials"], ["Whitepapers", "whitepapers"],
+    ["Onboarding applications", "onboarding_applications"], ["Unanswered queries", "unanswered_queries"],
+    ["Chat logs", "chat_logs"], ["Users", "profiles"], ["Roles", "user_roles"],
+  ]),
 };
+
+// Canonical module catalog for the sibling CRM apps that don't have a hand-built
+// MODULE_MAP. Each module lists candidate relation names (to absorb name drift
+// across apps) and/or candidate RPC names. At runtime we probe ONLY the modules
+// whose table/view/function actually exists in that project — so it auto-fits
+// every app and never cries wolf about a module an app simply doesn't have.
+type CanonMod = { m: string; rels?: string[]; rpcs?: string[] };
+const CANONICAL: CanonMod[] = [
+  { m: "Dashboard", rpcs: ["get_dashboard_stats"] },
+  { m: "Contacts / Leads", rels: ["contacts", "leads"] },
+  { m: "Pipeline stages", rels: ["pipeline_stages", "stages"] },
+  { m: "Pipeline (disposition view)", rels: ["contact_latest_disposition"] },
+  { m: "Clients", rels: ["clients"] },
+  { m: "Calling", rels: ["call_logs", "calls"] },
+  { m: "Call dispositions", rels: ["call_dispositions", "dispositions"] },
+  { m: "WhatsApp", rels: ["whatsapp_messages", "whatsapp_logs"] },
+  { m: "Email", rels: ["email_conversations", "emails", "email_logs"] },
+  { m: "Chat", rels: ["chat_conversations", "conversations"] },
+  { m: "Templates", rels: ["communication_templates", "whatsapp_templates", "email_templates", "templates"] },
+  { m: "Notes", rels: ["notes", "contact_notes"] },
+  { m: "Tasks / Activities", rels: ["contact_activities", "activities", "tasks"] },
+  { m: "Calendar / Meetings", rels: ["meetings", "calendar_events", "company_holidays"] },
+  { m: "Attendance", rels: ["attendance_records", "attendance"] },
+  { m: "Leave", rels: ["leave_applications", "leave_requests", "leaves"] },
+  { m: "HR approvals", rels: ["attendance_regularizations", "hr_approvals", "approvals"] },
+  { m: "Users", rels: ["profiles"] },
+  { m: "Roles", rels: ["user_roles"] },
+  { m: "Teams", rels: ["teams"] },
+  { m: "Designations", rels: ["designations"] },
+  { m: "Custom fields", rels: ["custom_fields"] },
+  { m: "Forms", rels: ["forms"] },
+  { m: "Outbound webhooks", rels: ["outbound_webhooks", "webhooks"] },
+  { m: "Billing / Subscriptions", rels: ["organization_subscriptions", "subscriptions"] },
+];
+
+async function checkCanonicalModules(ref: string): Promise<Check[]> {
+  let relRows: any[], fnRows: any[];
+  try {
+    relRows = await sql(
+      ref,
+      "select table_name, table_type from information_schema.tables where table_schema='public'",
+    );
+    fnRows = await sql(ref, "select distinct proname from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public'");
+  } catch (e) {
+    return [{ label: "Modules", status: "warn", detail: `schema read failed: ${e}` }];
+  }
+  const relType: Record<string, string> = {};
+  for (const r of relRows) relType[r.table_name] = r.table_type; // 'BASE TABLE' | 'VIEW'
+  const fns = new Set(fnRows.map((r) => r.proname));
+
+  const out: Check[] = [];
+  for (const c of CANONICAL) {
+    const rel = (c.rels || []).find((r) => r in relType);
+    const fn = (c.rpcs || []).find((f) => fns.has(f));
+    if (!rel && !fn) continue; // module not present in this app — skip, don't flag
+    if (rel && relType[rel] === "VIEW") {
+      // Views can exist in the catalog but break at runtime — actually select.
+      try {
+        await sql(ref, `select 1 from "${rel}" limit 1`);
+        out.push({ label: `Module · ${c.m}`, status: "ok", detail: `${rel} (view) ok` });
+      } catch (e) {
+        out.push({ label: `Module · ${c.m}`, status: "fail", detail: `view "${rel}" broken: ${String(e).slice(0, 100)}` });
+      }
+    } else {
+      out.push({ label: `Module · ${c.m}`, status: "ok", detail: rel ? `${rel} present` : `rpc ${fn} present` });
+    }
+  }
+  return out;
+}
 
 async function checkModules(ref: string): Promise<Check[]> {
   const specs = MODULE_MAP[ref];
-  if (!specs) return [];
+  if (!specs) return await checkCanonicalModules(ref); // sibling apps: self-adapting catalog
   const out: Check[] = [];
 
   // One round-trip: pull every relevant table/view column from the catalog.
