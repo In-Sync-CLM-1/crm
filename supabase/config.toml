@@ -3,6 +3,9 @@ project_id = "mlvgqudcwlkolsbighnn"
 [functions.sentinel-ack]
 verify_jwt = false
 
+[functions.sentinel-call-webhook]
+verify_jwt = false
+
 [functions.mkt-product-manager]
 verify_jwt = false
 

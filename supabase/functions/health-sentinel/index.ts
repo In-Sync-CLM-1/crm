@@ -518,13 +518,15 @@ async function notifyWhatsApp(text: string): Promise<string> {
   } catch (e) { return `wa err ${e}`; }
 }
 
-async function notifyAiCall(text: string): Promise<string> {
+async function notifyAiCall(text: string, ackToken: string): Promise<string> {
   const agent = Deno.env.get("HEALTH_BOLNA_AGENT");
   if (!agent) return "call skipped (no ops agent yet)";
   try {
     const r = await fetch("https://api.bolna.ai/call", {
       method: "POST", headers: { Authorization: `Bearer ${Deno.env.get("BOLNA_API_KEY")}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ agent_id: agent, recipient_phone_number: OPS_WA, from_phone_number: "+911169323462", user_data: { alert: text.slice(0, 400) } }),
+      // ack_token round-trips as context_details so the call webhook can mark this
+      // exact incident acknowledged when the operator picks up and says "NOTED".
+      body: JSON.stringify({ agent_id: agent, recipient_phone_number: OPS_WA, from_phone_number: "+911169323462", user_data: { alert: text.slice(0, 400), ack_token: ackToken } }),
     });
     return `call ${r.status}`;
   } catch (e) { return `call err ${e}`; }
@@ -580,7 +582,7 @@ async function reconcile(results: { ref: string; name: string; checks: Check[] }
       await sendEmail(`🔴 ACTION NEEDED — ${f.system} on ${f.project} down`,
         `<div style="font-family:system-ui,Arial;font-size:15px"><p style="color:#b91c1c;font-weight:700">${line}</p><p><a href="${ackUrl}" style="background:#111;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none">✔ I'm on it — acknowledge</a></p><p style="color:#777;font-size:12px">You'll keep getting these (and an AI call) until you acknowledge or it's restored.</p></div>`);
       await notifyWhatsApp(line + ` Ack: ${ackUrl}`);
-      if ((inc.escalation_count ?? 0) >= 1) await notifyAiCall(line); // escalate to a call from the 2nd cycle
+      if ((inc.escalation_count ?? 0) >= 1) await notifyAiCall(line + ` Say NOTED to acknowledge.`, inc.ack_token); // escalate to a call from the 2nd cycle
       await sql(CRM_REF, `update sentinel_incidents set escalation_count=escalation_count+1, escalated_email_at=now(), updated_at=now() where id=${qs(inc.id)}`);
       openMsgs.push({ project: f.project, system: f.system, since: inc.first_failed_at, detail: f.detail });
     }
