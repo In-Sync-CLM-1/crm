@@ -1,0 +1,12 @@
+name = "worksync-ads-dashboard"
+main = "index.js"
+compatibility_date = "2024-11-01"
+workers_dev = true
+
+[[kv_namespaces]]
+binding = "DASH"
+id = "8f857a9b24dc4ae896aaf2edd7dd50ec"
+
+# Daily auto-refresh at 08:00 IST (02:30 UTC)
+[triggers]
+crons = ["30 2 * * *"]
