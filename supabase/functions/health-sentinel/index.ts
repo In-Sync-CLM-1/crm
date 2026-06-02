@@ -175,6 +175,92 @@ async function checkMarketing(ref: string): Promise<Check> {
   }
 }
 
+// --- module-wise checks ------------------------------------------------------
+// Each app's user-facing modules mapped to the REAL data layer that backs them,
+// so a broken migration / dropped column / dead view shows up as that specific
+// module going red (instead of a vague "project up"). Probes are read-only.
+//   table/view: assert it exists and the listed key columns are present
+//   rpc: actually execute it (read-only) and assert it doesn't error
+const GC_ORG = "61f7f96d-e80c-4d9b-a765-8eb32bd3c70d";
+type ModSpec =
+  | { m: string; table: string; cols?: string[] }
+  | { m: string; view: string; cols?: string[] }
+  | { m: string; rpc: string };
+const MODULE_MAP: Record<string, ModSpec[]> = {
+  ejzjrvazegaxrhqizgaa: [ // globalcrm
+    { m: "Dashboard", rpc: `get_dashboard_stats('${GC_ORG}'::uuid)` },
+    { m: "Contacts", table: "contacts", cols: ["first_name", "email", "phone", "status", "pipeline_stage_id"] },
+    { m: "Pipeline (disposition view)", view: "contact_latest_disposition" },
+    { m: "Pipeline stages", table: "pipeline_stages", cols: ["name", "stage_order", "probability", "is_active"] },
+    { m: "Clients", table: "clients", cols: ["first_name", "last_name", "email", "phone", "company"] },
+    { m: "Calling", table: "call_logs", cols: ["agent_id", "status", "conversation_duration", "disposition_id"] },
+    { m: "Call dispositions", table: "call_dispositions", cols: ["name", "category", "is_active"] },
+    { m: "Templates (WhatsApp)", table: "communication_templates", cols: ["template_name", "template_type", "status"] },
+    { m: "Templates (Email)", table: "email_templates", cols: ["is_active"] },
+    { m: "Chat / Messages", table: "chat_conversations", cols: ["name", "conversation_type"] },
+    { m: "Attendance", table: "attendance_records", cols: ["user_id", "date", "status", "sign_in_time"] },
+    { m: "Leave", table: "leave_applications", cols: ["user_id", "leave_type", "start_date", "status", "total_days"] },
+    { m: "Leave balances", table: "leave_balances" },
+    { m: "HR approvals", table: "attendance_regularizations", cols: ["user_id", "status"] },
+    { m: "Users", table: "user_roles", cols: ["role", "is_active", "org_id"] },
+    { m: "Teams", table: "teams", cols: ["name", "manager_id"] },
+    { m: "Designations", table: "designations", cols: ["name", "role", "is_active"] },
+    { m: "Approval matrix", table: "approval_rules", cols: ["approval_type_id"] },
+    { m: "Custom fields", table: "custom_fields", cols: ["field_name", "field_type", "field_order"] },
+    { m: "Forms", table: "forms", cols: ["name", "is_active", "connector_type"] },
+    { m: "Outbound webhooks", table: "outbound_webhooks", cols: ["name", "trigger_event", "webhook_url", "is_active"] },
+    { m: "Calendar", table: "contact_activities", cols: ["activity_type", "scheduled_at"] },
+    { m: "Billing", table: "organization_subscriptions", cols: ["subscription_status", "wallet_balance", "next_billing_date"] },
+    { m: "Reports", rpc: `get_pipeline_performance_report('${GC_ORG}'::uuid)` },
+  ],
+};
+
+async function checkModules(ref: string): Promise<Check[]> {
+  const specs = MODULE_MAP[ref];
+  if (!specs) return [];
+  const out: Check[] = [];
+
+  // One round-trip: pull every relevant table/view column from the catalog.
+  const rels = [...new Set(specs.flatMap((s) => ("table" in s ? [s.table] : "view" in s ? [s.view] : [])))];
+  const present: Record<string, Set<string>> = {};
+  if (rels.length) {
+    try {
+      const rows = await sql(
+        ref,
+        `select table_name, column_name from information_schema.columns where table_schema='public' and table_name in (${rels.map((r) => `'${r}'`).join(",")})`,
+      );
+      for (const r of rows) (present[r.table_name] ??= new Set()).add(r.column_name);
+    } catch (e) {
+      return [{ label: "Modules", status: "warn", detail: `catalog read failed: ${e}` }];
+    }
+  }
+
+  for (const s of specs) {
+    if ("rpc" in s) {
+      try {
+        await sql(ref, `select ${s.rpc}`);
+        out.push({ label: `Module · ${s.m}`, status: "ok", detail: "function executes" });
+      } catch (e) {
+        out.push({ label: `Module · ${s.m}`, status: "fail", detail: `RPC broken: ${String(e).slice(0, 120)}` });
+      }
+      continue;
+    }
+    const rel = "table" in s ? s.table : s.view;
+    const cols = present[rel];
+    if (!cols || cols.size === 0) {
+      out.push({ label: `Module · ${s.m}`, status: "fail", detail: `${"view" in s ? "view" : "table"} "${rel}" missing` });
+      continue;
+    }
+    const missing = (s.cols || []).filter((c) => !cols.has(c));
+    out.push(
+      missing.length
+        ? { label: `Module · ${s.m}`, status: "fail", detail: `"${rel}" missing column(s): ${missing.join(", ")}` }
+        : { label: `Module · ${s.m}`, status: "ok", detail: `${rel} ok` },
+    );
+  }
+  return out;
+}
+
 async function runProject(ref: string): Promise<{ ref: string; name: string; checks: Check[] }> {
   const m = META[ref] ?? { name: ref };
   const checks: Check[] = [];
@@ -185,6 +271,7 @@ async function runProject(ref: string): Promise<{ ref: string; name: string; che
     checks.push(await checkRlsExposure(ref));
     if (m.dialer) checks.push(...(await checkDialer(ref)));
     if (m.marketing) checks.push(await checkMarketing(ref));
+    checks.push(...(await checkModules(ref)));
   }
   return { ref, name: m.name, checks };
 }
@@ -281,9 +368,15 @@ Deno.serve(async (req) => {
       red: r.checks.filter((c) => c.status === "fail").length,
       amber: r.checks.filter((c) => c.status === "warn").length,
     }));
-    return new Response(JSON.stringify({ ok: true, subject, email: emailStatus, summary }, null, 2), {
-      headers: { "Content-Type": "application/json" },
-    });
+    const verbose = new URL(req.url).searchParams.get("verbose");
+    const body: any = { ok: true, subject, email: emailStatus, summary };
+    if (dryRun || verbose) {
+      const want = verbose && verbose !== "1" ? verbose : null; // filter to one project by name
+      body.detail = results
+        .filter((r) => !want || r.name.includes(want))
+        .map((r) => ({ project: r.name, checks: r.checks.map((c) => `${c.status === "ok" ? "OK" : c.status === "warn" ? "WARN" : "FAIL"} ${c.label}${c.status === "ok" ? "" : " — " + c.detail}`) }));
+    }
+    return new Response(JSON.stringify(body, null, 2), { headers: { "Content-Type": "application/json" } });
   } catch (e) {
     return new Response(JSON.stringify({ error: String(e) }), { status: 500 });
   }
