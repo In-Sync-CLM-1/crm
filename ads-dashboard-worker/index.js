@@ -40,8 +40,15 @@ async function computeSnapshot(env) {
   const spend = cost / 1e6, ctr = impr ? clicks / impr * 100 : 0, cpl = leads.length ? spend / leads.length : 0, cpd = demos ? spend / demos : 0;
   const live = status === 'ENABLED';
   let diagClass, diagText, digest;
+  // Track when it first went live, so we can tell "just launched / ads in review"
+  // apart from a genuine "live a while, still no impressions" targeting problem.
+  let liveAt = null, liveHrs = 0;
+  if (live) { liveAt = await env.DASH.get('wentLiveAt'); if (!liveAt) { liveAt = new Date().toISOString(); await env.DASH.put('wentLiveAt', liveAt); } liveHrs = (Date.now() - Date.parse(liveAt)) / 3.6e6; }
+  else { await env.DASH.delete('wentLiveAt'); }
+
   if (!live) { diagClass = 'paused'; diagText = 'Campaign is PAUSED — flip Track 1 live to start collecting data.'; digest = 'Track 1 (Direct-response Search) is built and paused. Nothing has spent yet. Flip it live to begin the mechanics test — the funnel and this dashboard will populate within hours.'; }
-  else if (impr === 0) { diagClass = 'warn'; diagText = 'No impressions yet → bids/keywords/volume. Fix targeting, not creative.'; digest = `Live, but zero impressions over ${DAYS}d. This is a targeting/volume issue (Indian B2B search volume is thin), not a creative one — raising bids / widening keywords.`; }
+  else if (impr === 0 && liveHrs < 36) { diagClass = 'paused'; diagText = `Just launched (${liveHrs < 1 ? 'minutes' : Math.round(liveHrs) + 'h'} ago) — ads in review. Impressions usually begin within a few hours.`; digest = `Track 1 went live ${liveHrs < 1 ? 'minutes' : Math.round(liveHrs) + ' hours'} ago. New ads sit in Google's review queue first, so zero impressions right now is expected — not a problem. The 3-day mechanics clock starts once they're serving.`; }
+  else if (impr === 0) { diagClass = 'warn'; diagText = 'No impressions yet → bids/keywords/volume. Fix targeting, not creative.'; digest = `Live ${Math.round(liveHrs)}h with zero impressions. Past the review window now — this is a targeting/volume issue (Indian B2B search volume is thin), not creative. Raising bids / widening keywords.`; }
   else if (clicks === 0) { diagClass = 'warn'; diagText = 'Impressions but no clicks → the ad/angle. This is the "swap the track" case.'; digest = `${impr} impressions, 0 clicks. The ad itself isn't pulling — this is the one case where we swap the creative track.`; }
   else if (leads.length === 0) { diagClass = 'warn'; diagText = 'Clicks but no leads → landing/form or intake. Mechanics fix.'; digest = `${clicks} clicks but no leads. People arrive and don't convert — checking the landing form & intake, not the ad.`; }
   else if (demos === 0) { diagClass = 'warn'; diagText = 'Leads but no demos → dialer/booking step. Mechanics fix.'; digest = `${leads.length} lead(s) in, but no demo booked yet. Checking the Riya call → booking step.`; }
