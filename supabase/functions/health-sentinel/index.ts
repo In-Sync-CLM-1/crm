@@ -478,6 +478,122 @@ async function sendEmail(subject: string, html: string) {
   return last;
 }
 
+// =================== CLOSED LOOP: auto-fix + incidents + escalation ==========
+const CRM_REF = "mlvgqudcwlkolsbighnn";
+const OPS_WA = "+917738919680";
+const ACK_BASE = `https://${CRM_REF}.supabase.co/functions/v1/sentinel-ack`;
+const qs = (s: any) => "'" + String(s ?? "").replace(/'/g, "''") + "'"; // SQL literal
+const ist = (s: string) =>
+  new Date(s).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false, day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+const mins = (from: string) => Math.max(1, Math.round((Date.now() - new Date(from).getTime()) / 60000));
+
+// AUTO-FIX REGISTRY — keyed by check label. Only SAFE, idempotent restorations
+// of a known-good state ("set it right"), never anything that builds/migrates.
+const AUTO_FIXERS: Record<string, (ref: string) => Promise<{ fixed: boolean; note: string }>> = {
+  "Registration email": async (ref) => {
+    const body = {
+      smtp_admin_email: "notifications@in-sync.co.in", smtp_host: "smtp.resend.com", smtp_port: "587",
+      smtp_user: "resend", smtp_pass: Deno.env.get("RESEND_API_KEY"), smtp_sender_name: "In-Sync",
+      smtp_max_frequency: 1, rate_limit_email_sent: 100,
+    };
+    const r = await fetch(`${MGMT}/v1/projects/${ref}/config/auth`, {
+      method: "PATCH", headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    return { fixed: r.status === 200, note: r.status === 200 ? "re-pointed signup email to Resend @100/hr" : `patch failed (${r.status})` };
+  },
+};
+
+// --- escalation channels (email live; WhatsApp + AI call gated until wired) ---
+async function notifyWhatsApp(text: string): Promise<string> {
+  const tpl = Deno.env.get("HEALTH_WA_TEMPLATE");
+  if (!tpl) return "wa skipped (no approved template yet)";
+  const sid = Deno.env.get("EXOTEL_SID"), key = Deno.env.get("EXOTEL_API_KEY"), tok = Deno.env.get("EXOTEL_API_TOKEN");
+  const waba = Deno.env.get("EXOTEL_WABA"), from = Deno.env.get("EXOTEL_SENDER_NUMBER");
+  try {
+    const r = await fetch(`https://${key}:${tok}@api.exotel.com/v2/accounts/${sid}/messages`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ custom_data: "sentinel", whatsapp: { messages: [{ from, to: OPS_WA, content: { type: "template", template: { name: tpl, language: { code: "en" }, components: [{ type: "body", parameters: [{ type: "text", text: text.slice(0, 600) }] }] } }, waba_id: waba }] } }),
+    });
+    return `wa ${r.status}`;
+  } catch (e) { return `wa err ${e}`; }
+}
+
+async function notifyAiCall(text: string): Promise<string> {
+  const agent = Deno.env.get("HEALTH_BOLNA_AGENT");
+  if (!agent) return "call skipped (no ops agent yet)";
+  try {
+    const r = await fetch("https://api.bolna.ai/call", {
+      method: "POST", headers: { Authorization: `Bearer ${Deno.env.get("BOLNA_API_KEY")}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ agent_id: agent, recipient_phone_number: OPS_WA, from_phone_number: "+911169323462", user_data: { alert: text.slice(0, 400) } }),
+    });
+    return `call ${r.status}`;
+  } catch (e) { return `call err ${e}`; }
+}
+
+// Reconcile current check results against stored incidents: auto-fix, open/resolve
+// (with outage windows), and escalate open un-fixable incidents until acknowledged.
+async function reconcile(results: { ref: string; name: string; checks: Check[] }[]) {
+  const open = await sql(CRM_REF, "select id, project, system, first_failed_at, correctable, acknowledged_at, escalation_count, ack_token from sentinel_incidents where status='open'");
+  const openByKey = new Map(open.map((r) => [`${r.project}||${r.system}`, r]));
+
+  const autoFixed: { project: string; system: string; detail: string; note: string }[] = [];
+  const failing: { project: string; system: string; detail: string; correctable: boolean }[] = [];
+
+  for (const r of results) {
+    for (const c of r.checks) {
+      if (c.status !== "fail") continue;
+      const fixer = AUTO_FIXERS[c.label];
+      if (fixer) {
+        const res = await fixer(r.ref).catch((e) => ({ fixed: false, note: String(e) }));
+        if (res.fixed) { autoFixed.push({ project: r.name, system: c.label, detail: c.detail, note: res.note }); continue; }
+        failing.push({ project: r.name, system: c.label, detail: `${c.detail} (auto-fix failed: ${res.note})`, correctable: true });
+      } else {
+        failing.push({ project: r.name, system: c.label, detail: c.detail, correctable: false });
+      }
+    }
+  }
+
+  const failKeys = new Set(failing.map((f) => `${f.project}||${f.system}`));
+  const restored: any[] = [], autoMsgs: any[] = [], openMsgs: any[] = [];
+
+  // Resolve incidents whose system recovered (human fix, or auto-fixed this run).
+  for (const [key, row] of openByKey) {
+    if (failKeys.has(key)) continue;
+    const af = autoFixed.find((a) => `${a.project}||${a.system}` === key);
+    await sql(CRM_REF, `update sentinel_incidents set status='resolved', resolved_at=now(), auto_fixed=${af ? "true" : "false"}, fix_note=${qs(af ? af.note : "recovered")}, updated_at=now() where id=${qs(row.id)}`);
+    restored.push({ project: row.project, system: row.system, from: row.first_failed_at, auto: !!af, note: af?.note });
+  }
+  // Open or refresh incidents for things still failing; escalate the un-fixable.
+  for (const f of failing) {
+    const key = `${f.project}||${f.system}`;
+    const ex = openByKey.get(key);
+    let inc = ex;
+    if (ex) {
+      await sql(CRM_REF, `update sentinel_incidents set last_seen_at=now(), detail=${qs(f.detail)}, correctable=${f.correctable}, updated_at=now() where id=${qs(ex.id)}`);
+    } else {
+      const ins = await sql(CRM_REF, `insert into sentinel_incidents(project,system,detail,correctable) values(${qs(f.project)},${qs(f.system)},${qs(f.detail)},${f.correctable}) returning id, ack_token, first_failed_at, escalation_count, acknowledged_at`);
+      inc = { ...ins[0], project: f.project, system: f.system };
+    }
+    if (!f.correctable && inc && !inc.acknowledged_at) {
+      const ackUrl = `${ACK_BASE}?token=${inc.ack_token}`;
+      const line = `${f.system} on ${f.project} is DOWN since ${ist(inc.first_failed_at)} IST (${mins(inc.first_failed_at)} min) — ${f.detail}. Needs a fix.`;
+      await sendEmail(`🔴 ACTION NEEDED — ${f.system} on ${f.project} down`,
+        `<div style="font-family:system-ui,Arial;font-size:15px"><p style="color:#b91c1c;font-weight:700">${line}</p><p><a href="${ackUrl}" style="background:#111;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none">✔ I'm on it — acknowledge</a></p><p style="color:#777;font-size:12px">You'll keep getting these (and an AI call) until you acknowledge or it's restored.</p></div>`);
+      await notifyWhatsApp(line + ` Ack: ${ackUrl}`);
+      if ((inc.escalation_count ?? 0) >= 1) await notifyAiCall(line); // escalate to a call from the 2nd cycle
+      await sql(CRM_REF, `update sentinel_incidents set escalation_count=escalation_count+1, escalated_email_at=now(), updated_at=now() where id=${qs(inc.id)}`);
+      openMsgs.push({ project: f.project, system: f.system, since: inc.first_failed_at, detail: f.detail });
+    }
+  }
+  // Same-run auto-fixes with no prior incident → audit row + "auto-corrected" note.
+  for (const a of autoFixed) {
+    if (openByKey.has(`${a.project}||${a.system}`)) continue;
+    await sql(CRM_REF, `insert into sentinel_incidents(project,system,detail,correctable,auto_fixed,status,resolved_at,fix_note) values(${qs(a.project)},${qs(a.system)},${qs(a.detail)},true,true,'resolved',now(),${qs(a.note)})`);
+    autoMsgs.push(a);
+  }
+  return { restored, autoMsgs, openMsgs };
+}
+
 Deno.serve(async (req) => {
   try {
     if (!token()) return new Response(JSON.stringify({ error: "MGMT_TOKEN not set" }), { status: 500 });
@@ -495,13 +611,36 @@ Deno.serve(async (req) => {
     results.sort((a, b) => a.name.localeCompare(b.name));
 
     const istDate = new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
-    const { subject, html } = buildEmail(results, istDate);
+    const url = new URL(req.url);
+    const dryRun = url.searchParams.get("dry") === "1";
+    let reqBody: any = {};
+    try { reqBody = await req.json(); } catch { /* no body */ }
+    const digest = url.searchParams.get("digest") === "1" || reqBody?.digest === true;
 
-    const dryRun = new URL(req.url).searchParams.get("dry") === "1";
-    let emailStatus = "skipped (dry run)";
+    // Closed loop: auto-fix correctable drift, open/resolve incidents with outage
+    // windows, escalate the un-fixable until acknowledged. (Read-only on dry run.)
+    let loop: any = { restored: [], autoMsgs: [], openMsgs: [] };
     if (!dryRun) {
+      loop = await reconcile(results);
+      // "Restored" notices — closes the loop for both auto-healed and human-fixed.
+      for (const r of loop.restored) {
+        const line = `${r.system} on ${r.project} failed ${ist(r.from)} IST → now (${mins(r.from)} min) and is ${r.auto ? "AUTO-corrected" : "restored"}${r.note ? ": " + r.note : ""}.`;
+        await sendEmail(`✅ RESTORED — ${r.system} on ${r.project}`, `<p style="font-family:system-ui,Arial;color:#15803d;font-weight:600;font-size:15px">${line}</p>`);
+        await notifyWhatsApp(line);
+      }
+      // Same-run auto-corrections (drift caught and put right before it bit you).
+      for (const a of loop.autoMsgs) {
+        const line = `🔧 ${a.system} on ${a.project} had drifted (${a.detail}) — auto-corrected: ${a.note}.`;
+        await sendEmail(`🔧 AUTO-FIXED — ${a.system} on ${a.project}`, `<p style="font-family:system-ui,Arial;color:#1d4ed8;font-size:15px">${line}</p>`);
+      }
+    }
+
+    // Full per-module digest only on the daily run (hourly runs just reconcile/escalate).
+    let emailStatus = "hourly watch (no digest)";
+    if (digest && !dryRun) {
+      const { subject, html } = buildEmail(results, istDate);
       const e = await sendEmail(subject, html);
-      emailStatus = `resend ${e.s}`;
+      emailStatus = `digest resend ${e.s}`;
     }
 
     const summary = results.map((r) => ({
@@ -509,10 +648,13 @@ Deno.serve(async (req) => {
       red: r.checks.filter((c) => c.status === "fail").length,
       amber: r.checks.filter((c) => c.status === "warn").length,
     }));
-    const verbose = new URL(req.url).searchParams.get("verbose");
-    const body: any = { ok: true, subject, email: emailStatus, summary };
+    const verbose = url.searchParams.get("verbose");
+    const body: any = {
+      ok: true, mode: digest ? "daily-digest" : dryRun ? "dry" : "hourly-watch", email: emailStatus,
+      loop: { auto_fixed: loop.autoMsgs.length, restored: loop.restored.length, escalated_open: loop.openMsgs.length }, summary,
+    };
     if (dryRun || verbose) {
-      const want = verbose && verbose !== "1" ? verbose : null; // filter to one project by name
+      const want = verbose && verbose !== "1" ? verbose : null;
       body.detail = results
         .filter((r) => !want || r.name.includes(want))
         .map((r) => ({ project: r.name, checks: r.checks.map((c) => `${c.status === "ok" ? "OK" : c.status === "warn" ? "WARN" : "FAIL"} ${c.label}${c.status === "ok" ? "" : " — " + c.detail}`) }));
