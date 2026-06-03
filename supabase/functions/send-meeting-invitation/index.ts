@@ -43,17 +43,6 @@ Deno.serve(async (req) => {
       throw new Error('No meeting link found');
     }
 
-    // Get pricing
-    const { data: pricing, error: pricingError } = await supabaseClient
-      .from('subscription_pricing')
-      .select('email_cost_per_unit')
-      .eq('is_active', true)
-      .single();
-
-    if (pricingError) {
-      throw new Error('Failed to fetch pricing');
-    }
-
     // Get email settings
     const { data: emailSettings, error: settingsError } = await supabaseClient
       .from('email_settings')
@@ -157,21 +146,6 @@ Deno.serve(async (req) => {
           console.error(`Failed to send email to ${participant.email}:`, errorText);
           errors.push(`${participant.email}: ${errorText}`);
           continue;
-        }
-
-        // Deduct from wallet
-        const walletResult = await supabaseClient.rpc('deduct_from_wallet', {
-          _org_id: activity.org_id,
-          _amount: pricing.email_cost_per_unit,
-          _service_type: 'email',
-          _reference_id: activityId,
-          _quantity: 1,
-          _unit_cost: pricing.email_cost_per_unit,
-          _user_id: activity.created_by
-        });
-
-        if (!walletResult.data?.success) {
-          console.error('Wallet deduction failed:', walletResult.data);
         }
 
         sentCount++;

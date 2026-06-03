@@ -57,8 +57,6 @@ const TARGET_TABLES = [
     { value: "client_invoices", label: "Client Invoices" },
     { value: "client_documents", label: "Client Documents" },
     { value: "client_alternate_contacts", label: "Client Alternate Contacts" },
-    { value: "payment_transactions", label: "Payment Transactions" },
-    { value: "wallet_transactions", label: "Wallet Transactions" },
     { value: "gst_payment_tracking", label: "GST Payment Tracking" },
   ]},
   { group: "Pipeline & Tasks", items: [
@@ -141,10 +139,6 @@ const TARGET_TABLES = [
     { value: "campaign_insights", label: "Campaign Insights" },
     { value: "revenue_goals", label: "Revenue Goals" },
     { value: "saved_reports", label: "Saved Reports" },
-  ]},
-  { group: "Subscriptions", items: [
-    { value: "organization_subscriptions", label: "Organization Subscriptions" },
-    { value: "subscription_invoices", label: "Subscription Invoices" },
   ]},
   { group: "API & Integrations", items: [
     { value: "api_keys", label: "API Keys" },

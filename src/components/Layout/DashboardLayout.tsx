@@ -27,7 +27,6 @@ import {
 import { useNotification } from "@/hooks/useNotification";
 import { OnboardingDialog } from "@/components/Onboarding/OnboardingDialog";
 import { useFeatureAccess } from "@/hooks/useFeatureAccess";
-import SubscriptionStatusBanner from "@/components/Subscription/SubscriptionStatusBanner";
 import { useModuleTracking } from "@/hooks/useModuleTracking";
 import { useTopModules } from "@/hooks/useTopModules";
 import { NotificationBell } from "./NotificationBell";
@@ -407,7 +406,6 @@ function DashboardLayout({ children }: DashboardLayoutProps) {
             <NotificationBell />
           </div>
           <OfflineBanner />
-          <SubscriptionStatusBanner />
           <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4 lg:p-6">
             {children}
           </div>

@@ -48,9 +48,8 @@ const ALLOWED_TABLES = [
   "blog_posts",
   // API Keys
   "api_keys", "api_key_usage_logs",
-  // Subscriptions & Billing
-  "organization_subscriptions", "subscription_invoices", "wallet_transactions",
-  "service_usage_logs", "subscription_pricing",
+  // Usage metering
+  "service_usage_logs",
   // Bulk Import
   "bulk_import_history",
   // Notifications

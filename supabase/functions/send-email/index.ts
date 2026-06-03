@@ -250,25 +250,6 @@ serve(async (req) => {
 
     console.log("Email sent successfully:", emailData);
 
-    // Use shared service role client for wallet deduction
-    const supabaseServiceClient = getSupabaseClient();
-
-    // Deduct email cost from wallet
-    const { data: deductResult, error: deductError } = await supabaseServiceClient.rpc('deduct_from_wallet', {
-      _org_id: profile.org_id,
-      _amount: 0.10, // Get from pricing
-      _service_type: 'email',
-      _reference_id: null, // Will be updated after logging
-      _quantity: 1,
-      _unit_cost: 0.10,
-      _user_id: user.id
-    });
-
-    if (deductError || !deductResult?.success) {
-      console.warn('Wallet deduction failed:', deductError || deductResult);
-      // Email was sent, but wallet deduction failed - log but don't fail the request
-    }
-
     // Log email to email_conversations table
     console.log('[send-email] Logging email to database...');
     const { error: logError } = await supabaseClient

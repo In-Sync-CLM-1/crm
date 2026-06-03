@@ -122,22 +122,6 @@ Deno.serve(async (req) => {
       .select()
       .single();
 
-    // Deduct WhatsApp cost from wallet
-    const supabaseServiceClient = getSupabaseClient();
-    const { data: deductResult, error: deductError } = await supabaseServiceClient.rpc('deduct_from_wallet', {
-      _org_id: orgId,
-      _amount: 1.00,
-      _service_type: 'whatsapp',
-      _reference_id: messageRecord?.id,
-      _quantity: 1,
-      _unit_cost: 1.00,
-      _user_id: user.id,
-    });
-
-    if (deductError || !deductResult?.success) {
-      console.warn('Wallet deduction failed:', deductError || deductResult);
-    }
-
     // Log activity
     await supabaseClient.from('contact_activities').insert({
       org_id: orgId,
