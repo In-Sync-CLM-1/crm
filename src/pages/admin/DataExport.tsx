@@ -81,8 +81,8 @@ const EXPORT_TABLES: { category: string; tables: string[] }[] = [
     tables: ["custom_fields", "api_keys", "api_key_usage_logs"],
   },
   {
-    category: "Subscriptions & Billing",
-    tables: ["organization_subscriptions", "subscription_invoices", "wallet_transactions", "service_usage_logs", "subscription_pricing"],
+    category: "Usage Metering",
+    tables: ["service_usage_logs"],
   },
   {
     category: "Other",

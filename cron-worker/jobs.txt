@@ -1,7 +1,4 @@
 retry-failed-whatsapp-messages|rpc:trigger_retry_failed_whatsapp||0 * * * *
-daily-subscription-check|subscription-status-checker||0 1 * * *
-monthly-invoice-generation|generate-monthly-invoices||0 2 1 * *
-daily-payment-reminders|send-payment-reminders||0 10 * * *
 automation-email-sender|automation-email-sender||*/5 * * * *
 check-inactive-contacts|rpc:check_inactive_contacts||0 9 * * *
 process-time-based-triggers|rpc:process_time_based_triggers||0 8 * * *

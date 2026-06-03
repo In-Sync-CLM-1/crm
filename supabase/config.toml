@@ -34,9 +34,6 @@ verify_jwt = false
 [functions.mkt-bolna-webhook]
 verify_jwt = false
 
-[functions.razorpay-webhook]
-verify_jwt = false
-
 [functions.mkt-evolve-icp]
 verify_jwt = false
 
@@ -134,9 +131,6 @@ verify_jwt = false
 verify_jwt = true
 
 [functions.delete-user]
-verify_jwt = true
-
-[functions.send-subscription-email]
 verify_jwt = true
 
 [functions.google-calendar-oauth]

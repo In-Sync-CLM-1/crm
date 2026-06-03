@@ -383,7 +383,7 @@ async function collectOrgMetrics(
 }
 
 // ---------------------------------------------------------------------------
-// 1. Revenue metrics from subscription_invoices and client_invoices
+// 1. Revenue metrics from client_invoices
 // ---------------------------------------------------------------------------
 async function collectRevenueMetrics(
   supabase: ReturnType<typeof getSupabaseClient>,
@@ -391,29 +391,20 @@ async function collectRevenueMetrics(
   periodStartISO: string,
   periodEndISO: string,
 ) {
-  // Fetch all subscription invoices for active MRR (paid status)
-  const [activeSubsRes, weekInvoicesRes] = await Promise.all([
-    supabase
-      .from('subscription_invoices')
-      .select('total_amount, payment_status')
-      .eq('org_id', orgId)
-      .eq('payment_status', 'paid'),
-    supabase
-      .from('client_invoices')
-      .select('amount, status, document_type, created_at, notes')
-      .eq('org_id', orgId)
-      .eq('document_type', 'invoice')
-      .gte('created_at', periodStartISO)
-      .lte('created_at', periodEndISO),
-  ]);
+  // SaaS subscription billing was removed; movement metrics below are derived
+  // from client invoices only.
+  const { data: weekInvoicesData } = await supabase
+    .from('client_invoices')
+    .select('amount, status, document_type, created_at, notes')
+    .eq('org_id', orgId)
+    .eq('document_type', 'invoice')
+    .gte('created_at', periodStartISO)
+    .lte('created_at', periodEndISO);
 
-  const activeSubs = activeSubsRes.data || [];
-  const weekInvoices = weekInvoicesRes.data || [];
+  const weekInvoices = weekInvoicesData || [];
 
-  // MRR total: sum of all active subscription amounts (convert rupees to paise)
-  const mrrTotal = Math.round(
-    activeSubs.reduce((sum, inv) => sum + (Number(inv.total_amount) || 0), 0) * 100
-  );
+  // No recurring subscription MRR in an internal CRM.
+  const mrrTotal = 0;
 
   // Categorize week's invoices by notes/type heuristics (paise)
   let mrrNew = 0;
@@ -728,18 +719,7 @@ async function collectRenewalMetrics(
 ) {
   // Renewal rate: paid invoices vs total invoices in last quarter
   const threeMonthsAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
-  const [totalSubsRes, paidSubsRes, crossSellRes, totalClientsRes] = await Promise.all([
-    supabase
-      .from('subscription_invoices')
-      .select('id', { count: 'exact', head: true })
-      .eq('org_id', orgId)
-      .gte('created_at', threeMonthsAgo),
-    supabase
-      .from('subscription_invoices')
-      .select('id', { count: 'exact', head: true })
-      .eq('org_id', orgId)
-      .eq('payment_status', 'paid')
-      .gte('created_at', threeMonthsAgo),
+  const [crossSellRes, totalClientsRes] = await Promise.all([
     // Cross-sell: clients with >1 distinct invoice this quarter
     supabase
       .from('client_invoices')
@@ -755,9 +735,8 @@ async function collectRenewalMetrics(
       .eq('status', 'active'),
   ]);
 
-  const totalSubs = totalSubsRes.count || 0;
-  const paidSubs = paidSubsRes.count || 0;
-  const renewalRate = totalSubs > 0 ? round4(paidSubs / totalSubs) : null;
+  // SaaS subscription billing was removed; no subscription renewal rate.
+  const renewalRate = null;
 
   // Cross-sell rate: clients with multiple invoices / total active clients
   const invoiceClients = crossSellRes.data || [];

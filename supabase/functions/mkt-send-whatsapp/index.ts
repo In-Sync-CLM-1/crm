@@ -304,21 +304,6 @@ Deno.serve(async (req) => {
       details: { template_name: (templateData as any)?.name, phone: formattedPhone },
     });
 
-    // Deduct wallet cost
-    try {
-      await supabase.rpc('deduct_from_wallet', {
-        _org_id: orgId,
-        _amount: 1.00,
-        _service_type: 'whatsapp',
-        _reference_id: action_id,
-        _quantity: 1,
-        _unit_cost: 1.00,
-        _user_id: null,
-      });
-    } catch (err) {
-      console.warn('[mkt-send-whatsapp] Wallet deduction failed:', err);
-    }
-
     await logger.info('whatsapp-sent', {
       lead_id,
       action_id,

@@ -205,12 +205,6 @@ Deno.serve(async (req) => {
       console.error('Error fetching activities for reminders:', activitiesError);
     } else if (activities && activities.length > 0) {
       console.log(`Found ${activities.length} activities needing reminders`);
-      
-      const { data: pricing } = await supabaseClient
-        .from('subscription_pricing')
-        .select('email_cost_per_unit')
-        .eq('is_active', true)
-        .single();
 
       const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
       
@@ -296,19 +290,6 @@ Deno.serve(async (req) => {
                   html: emailHtml
                 })
               });
-
-              // Deduct from wallet
-              if (pricing) {
-                await supabaseClient.rpc('deduct_from_wallet', {
-                  _org_id: activity.org_id,
-                  _amount: pricing.email_cost_per_unit,
-                  _service_type: 'email',
-                  _reference_id: activity.id,
-                  _quantity: 1,
-                  _unit_cost: pricing.email_cost_per_unit,
-                  _user_id: activity.created_by
-                });
-              }
             } catch (emailError) {
               console.error(`Failed to send reminder to ${recipient.email}:`, emailError);
             }
