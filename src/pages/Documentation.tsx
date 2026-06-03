@@ -158,7 +158,7 @@ const SystemOverview = () => (
           },
           {
             title: "Forms & Connectors",
-            desc: "Dynamic form builder with webhook integrations (IndiaMART, generic webhooks) and rate limiting.",
+            desc: "Dynamic form builder with generic webhook integrations and rate limiting.",
             lines: "~1,900 LOC"
           },
           {
@@ -285,7 +285,7 @@ const Architecture = () => (
             <li>• Exotel calling integration (make-call, webhooks, recordings, sync)</li>
             <li>• Email sending via Resend API (bulk & single)</li>
             <li>• WhatsApp messaging via Exotel API</li>
-            <li>• Webhook receivers (IndiaMART, generic webhooks)</li>
+            <li>• Webhook receivers (generic webhooks)</li>
             <li>• AI-powered analytics and insights</li>
             <li>• Queue processing for campaigns</li>
           </ul>
@@ -296,7 +296,6 @@ const Architecture = () => (
           <ul className="text-sm space-y-1 text-muted-foreground">
             <li>• <strong>Exotel</strong> - Cloud telephony & WhatsApp Business API</li>
             <li>• <strong>Resend</strong> - Transactional email delivery</li>
-            <li>• <strong>IndiaMART</strong> - Lead generation webhook</li>
           </ul>
         </div>
       </div>
@@ -771,18 +770,6 @@ const ApiReference = () => (
         <div className="border-l-4 border-orange-500 pl-4">
           <div className="flex items-center gap-2 mb-2">
             <span className="px-2 py-1 bg-orange-500/20 text-orange-700 dark:text-orange-300 rounded text-xs font-mono">POST</span>
-            <code className="text-sm">/indiamart-webhook</code>
-          </div>
-          <p className="text-sm text-muted-foreground mb-2">Receive leads from IndiaMART</p>
-          <div className="bg-muted p-3 rounded text-xs">
-            <div className="font-semibold mb-1">Expected Payload:</div>
-            <pre>{`IndiaMART lead JSON format`}</pre>
-          </div>
-        </div>
-
-        <div className="border-l-4 border-orange-500 pl-4">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="px-2 py-1 bg-orange-500/20 text-orange-700 dark:text-orange-300 rounded text-xs font-mono">POST</span>
             <code className="text-sm">/webhook-receiver</code>
           </div>
           <p className="text-sm text-muted-foreground mb-2">Generic webhook endpoint for form submissions</p>
@@ -1197,47 +1184,6 @@ const Integrations = () => (
               </div>
             ))}
           </div>
-        </div>
-      </div>
-    </Card>
-
-    <Card className="p-6">
-      <h3 className="text-xl font-semibold mb-4">IndiaMART (Lead Generation)</h3>
-      <div className="space-y-4">
-        <div>
-          <h4 className="font-semibold mb-2">Overview</h4>
-          <p className="text-sm text-muted-foreground">
-            B2B marketplace integration for automatic lead capture
-          </p>
-        </div>
-
-        <div>
-          <h4 className="font-semibold mb-2">Webhook Integration</h4>
-          <p className="text-sm text-muted-foreground mb-2">
-            Configure IndiaMART to send leads to webhook endpoint
-          </p>
-          <div className="bg-muted p-3 rounded text-xs font-mono">
-            <pre>POST https://your-domain.com/functions/v1/indiamart-webhook</pre>
-          </div>
-        </div>
-
-        <div>
-          <h4 className="font-semibold mb-2">Lead Data Captured</h4>
-          <div className="grid grid-cols-2 gap-2 text-sm">
-            {["Name", "Email", "Phone", "Company", "Product interest", "Message", "Location", "Lead timestamp"].map((field) => (
-              <div key={field} className="flex items-center gap-2">
-                <div className="h-1.5 w-1.5 rounded-full bg-orange-500" />
-                {field}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <h4 className="font-semibold mb-2">Auto-Processing</h4>
-          <p className="text-sm text-muted-foreground">
-            Leads automatically create contacts and assign to pipeline stage
-          </p>
         </div>
       </div>
     </Card>

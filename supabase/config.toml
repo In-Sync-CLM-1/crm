@@ -74,9 +74,6 @@ verify_jwt = true
 [functions.analyze-lead]
 verify_jwt = true
 
-[functions.indiamart-webhook]
-verify_jwt = false
-
 [functions.sync-exotel-whatsapp-templates]
 verify_jwt = true
 

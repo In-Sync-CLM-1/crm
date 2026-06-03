@@ -263,7 +263,7 @@ export default function Connectors() {
                       id="name"
                       value={dialog.formData.name}
                       onChange={(e) => dialog.updateFormData({ name: e.target.value })}
-                      placeholder="e.g., IndiaMART Webhook"
+                      placeholder="e.g., Lead Capture Webhook"
                       required
                     />
                   </div>

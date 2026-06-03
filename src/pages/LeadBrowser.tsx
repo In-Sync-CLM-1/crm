@@ -152,7 +152,7 @@ type SortField = "name" | "email" | "company" | "source" | "status" | "created_a
 type SortDir = "asc" | "desc";
 
 const LEAD_STATUSES = ["new", "enriched", "scored", "enrolled", "converted", "disqualified"] as const;
-const LEAD_SOURCES = ["apollo", "native", "google_ads", "indiamart", "website", "referral", "manual", "import"] as const;
+const LEAD_SOURCES = ["apollo", "native", "google_ads", "website", "referral", "manual", "import"] as const;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -185,8 +185,6 @@ function sourceColor(source: string): string {
       return "bg-indigo-100 text-indigo-700 border-indigo-200";
     case "google_ads":
       return "bg-red-100 text-red-700 border-red-200";
-    case "indiamart":
-      return "bg-orange-100 text-orange-700 border-orange-200";
     case "website":
       return "bg-sky-100 text-sky-700 border-sky-200";
     case "referral":
