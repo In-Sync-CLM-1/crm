@@ -31,3 +31,7 @@ dist-ssr
 *.sw?
 # Supabase CLI temp linked-project state (machine-local)
 supabase/.temp/
+
+# leaked-key cleanup 2026-06-03 — never track these again
+_archive*/
+tmp/
