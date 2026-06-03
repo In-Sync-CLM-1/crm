@@ -38,3 +38,4 @@ mkt-outreach-executor|mkt-outreach-executor||*/5 * * * *
 call-intelligence-daily|transcribe-and-analyze-call||15 2 * * *
 health-sentinel|health-sentinel|{"digest":true}|30 2 * * *
 health-sentinel-watch|health-sentinel||0 * * * *
+sentinel-tripwire|sentinel-tripwire||0 0,6,12,18 * * *

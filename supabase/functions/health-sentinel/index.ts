@@ -487,6 +487,15 @@ const ist = (s: string) =>
   new Date(s).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false, day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 const mins = (from: string) => Math.max(1, Math.round((Date.now() - new Date(from).getTime()) / 60000));
 
+// Stamp the Sentinel's own pulse so sentinel-tripwire can alarm on its absence.
+// Best-effort: a heartbeat write failing must never break the run, but it WILL
+// (correctly) let the tripwire fire — silence is exactly what it watches for.
+async function heartbeat(kind: "watch" | "digest", detail: Record<string, unknown>) {
+  try {
+    await sql(CRM_REF, `insert into sentinel_heartbeat(kind,last_ok_at,detail,updated_at) values(${qs(kind)},now(),${qs(JSON.stringify(detail))}::jsonb,now()) on conflict (kind) do update set last_ok_at=now(), detail=excluded.detail, updated_at=now()`);
+  } catch (_) { /* tripwire will catch the resulting staleness */ }
+}
+
 // AUTO-FIX REGISTRY — keyed by check label. Only SAFE, idempotent restorations
 // of a known-good state ("set it right"), never anything that builds/migrates.
 const AUTO_FIXERS: Record<string, (ref: string) => Promise<{ fixed: boolean; note: string }>> = {
@@ -646,7 +655,19 @@ Deno.serve(async (req) => {
       const { subject, html } = buildEmail(results, istDate);
       const e = await sendEmail(subject, html);
       emailStatus = `digest resend ${e.s}`;
+      // Self-heartbeat: only stamp when the digest email ACTUALLY sent (2xx), so
+      // sentinel-tripwire can alarm if the morning report ever goes missing again.
+      if (e.s >= 200 && e.s < 300) {
+        const reds = results.reduce((a, r) => a + r.checks.filter((c) => c.status === "fail").length, 0);
+        const ambers = results.reduce((a, r) => a + r.checks.filter((c) => c.status === "warn").length, 0);
+        await heartbeat("digest", { resend: e.s, projects: results.length, reds, ambers });
+      }
     }
+
+    // Watch heartbeat: the function reached end-to-end this run. This is the
+    // pulse that goes stale fastest if the whole Sentinel is dead (e.g. a 401'd
+    // invoker means we never get here at all), so the tripwire catches it soonest.
+    if (!dryRun) await heartbeat("watch", { mode: digest ? "digest" : "watch" });
 
     const summary = results.map((r) => ({
       project: r.name,

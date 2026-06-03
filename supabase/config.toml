@@ -3,6 +3,11 @@ project_id = "mlvgqudcwlkolsbighnn"
 [functions.sentinel-ack]
 verify_jwt = false
 
+# Watcher-for-the-watchman. MUST stay verify_jwt=false: that is what makes it
+# immune to the exact 401 that silenced the Sentinel on 2026-06-03.
+[functions.sentinel-tripwire]
+verify_jwt = false
+
 [functions.sentinel-call-webhook]
 verify_jwt = false
 
