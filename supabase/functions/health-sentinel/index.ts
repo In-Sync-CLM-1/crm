@@ -23,20 +23,24 @@ const FROM = "In-Sync Health Sentinel <notifications@in-sync.co.in>";
 // Per-project metadata. Projects not listed here still get the generic checks
 // (a brand-new project is covered automatically); listed flags add specialised
 // checks. Keep this in sync with the org as products are added.
-const META: Record<string, { name: string; dialer?: boolean; marketing?: boolean }> = {
-  mlvgqudcwlkolsbighnn: { name: "crm (core)", marketing: true },
-  ejzjrvazegaxrhqizgaa: { name: "globalcrm", dialer: true },
-  rdhvkluvkieajtmpljyz: { name: "work" },
-  jmxpudhpdltktuupfbxs: { name: "fieldsync" },
-  gwfofzqrfpwojejjodgz: { name: "event" },
-  htdwkhtfdifwajdkkpul: { name: "ats" },
-  hmqwmmlqfrrktfsiowdh: { name: "expense" },
-  fibpamjksquymscdlfal: { name: "vendorverification" },
-  unmdhcjrplwntqjiciiz: { name: "wa" },
-  xpndsoozxjrvcwhauunh: { name: "email" },
-  zcmfxpknsybponbudyqb: { name: "smbconnect" },
-  ufwvyybrctjpwipbveqe: { name: "RMPL" },
-  upnhhrhobvdmpfnldvgb: { name: "website" },
+//   web: the live URL real visitors hit. Drives the frontend render probe.
+//        undefined → flagged amber as "not monitored" (so a coverage gap is
+//        never silent — this is the lesson from the fieldsync blank-screen
+//        outage). Set web:null to intentionally opt a backend-only project out.
+const META: Record<string, { name: string; dialer?: boolean; marketing?: boolean; web?: string | null }> = {
+  mlvgqudcwlkolsbighnn: { name: "crm (core)", marketing: true, web: "https://crm.in-sync.co.in" },
+  ejzjrvazegaxrhqizgaa: { name: "globalcrm", dialer: true, web: "https://globalcrm.in-sync.co.in" },
+  rdhvkluvkieajtmpljyz: { name: "work", web: "https://work.in-sync.co.in" },
+  jmxpudhpdltktuupfbxs: { name: "fieldsync", web: "https://field.in-sync.co.in" },
+  gwfofzqrfpwojejjodgz: { name: "event", web: "https://event.in-sync.co.in" },
+  htdwkhtfdifwajdkkpul: { name: "ats", web: "https://ats-6t2.pages.dev" },
+  hmqwmmlqfrrktfsiowdh: { name: "expense", web: "https://expense.in-sync.co.in" },
+  fibpamjksquymscdlfal: { name: "vendorverification", web: "https://vendorverification.in-sync.co.in" },
+  unmdhcjrplwntqjiciiz: { name: "wa", web: "https://wa.in-sync.co.in" },
+  xpndsoozxjrvcwhauunh: { name: "email", web: "https://email.in-sync.co.in" },
+  zcmfxpknsybponbudyqb: { name: "smbconnect", web: "https://smbconnect.in" },
+  ufwvyybrctjpwipbveqe: { name: "RMPL", web: "https://rmpl-sync.pages.dev" },
+  upnhhrhobvdmpfnldvgb: { name: "website", web: "https://in-sync.co.in" },
 };
 
 type Status = "ok" | "fail" | "warn";
@@ -172,6 +176,82 @@ async function checkMarketing(ref: string): Promise<Check> {
     };
   } catch (e) {
     return { label: "Marketing engine live", status: "warn", detail: String(e) };
+  }
+}
+
+// --- frontend render probe ---------------------------------------------------
+// The blind spot that let fieldsync go dark mid-demo: every other check asserts
+// the DATABASE/backend heartbeat, but a blank-screen SPA has a perfectly healthy
+// backend — it dies in the browser because the build shipped with blank VITE_*
+// env (createClient throws → white screen for every visitor). The server still
+// returns 200 with a valid HTML shell, so a dumb HTTP check sees "up". We catch
+// it by asserting the project's Supabase ref is actually BAKED INTO the shipped
+// JS bundle — its absence is the exact signature of that build-env-stripping.
+//
+// A real-browser User-Agent is mandatory: the Cloudflare managed-challenge 403s
+// any non-"Mozilla" UA, so a bare fetch sees the challenge page, not the app.
+const BROWSER_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36";
+
+async function fetchT(url: string, ms: number, init?: RequestInit): Promise<Response> {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), ms);
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: ctl.signal,
+      headers: { "User-Agent": BROWSER_UA, ...(init?.headers || {}) },
+      redirect: "follow",
+    });
+  } finally { clearTimeout(t); }
+}
+
+async function checkFrontend(ref: string, web: string): Promise<Check> {
+  const L = "Frontend render";
+  try {
+    const r = await fetchT(web, 15000, { headers: { Accept: "text/html" } });
+    const html = await r.text();
+    if (r.status !== 200) {
+      // Still challenged even with a browser UA, or genuinely down. A challenge
+      // page only affects bots, not real visitors — flag it amber, not red.
+      const challenged = /just a moment|cf-browser-verification|challenge-platform|cf-chl/i.test(html);
+      return challenged
+        ? { label: L, status: "warn", detail: `${web} → HTTP ${r.status} (Cloudflare challenge; real visitors unaffected)` }
+        : { label: L, status: "fail", detail: `${web} → HTTP ${r.status} — site not serving` };
+    }
+
+    // Find the app's OWN entry bundle (same-origin /assets/*.js), ignoring
+    // third-party scripts (Razorpay, help-widget, analytics, service worker).
+    const origin = new URL(web).origin;
+    const srcs = [...html.matchAll(/<script[^>]+src="([^"]+\.js)"/g)].map((m) => m[1]);
+    const own = srcs
+      .map((s) => { try { return new URL(s, web).href; } catch { return ""; } })
+      .filter((u) => u && new URL(u).origin === origin)
+      .filter((u) => !/registerSW|help-widget|sw\.js$/i.test(u));
+    const bundles = own.filter((u) => /\/assets\//.test(u)).length ? own.filter((u) => /\/assets\//.test(u)) : own;
+
+    if (bundles.length === 0) {
+      return { label: L, status: "fail", detail: `${web} served an HTML shell with no app bundle — blank screen for all users` };
+    }
+
+    // The ref (https://<ref>.supabase.co) is baked in only if VITE_SUPABASE_URL
+    // was present at build time. Scan the bundles for it.
+    let baked = false;
+    for (const b of bundles.slice(0, 6)) {
+      const jr = await fetchT(b, 20000);
+      if (jr.status !== 200) continue;
+      const js = await jr.text();
+      if (js.includes(ref)) { baked = true; break; }
+    }
+    return baked
+      ? { label: L, status: "ok", detail: `renders; DB config baked into bundle` }
+      : {
+        label: L,
+        status: "fail",
+        detail: `${web} shipped WITHOUT its database config (VITE_ env stripped at build) — blank screen for every visitor`,
+      };
+  } catch (e) {
+    return { label: L, status: "warn", detail: `probe failed: ${String(e).slice(0, 120)}` };
   }
 }
 
@@ -406,7 +486,14 @@ async function runProject(ref: string): Promise<{ ref: string; name: string; che
   const m = META[ref] ?? { name: ref };
   const checks: Check[] = [];
   checks.push(await checkDb(ref));
-  // Skip the heavy checks if the DB itself is down.
+  // The frontend probe is independent of DB health — a blank-screen SPA HAS a
+  // healthy DB — so it always runs. undefined web = coverage gap, flag it amber
+  // (never silent); null = intentional backend-only opt-out.
+  if (m.web) checks.push(await checkFrontend(ref, m.web));
+  else if (m.web === undefined) {
+    checks.push({ label: "Frontend render", status: "warn", detail: "not monitored — add a web URL to Sentinel META (frontend blind spot)" });
+  }
+  // Skip the heavy DB checks if the DB itself is down.
   if (checks[0].status !== "fail") {
     checks.push(await checkRegistration(ref));
     checks.push(await checkRlsExposure(ref));
