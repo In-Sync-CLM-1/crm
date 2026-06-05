@@ -22,12 +22,23 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
   try {
+    const crm = getSupabaseClient();
+
+    // verify_jwt is false at the gateway (the frontend's new publishable key trips
+    // the gateway's JWT check). Guard here instead: require a valid logged-in CRM
+    // user so ad-spend figures aren't readable from an unauthenticated URL.
+    const jwt = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
+    const { data: auth } = jwt ? await crm.auth.getUser(jwt) : { data: { user: null } };
+    if (!auth?.user) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     const { days = 30 } = await req.json().catch(() => ({ days: 30 }));
     const since = new Date(Date.now() - Number(days) * 86400000);
     const sinceDate = since.toISOString().slice(0, 10);
     const sinceIso = since.toISOString();
-
-    const crm = getSupabaseClient();
     const gcUrl = Deno.env.get('GLOBALCRM_SUPABASE_URL');
     const gcKey = Deno.env.get('GLOBALCRM_SERVICE_KEY');
     if (!gcUrl || !gcKey) throw new Error('GLOBALCRM_SUPABASE_URL / GLOBALCRM_SERVICE_KEY not configured');
