@@ -10,6 +10,7 @@ mkt-lead-scorer|mkt-lead-scorer||*/15 * * * *
 mkt-ab-test-evaluator|mkt-ab-test-evaluator||0 * * * *
 mkt-campaign-optimizer|mkt-campaign-optimizer||0 2 * * *
 mkt-google-ads-sync|mkt-google-ads-sync||0 3 * * *
+mkt-ad-conversion-upload|mkt-ad-conversion-upload||0 * * * *
 mkt-daily-digest|mkt-daily-digest||0 6 * * *
 mkt-metrics-collector|mkt-metrics-collector||0 1 * * 1
 mkt-breakpoint-monitor|mkt-breakpoint-monitor||*/30 * * * *
