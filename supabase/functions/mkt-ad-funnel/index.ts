@@ -25,11 +25,17 @@ Deno.serve(async (req) => {
     const crm = getSupabaseClient();
 
     // verify_jwt is false at the gateway (the frontend's new publishable key trips
-    // the gateway's JWT check). Guard here instead: require a valid logged-in CRM
-    // user so ad-spend figures aren't readable from an unauthenticated URL.
+    // the gateway's JWT check). Guard here instead: bind the caller's token to an
+    // anon client so the auth server validates it as a real logged-in user session
+    // — the bare anon/publishable key resolves to no user and is rejected.
     const jwt = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
-    const { data: auth } = jwt ? await crm.auth.getUser(jwt) : { data: { user: null } };
-    if (!auth?.user) {
+    const authClient = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_ANON_KEY')!,
+      { global: { headers: { Authorization: `Bearer ${jwt}` } }, auth: { persistSession: false } },
+    );
+    const { data: { user } } = await authClient.auth.getUser();
+    if (!user || user.role !== 'authenticated') {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
