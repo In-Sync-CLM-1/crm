@@ -51,6 +51,9 @@ verify_jwt = false
 [functions.mkt-ad-conversion-upload]
 verify_jwt = false
 
+[functions.mkt-ad-funnel]
+verify_jwt = false
+
 [functions.check-next-actions]
 verify_jwt = false
 
