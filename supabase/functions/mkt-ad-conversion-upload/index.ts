@@ -64,12 +64,12 @@ Deno.serve(async (req) => {
 
   try {
     const developerToken = Deno.env.get('GOOGLE_ADS_DEVELOPER_TOKEN');
-    const destUrl = Deno.env.get('DEST_SUPABASE_URL');
-    const destKey = Deno.env.get('DEST_SERVICE_ROLE_KEY_LEGACY');
+    const gcUrl = Deno.env.get('GLOBALCRM_SUPABASE_URL');
+    const gcKey = Deno.env.get('GLOBALCRM_SERVICE_KEY');
     if (!developerToken) throw new Error('GOOGLE_ADS_DEVELOPER_TOKEN not configured');
-    if (!destUrl || !destKey) throw new Error('DEST_SUPABASE_URL / DEST_SERVICE_ROLE_KEY_LEGACY not configured');
+    if (!gcUrl || !gcKey) throw new Error('GLOBALCRM_SUPABASE_URL / GLOBALCRM_SERVICE_KEY not configured');
 
-    const globalcrm = createClient(destUrl, destKey, {
+    const globalcrm = createClient(gcUrl, gcKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 

@@ -28,10 +28,10 @@ Deno.serve(async (req) => {
     const sinceIso = since.toISOString();
 
     const crm = getSupabaseClient();
-    const destUrl = Deno.env.get('DEST_SUPABASE_URL');
-    const destKey = Deno.env.get('DEST_SERVICE_ROLE_KEY_LEGACY');
-    if (!destUrl || !destKey) throw new Error('DEST_SUPABASE_URL / DEST_SERVICE_ROLE_KEY_LEGACY not configured');
-    const globalcrm = createClient(destUrl, destKey, { auth: { persistSession: false, autoRefreshToken: false } });
+    const gcUrl = Deno.env.get('GLOBALCRM_SUPABASE_URL');
+    const gcKey = Deno.env.get('GLOBALCRM_SERVICE_KEY');
+    if (!gcUrl || !gcKey) throw new Error('GLOBALCRM_SUPABASE_URL / GLOBALCRM_SERVICE_KEY not configured');
+    const globalcrm = createClient(gcUrl, gcKey, { auth: { persistSession: false, autoRefreshToken: false } });
 
     // ── Ad cost & traffic (crm) ──────────────────────────────────────────
     const { data: campRows } = await crm
