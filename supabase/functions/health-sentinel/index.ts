@@ -143,17 +143,25 @@ async function checkDialer(ref: string): Promise<Check[]> {
       detail: dry.length ? `${dry.join(", ")} have 0 candidates` : `${total} leads queued across ${cand.length} agent(s)`,
     });
 
-    // Liveness by expected output: a dead dialer (e.g. a 401'd cron) shows up as
-    // zero calls. 48h window smooths the Sunday no-call day.
+    // Liveness by expected output. CRITICAL: count CONNECTED calls, not attempts.
+    // During the 2026-06-05 Exotel outage there were 3,725 attempts but 0 connected
+    // — the old "count(*) > 0" check reported a healthy "3725 AI calls" GREEN while
+    // not a single call connected. We now split attempts vs connections so a
+    // telephony outage (calls placed, none connecting) trips red. 48h window
+    // smooths the Sunday no-call day.
     const calls = await sql(
       ref,
-      "select count(*) n from call_logs where org_id='61f7f96d-e80c-4d9b-a765-8eb32bd3c70d' and caller_type='ai' and created_at > now() - interval '48 hours'",
+      "select count(*) attempts, count(*) filter (where conversation_duration > 0) connected from call_logs where org_id='61f7f96d-e80c-4d9b-a765-8eb32bd3c70d' and caller_type='ai' and created_at > now() - interval '48 hours'",
     );
-    const n = Number(calls[0]?.n || 0);
+    const att = Number(calls[0]?.attempts || 0), con = Number(calls[0]?.connected || 0);
     out.push({
       label: "Dialer actually calling",
-      status: n > 0 ? "ok" : "fail",
-      detail: n > 0 ? `${n} AI calls in last 48h` : "ZERO AI calls in 48h — dialer is silent",
+      status: con > 0 ? "ok" : "fail",
+      detail: con > 0
+        ? `${con} connected / ${att} attempts in 48h`
+        : att > 0
+          ? `${att} attempts but ZERO connected in 48h — calls placed, none connecting (telephony/Exotel down)`
+          : "ZERO AI calls in 48h — dialer is silent",
     });
   } catch (e) {
     out.push({ label: "Dialer health", status: "warn", detail: String(e) });
@@ -177,6 +185,228 @@ async function checkMarketing(ref: string): Promise<Check> {
   } catch (e) {
     return { label: "Marketing engine live", status: "warn", detail: String(e) };
   }
+}
+
+// --- external API probes (hourly, REAL authenticated round-trips) ------------
+// The 2026-06-05 Exotel voice outage (3,725 AI-call attempts, 0 connected, all
+// day) was invisible because the Sentinel only watched our own DB + websites,
+// never the third-party providers the fleet runs on. Fix: every external API the
+// fleet depends on gets a REAL authenticated call each run — not a mock, not a
+// table-existence check. Voice is the one path a read-probe cannot validate (the
+// API was up while calls failed to connect), so it gets a real test call placed
+// to the ops phone; a ring that reaches the carrier = healthy (no human needs to
+// answer). Everything else gets a live auth round-trip (no spam, negligible cost).
+// Failures flow into the same incident/escalation machinery — email-first, since
+// Exotel itself is now a monitored dependency and can't carry its own outage alarm.
+const E = (k: string) => Deno.env.get(k) ?? "";
+
+async function tfetch(url: string, init: RequestInit = {}, ms = 12000): Promise<Response> {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), ms);
+  try { return await fetch(url, { ...init, signal: ctl.signal }); } finally { clearTimeout(t); }
+}
+
+// Run one probe; a thrown error or non-2xx is a red, a missing credential is amber
+// ("not probed here" — surfaced so a coverage gap is never silent), success green.
+async function probe(label: string, fn: () => Promise<{ ok: boolean; detail: string; skip?: boolean }>): Promise<Check> {
+  try {
+    const r = await fn();
+    return { label, status: r.skip ? "warn" : r.ok ? "ok" : "fail", detail: r.detail };
+  } catch (e) {
+    return { label, status: "fail", detail: `probe threw: ${String(e).slice(0, 140)}` };
+  }
+}
+
+// Mint a Google access token from a refresh token (shared by Ads / YouTube).
+async function googleAccess(refresh: string): Promise<string | null> {
+  try {
+    const r = await tfetch("https://oauth2.googleapis.com/token", {
+      method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ client_id: E("GOOGLE_ADS_CLIENT_ID"), client_secret: E("GOOGLE_ADS_CLIENT_SECRET"), refresh_token: refresh, grant_type: "refresh_token" }),
+    });
+    const j = await r.json().catch(() => ({}));
+    return j?.access_token || null;
+  } catch { return null; }
+}
+
+// Voice: place a real call via the production path (Bolna→Exotel) AND verify the
+// PREVIOUS run's call reached the carrier (end-to-end), PLUS watch the live
+// connect-rate of organic AI calls. `live` gates the outward call + DB writes so
+// dry runs stay side-effect-free.
+async function probeVoice(live: boolean): Promise<Check[]> {
+  const out: Check[] = [];
+  const agent = E("HEALTH_BOLNA_AGENT"), bkey = E("BOLNA_API_KEY");
+
+  // 1) Verify the previous probe call end-to-end (1-hour lag, but a true connect check).
+  if (live) {
+    try {
+      const prev = await sql(CRM_REF, "select id, execution_id from voice_probe_log where verified=false and execution_id is not null order by placed_at desc limit 1");
+      if (prev.length && bkey) {
+        const r = await tfetch(`https://api.bolna.ai/executions/${prev[0].execution_id}`, { headers: { Authorization: `Bearer ${bkey}` } });
+        const j = await r.json().catch(() => ({}));
+        const st = String(j?.status || "");
+        const dur = Number(j?.telephony_data?.duration ?? 0);
+        // Reaching the carrier = up (ringing/answered/no-answer/busy/completed); a
+        // failure to place ('error'/'failed') with no carrier contact = down.
+        const reached = /ring|answer|complete|no-answer|busy|in-progress|disconnect/i.test(st) || dur > 0;
+        const down = !reached && /error|fail/i.test(st);
+        await sql(CRM_REF, `update voice_probe_log set verified=true, connected=${reached}, status=${qs(st)} where id=${qs(prev[0].id)}`);
+        out.push({
+          label: "API · Exotel Voice (test call)",
+          status: down ? "fail" : "ok",
+          detail: down ? `last hourly test call FAILED to reach the carrier (status=${st}) — voice line is DOWN` : `last test call reached the carrier (status=${st || "ok"})`,
+        });
+      }
+    } catch (e) { out.push({ label: "API · Exotel Voice (test call)", status: "warn", detail: `verify failed: ${String(e).slice(0, 100)}` }); }
+  }
+
+  // 2) Place a fresh test call (live only). Bolna accepting it proves the API path;
+  //    its connect outcome is checked next run (step 1).
+  if (live && agent && bkey) {
+    try {
+      const r = await tfetch("https://api.bolna.ai/call", {
+        method: "POST", headers: { Authorization: `Bearer ${bkey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ agent_id: agent, recipient_phone_number: OPS_WA, from_phone_number: "+911169323462", user_data: { purpose: "line-test" } }),
+      });
+      const j = await r.json().catch(() => ({}));
+      const exId = j?.execution_id || null;
+      const queued = r.status >= 200 && r.status < 300 && /queue|schedul/i.test(String(j?.status || ""));
+      if (exId) await sql(CRM_REF, `insert into voice_probe_log(execution_id, placed_at) values(${qs(exId)}, now())`);
+      out.push({
+        label: "API · Bolna (call placement)",
+        status: queued ? "ok" : "fail",
+        detail: queued ? `test call queued (exec ${String(exId).slice(0, 8)})` : `Bolna refused the call: HTTP ${r.status} ${JSON.stringify(j).slice(0, 120)}`,
+      });
+    } catch (e) { out.push({ label: "API · Bolna (call placement)", status: "fail", detail: `place failed: ${String(e).slice(0, 120)}` }); }
+  }
+
+  // 3) Live organic connect-rate (catches an outage the SAME hour during calling
+  //    windows — the immediate Jun-5 signature, no 1-hour lag).
+  try {
+    const rows = await sql("ejzjrvazegaxrhqizgaa", "select count(*) attempts, count(*) filter (where conversation_duration>0) connected from call_logs where caller_type='ai' and created_at > now() - interval '6 hours'");
+    const a = Number(rows[0]?.attempts || 0), c = Number(rows[0]?.connected || 0);
+    out.push({
+      label: "API · Exotel Voice (live connect-rate)",
+      status: a >= 20 && c === 0 ? "fail" : "ok",
+      detail: a >= 20 && c === 0 ? `${a} AI calls in 6h, ZERO connected — voice line down` : a ? `${c}/${a} connected in 6h` : "no organic calls in window",
+    });
+  } catch { /* non-fatal */ }
+  return out;
+}
+
+// All external providers the fleet depends on, each a real authenticated call.
+async function checkExternalApis(live: boolean): Promise<{ ref: string; name: string; checks: Check[] }> {
+  const checks: Check[] = [];
+  checks.push(...(await probeVoice(live)));
+
+  checks.push(await probe("API · Bolna", async () => {
+    const k = E("BOLNA_API_KEY"); if (!k) return { ok: false, detail: "no BOLNA_API_KEY", skip: true };
+    const r = await tfetch("https://api.bolna.ai/v2/agent/all", { headers: { Authorization: `Bearer ${k}` } });
+    return { ok: r.status === 200, detail: r.status === 200 ? "agent list ok" : `HTTP ${r.status}` };
+  }));
+
+  checks.push(await probe("API · Exotel WhatsApp", async () => {
+    const sid = E("EXOTEL_WA_SID"), key = E("EXOTEL_WA_API_KEY"), tok = E("EXOTEL_WA_API_TOKEN"), waba = E("EXOTEL_WABA");
+    if (!sid || !key || !tok) return { ok: false, detail: "WA creds missing on crm", skip: true };
+    const r = await tfetch(`https://${key}:${tok}@api.exotel.com/v2/accounts/${sid}/templates?waba_id=${waba}&limit=1`);
+    return { ok: r.status === 200, detail: r.status === 200 ? "WhatsApp API ok" : `HTTP ${r.status}` };
+  }));
+
+  checks.push(await probe("API · Exotel Voice (account)", async () => {
+    const sid = E("EXOTEL_SID"), key = E("EXOTEL_API_KEY"), tok = E("EXOTEL_API_TOKEN"), sub = E("EXOTEL_SUBDOMAIN") || "api.in.exotel.com";
+    if (!sid || !key || !tok) return { ok: false, detail: "voice creds missing on crm", skip: true };
+    const r = await tfetch(`https://${key}:${tok}@${sub}/v1/Accounts/${sid}/IncomingPhoneNumbers.json`);
+    return { ok: r.status === 200, detail: r.status === 200 ? "voice account API ok" : `HTTP ${r.status}` };
+  }));
+
+  checks.push(await probe("API · Resend (email)", async () => {
+    const k = E("RESEND_API_KEY"); if (!k) return { ok: false, detail: "no key", skip: true };
+    const r = await tfetch("https://api.resend.com/domains", { headers: { Authorization: `Bearer ${k}` } });
+    return { ok: r.status === 200, detail: r.status === 200 ? "email API ok" : `HTTP ${r.status}` };
+  }));
+
+  checks.push(await probe("API · Razorpay", async () => {
+    const id = E("RAZORPAY_KEY_ID"), sec = E("RAZORPAY_KEY_SECRET"); if (!id || !sec) return { ok: false, detail: "no keys", skip: true };
+    const r = await tfetch("https://api.razorpay.com/v1/payments?count=1", { headers: { Authorization: `Basic ${btoa(id + ":" + sec)}` } });
+    return { ok: r.status === 200, detail: r.status === 200 ? "payments API ok (read)" : `HTTP ${r.status}` };
+  }));
+
+  checks.push(await probe("API · Google Ads", async () => {
+    const rt = E("GOOGLE_ADS_REFRESH_TOKEN"), dev = E("GOOGLE_ADS_DEVELOPER_TOKEN"); if (!rt || !dev) return { ok: false, detail: "no Ads creds", skip: true };
+    const at = await googleAccess(rt); if (!at) return { ok: false, detail: "OAuth refresh failed (token revoked/expired)" };
+    const r = await tfetch("https://googleads.googleapis.com/v21/customers/6785487693/googleAds:search", {
+      method: "POST", headers: { Authorization: `Bearer ${at}`, "developer-token": dev, "Content-Type": "application/json" },
+      body: JSON.stringify({ query: "SELECT customer.id FROM customer LIMIT 1" }),
+    });
+    return { ok: r.status === 200, detail: r.status === 200 ? "Ads v21 query ok" : `HTTP ${r.status} — check API version / token (the v16→v21 retirement class)` };
+  }));
+
+  checks.push(await probe("API · YouTube", async () => {
+    const rt = E("YOUTUBE_REFRESH_TOKEN"); if (!rt) return { ok: false, detail: "no YouTube token", skip: true };
+    const at = await googleAccess(rt); if (!at) return { ok: false, detail: "OAuth refresh failed" };
+    const r = await tfetch("https://www.googleapis.com/youtube/v3/channels?part=id&mine=true", { headers: { Authorization: `Bearer ${at}` } });
+    return { ok: r.status === 200, detail: r.status === 200 ? "channel read ok" : `HTTP ${r.status}` };
+  }));
+
+  checks.push(await probe("API · GA4", async () => {
+    const mid = E("GA4_MEASUREMENT_ID"), sec = E("GA4_API_SECRET"); if (!mid || !sec) return { ok: false, detail: "no GA4 creds", skip: true };
+    const r = await tfetch(`https://www.google-analytics.com/debug/mp/collect?measurement_id=${mid}&api_secret=${sec}`, {
+      method: "POST", body: JSON.stringify({ client_id: "sentinel.probe", events: [{ name: "sentinel_probe" }] }),
+    });
+    const j = await r.json().catch(() => ({}));
+    const ok = r.status === 200 && Array.isArray(j?.validationMessages) && j.validationMessages.length === 0;
+    return { ok, detail: ok ? "Measurement Protocol validation ok" : `HTTP ${r.status} ${JSON.stringify(j?.validationMessages || "").slice(0, 100)}` };
+  }));
+
+  checks.push(await probe("API · Gemini", async () => {
+    const k = E("GEMINI_API_KEY"); if (!k) return { ok: false, detail: "no key", skip: true };
+    const r = await tfetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${k}`);
+    return { ok: r.status === 200, detail: r.status === 200 ? "models ok" : `HTTP ${r.status} (key may be restricted — known image-gen blocker)` };
+  }));
+
+  checks.push(await probe("API · ElevenLabs", async () => {
+    const k = E("ELEVENLABS_API_KEY"); if (!k) return { ok: false, detail: "no key on crm (video pipeline; in work/.env)", skip: true };
+    const r = await tfetch("https://api.elevenlabs.io/v1/user", { headers: { "xi-api-key": k } });
+    return { ok: r.status === 200, detail: r.status === 200 ? "ok" : `HTTP ${r.status}` };
+  }));
+
+  checks.push(await probe("API · Shotstack", async () => {
+    const k = E("SHOTSTACK_API_KEY"); if (!k) return { ok: false, detail: "no key", skip: true };
+    const r = await tfetch("https://api.shotstack.io/v1/templates", { headers: { "x-api-key": k } });
+    return { ok: r.status === 200, detail: r.status === 200 ? "ok" : `HTTP ${r.status}` };
+  }));
+
+  checks.push(await probe("API · Pexels", async () => {
+    const k = E("PEXELS_API_KEY"); if (!k) return { ok: false, detail: "no key", skip: true };
+    const r = await tfetch("https://api.pexels.com/v1/search?query=office&per_page=1", { headers: { Authorization: k } });
+    return { ok: r.status === 200, detail: r.status === 200 ? "ok" : `HTTP ${r.status}` };
+  }));
+
+  checks.push(await probe("API · Anthropic", async () => {
+    const k = E("ANTHROPIC_API_KEY"); if (!k) return { ok: false, detail: "no key", skip: true };
+    const r = await tfetch("https://api.anthropic.com/v1/models?limit=1", { headers: { "x-api-key": k, "anthropic-version": "2023-06-01" } });
+    return { ok: r.status === 200, detail: r.status === 200 ? "ok" : `HTTP ${r.status}` };
+  }));
+
+  checks.push(await probe("API · Groq", async () => {
+    const k = E("GROQ_API_KEY"); if (!k) return { ok: false, detail: "no key", skip: true };
+    const r = await tfetch("https://api.groq.com/openai/v1/models", { headers: { Authorization: `Bearer ${k}` } });
+    return { ok: r.status === 200, detail: r.status === 200 ? "ok" : `HTTP ${r.status}` };
+  }));
+
+  checks.push(await probe("API · Cloudflare", async () => {
+    const t = E("CLOUDFLARE_API_TOKEN"); if (!t) return { ok: false, detail: "no token", skip: true };
+    const r = await tfetch("https://api.cloudflare.com/client/v4/user/tokens/verify", { headers: { Authorization: `Bearer ${t}` } });
+    return { ok: r.status === 200, detail: r.status === 200 ? "token valid" : `HTTP ${r.status}` };
+  }));
+
+  checks.push(await probe("API · Surepass (KYC)", async () => {
+    const t = E("SUREPASS_TOKEN"); if (!t) return { ok: false, detail: "no SUREPASS_TOKEN on crm (vendor-verification creds)", skip: true };
+    const r = await tfetch("https://kyc-api.surepass.io/api/v1/user/get-balance", { headers: { Authorization: `Bearer ${t}` } });
+    return { ok: r.status === 200, detail: r.status === 200 ? "balance read ok (no real KYC)" : `HTTP ${r.status}` };
+  }));
+
+  return { ref: "external", name: "External APIs", checks };
 }
 
 // --- frontend render probe ---------------------------------------------------
@@ -600,18 +830,33 @@ const AUTO_FIXERS: Record<string, (ref: string) => Promise<{ fixed: boolean; not
 };
 
 // --- escalation channels (email live; WhatsApp + AI call gated until wired) ---
-async function notifyWhatsApp(text: string): Promise<string> {
-  const tpl = Deno.env.get("HEALTH_WA_TEMPLATE");
+// kind "issue" → red alert template WITH an Acknowledge button (HEALTH_WA_TEMPLATE_ISSUE,
+// e.g. sentinel_issue_v2); kind "resolved" → green resolved template, no button
+// (HEALTH_WA_TEMPLATE_RESOLVED). Both fall back to the plain HEALTH_WA_TEMPLATE until
+// the designed templates are Meta-approved, so alerting never breaks during approval.
+// The button param is the per-incident ack token (button-0 url suffix) → tap lands on
+// the two-step confirm page and the ack is RECORDED.
+async function notifyWhatsApp(text: string, opts: { kind?: "issue" | "resolved"; ackToken?: string } = {}): Promise<string> {
+  const isResolved = opts.kind === "resolved";
+  const issueTpl = Deno.env.get("HEALTH_WA_TEMPLATE_ISSUE");
+  const resolvedTpl = Deno.env.get("HEALTH_WA_TEMPLATE_RESOLVED");
+  const fallback = Deno.env.get("HEALTH_WA_TEMPLATE");
+  const tpl = (isResolved ? resolvedTpl : issueTpl) || fallback;
   if (!tpl) return "wa skipped (no approved template yet)";
   // MUST use the WA-flavoured creds (SID without trailing 'm'); the bare EXOTEL_*
   // pair is VOICE and 401s on the WhatsApp API. See exotel-voice-vs-wa-creds.
   const sid = Deno.env.get("EXOTEL_WA_SID"), key = Deno.env.get("EXOTEL_WA_API_KEY"), tok = Deno.env.get("EXOTEL_WA_API_TOKEN");
   const from = Deno.env.get("EXOTEL_SENDER_NUMBER");
   if (!sid || !key || !tok || !from) return "wa skipped (WA creds missing)";
+  const components: any[] = [{ type: "body", parameters: [{ type: "text", text: text.slice(0, 600) }] }];
+  // Only the button-bearing issue template takes the ack-token button param.
+  if (!isResolved && opts.ackToken && issueTpl && tpl === issueTpl) {
+    components.push({ type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: opts.ackToken }] });
+  }
   try {
-    const r = await fetch(`https://${key}:${tok}@api.exotel.com/v2/accounts/${sid}/messages`, {
+    const r = await fetch(`https://${key}:${tok}@api.exotel.com/v2/accounts/${sid}/messages?waba_id=${Deno.env.get("EXOTEL_WABA")}`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ custom_data: "sentinel", whatsapp: { messages: [{ from, to: OPS_WA, content: { type: "template", template: { name: tpl, language: { code: "en" }, components: [{ type: "body", parameters: [{ type: "text", text: text.slice(0, 600) }] }] } } }] } }),
+      body: JSON.stringify({ custom_data: "sentinel", whatsapp: { messages: [{ from, to: OPS_WA, content: { type: "template", template: { name: tpl, language: { code: "en" }, components } } } ] } }),
     });
     return `wa ${r.status}`;
   } catch (e) { return `wa err ${e}`; }
@@ -676,11 +921,11 @@ async function reconcile(results: { ref: string; name: string; checks: Check[] }
       inc = { ...ins[0], project: f.project, system: f.system };
     }
     if (!f.correctable && inc && !inc.acknowledged_at) {
-      const ackUrl = `${ACK_BASE}?token=${inc.ack_token}`;
+      const ackUrl = `${ACK_BASE}?token=${inc.ack_token}&via=email`;
       const line = `${f.system} on ${f.project} is DOWN since ${ist(inc.first_failed_at)} IST (${mins(inc.first_failed_at)} min) — ${f.detail}. Needs a fix.`;
       await sendEmail(`🔴 ACTION NEEDED — ${f.system} on ${f.project} down`,
         `<div style="font-family:system-ui,Arial;font-size:15px"><p style="color:#b91c1c;font-weight:700">${line}</p><p><a href="${ackUrl}" style="background:#111;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none">✔ I'm on it — acknowledge</a></p><p style="color:#777;font-size:12px">You'll keep getting these (and an AI call) until you acknowledge or it's restored.</p></div>`);
-      await notifyWhatsApp(line + ` Ack: ${ackUrl}`);
+      await notifyWhatsApp(line, { kind: "issue", ackToken: inc.ack_token });
       if ((inc.escalation_count ?? 0) >= 1) await notifyAiCall(line + ` Say NOTED to acknowledge.`, inc.ack_token); // escalate to a call from the 2nd cycle
       await sql(CRM_REF, `update sentinel_incidents set escalation_count=escalation_count+1, escalated_email_at=now(), updated_at=now() where id=${qs(inc.id)}`);
       openMsgs.push({ project: f.project, system: f.system, since: inc.first_failed_at, detail: f.detail });
@@ -706,14 +951,19 @@ Deno.serve(async (req) => {
     }
     const refs: string[] = j.filter((p: any) => p.status !== "INACTIVE").map((p: any) => p.id);
 
+    const url = new URL(req.url);
+    const dryRun = url.searchParams.get("dry") === "1";
+
     const results = [];
     for (const ref of refs) results.push(await runProject(ref));
+    // Every external API the fleet runs on, probed with a real authenticated call
+    // each run (the Exotel-voice blind spot from 2026-06-05). Outward test call +
+    // DB writes only happen on a live (non-dry) run.
+    results.push(await checkExternalApis(!dryRun));
     // Stable, friendly ordering.
     results.sort((a, b) => a.name.localeCompare(b.name));
 
     const istDate = new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
-    const url = new URL(req.url);
-    const dryRun = url.searchParams.get("dry") === "1";
     let reqBody: any = {};
     try { reqBody = await req.json(); } catch { /* no body */ }
     const digest = url.searchParams.get("digest") === "1" || reqBody?.digest === true;
@@ -727,7 +977,7 @@ Deno.serve(async (req) => {
       for (const r of loop.restored) {
         const line = `${r.system} on ${r.project} failed ${ist(r.from)} IST → now (${mins(r.from)} min) and is ${r.auto ? "AUTO-corrected" : "restored"}${r.note ? ": " + r.note : ""}.`;
         await sendEmail(`✅ RESTORED — ${r.system} on ${r.project}`, `<p style="font-family:system-ui,Arial;color:#15803d;font-weight:600;font-size:15px">${line}</p>`);
-        await notifyWhatsApp(line);
+        await notifyWhatsApp(line, { kind: "resolved" });
       }
       // Same-run auto-corrections (drift caught and put right before it bit you).
       for (const a of loop.autoMsgs) {
