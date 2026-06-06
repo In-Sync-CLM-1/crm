@@ -68,7 +68,7 @@ async function sendWhatsApp(text: string) {
   const from = Deno.env.get("EXOTEL_SENDER_NUMBER");
   if (!tpl || !sid || !key || !tok || !from) return "wa skipped (creds/template missing)";
   try {
-    const r = await fetch(`https://${key}:${tok}@api.exotel.com/v2/accounts/${sid}/messages`, {
+    const r = await fetch(`https://${key}:${tok}@api.exotel.com/v2/accounts/${sid}/messages?waba_id=${Deno.env.get("EXOTEL_WABA")}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ custom_data: "sentinel-tripwire", whatsapp: { messages: [{ from, to: OPS_WA, content: { type: "template", template: { name: tpl, language: { code: "en" }, components: [{ type: "body", parameters: [{ type: "text", text: text.slice(0, 600) }] }] } } }] } }),

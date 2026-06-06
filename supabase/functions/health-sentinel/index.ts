@@ -839,7 +839,7 @@ async function notifyWhatsApp(text: string): Promise<string> {
   const from = Deno.env.get("EXOTEL_SENDER_NUMBER");
   if (!sid || !key || !tok || !from) return "wa skipped (WA creds missing)";
   try {
-    const r = await fetch(`https://${key}:${tok}@api.exotel.com/v2/accounts/${sid}/messages`, {
+    const r = await fetch(`https://${key}:${tok}@api.exotel.com/v2/accounts/${sid}/messages?waba_id=${Deno.env.get("EXOTEL_WABA")}`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ custom_data: "sentinel", whatsapp: { messages: [{ from, to: OPS_WA, content: { type: "template", template: { name: tpl, language: { code: "en" }, components: [{ type: "body", parameters: [{ type: "text", text: text.slice(0, 600) }] }] } } }] } }),
     });

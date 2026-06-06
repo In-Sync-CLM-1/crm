@@ -15,9 +15,12 @@ function page(title: string, body: string) {
 }
 
 Deno.serve(async (req) => {
-  const token = (new URL(req.url).searchParams.get("token") || "").replace(/[^a-z0-9]/gi, ""); // sanitise: hex only
+  const params = new URL(req.url).searchParams;
+  const token = (params.get("token") || "").replace(/[^a-z0-9]/gi, ""); // sanitise: hex only
+  // Which channel the operator tapped from — recorded for the audit trail.
+  const via = (params.get("via") || "link").replace(/[^a-z]/gi, "").slice(0, 16) || "link";
   if (!token) return page("Invalid link", "No acknowledgment token supplied.");
-  const q = `update sentinel_incidents set acknowledged_at=now(), updated_at=now() where ack_token='${token}' and status='open' and acknowledged_at is null returning project, system`;
+  const q = `update sentinel_incidents set acknowledged_at=now(), acknowledged_via='${via}', updated_at=now() where ack_token='${token}' and status='open' and acknowledged_at is null returning project, system`;
   const r = await fetch(`${MGMT}/v1/projects/${CRM}/database/query`, {
     method: "POST",
     headers: { Authorization: `Bearer ${Deno.env.get("MGMT_TOKEN")}`, "Content-Type": "application/json" },
