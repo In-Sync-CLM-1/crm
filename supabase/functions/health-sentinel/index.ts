@@ -830,18 +830,33 @@ const AUTO_FIXERS: Record<string, (ref: string) => Promise<{ fixed: boolean; not
 };
 
 // --- escalation channels (email live; WhatsApp + AI call gated until wired) ---
-async function notifyWhatsApp(text: string): Promise<string> {
-  const tpl = Deno.env.get("HEALTH_WA_TEMPLATE");
+// kind "issue" → red alert template WITH an Acknowledge button (HEALTH_WA_TEMPLATE_ISSUE,
+// e.g. sentinel_issue_v2); kind "resolved" → green resolved template, no button
+// (HEALTH_WA_TEMPLATE_RESOLVED). Both fall back to the plain HEALTH_WA_TEMPLATE until
+// the designed templates are Meta-approved, so alerting never breaks during approval.
+// The button param is the per-incident ack token (button-0 url suffix) → tap lands on
+// the two-step confirm page and the ack is RECORDED.
+async function notifyWhatsApp(text: string, opts: { kind?: "issue" | "resolved"; ackToken?: string } = {}): Promise<string> {
+  const isResolved = opts.kind === "resolved";
+  const issueTpl = Deno.env.get("HEALTH_WA_TEMPLATE_ISSUE");
+  const resolvedTpl = Deno.env.get("HEALTH_WA_TEMPLATE_RESOLVED");
+  const fallback = Deno.env.get("HEALTH_WA_TEMPLATE");
+  const tpl = (isResolved ? resolvedTpl : issueTpl) || fallback;
   if (!tpl) return "wa skipped (no approved template yet)";
   // MUST use the WA-flavoured creds (SID without trailing 'm'); the bare EXOTEL_*
   // pair is VOICE and 401s on the WhatsApp API. See exotel-voice-vs-wa-creds.
   const sid = Deno.env.get("EXOTEL_WA_SID"), key = Deno.env.get("EXOTEL_WA_API_KEY"), tok = Deno.env.get("EXOTEL_WA_API_TOKEN");
   const from = Deno.env.get("EXOTEL_SENDER_NUMBER");
   if (!sid || !key || !tok || !from) return "wa skipped (WA creds missing)";
+  const components: any[] = [{ type: "body", parameters: [{ type: "text", text: text.slice(0, 600) }] }];
+  // Only the button-bearing issue template takes the ack-token button param.
+  if (!isResolved && opts.ackToken && issueTpl && tpl === issueTpl) {
+    components.push({ type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: opts.ackToken }] });
+  }
   try {
     const r = await fetch(`https://${key}:${tok}@api.exotel.com/v2/accounts/${sid}/messages?waba_id=${Deno.env.get("EXOTEL_WABA")}`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ custom_data: "sentinel", whatsapp: { messages: [{ from, to: OPS_WA, content: { type: "template", template: { name: tpl, language: { code: "en" }, components: [{ type: "body", parameters: [{ type: "text", text: text.slice(0, 600) }] }] } } }] } }),
+      body: JSON.stringify({ custom_data: "sentinel", whatsapp: { messages: [{ from, to: OPS_WA, content: { type: "template", template: { name: tpl, language: { code: "en" }, components } } } ] } }),
     });
     return `wa ${r.status}`;
   } catch (e) { return `wa err ${e}`; }
@@ -906,11 +921,11 @@ async function reconcile(results: { ref: string; name: string; checks: Check[] }
       inc = { ...ins[0], project: f.project, system: f.system };
     }
     if (!f.correctable && inc && !inc.acknowledged_at) {
-      const ackUrl = `${ACK_BASE}?token=${inc.ack_token}`;
+      const ackUrl = `${ACK_BASE}?token=${inc.ack_token}&via=email`;
       const line = `${f.system} on ${f.project} is DOWN since ${ist(inc.first_failed_at)} IST (${mins(inc.first_failed_at)} min) — ${f.detail}. Needs a fix.`;
       await sendEmail(`🔴 ACTION NEEDED — ${f.system} on ${f.project} down`,
         `<div style="font-family:system-ui,Arial;font-size:15px"><p style="color:#b91c1c;font-weight:700">${line}</p><p><a href="${ackUrl}" style="background:#111;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none">✔ I'm on it — acknowledge</a></p><p style="color:#777;font-size:12px">You'll keep getting these (and an AI call) until you acknowledge or it's restored.</p></div>`);
-      await notifyWhatsApp(line + ` Ack: ${ackUrl}`);
+      await notifyWhatsApp(line, { kind: "issue", ackToken: inc.ack_token });
       if ((inc.escalation_count ?? 0) >= 1) await notifyAiCall(line + ` Say NOTED to acknowledge.`, inc.ack_token); // escalate to a call from the 2nd cycle
       await sql(CRM_REF, `update sentinel_incidents set escalation_count=escalation_count+1, escalated_email_at=now(), updated_at=now() where id=${qs(inc.id)}`);
       openMsgs.push({ project: f.project, system: f.system, since: inc.first_failed_at, detail: f.detail });
@@ -962,7 +977,7 @@ Deno.serve(async (req) => {
       for (const r of loop.restored) {
         const line = `${r.system} on ${r.project} failed ${ist(r.from)} IST → now (${mins(r.from)} min) and is ${r.auto ? "AUTO-corrected" : "restored"}${r.note ? ": " + r.note : ""}.`;
         await sendEmail(`✅ RESTORED — ${r.system} on ${r.project}`, `<p style="font-family:system-ui,Arial;color:#15803d;font-weight:600;font-size:15px">${line}</p>`);
-        await notifyWhatsApp(line);
+        await notifyWhatsApp(line, { kind: "resolved" });
       }
       // Same-run auto-corrections (drift caught and put right before it bit you).
       for (const a of loop.autoMsgs) {
