@@ -32,6 +32,30 @@ Deno.serve(async (req) => {
     const body: SendWhatsAppRequest = await req.json();
     const { action_id, lead_id, template_id } = body;
 
+    // ── WhatsApp channel kill switch ─────────────────────────────────────────
+    // If the marketing WhatsApp channel is paused (mkt_channels.active = false),
+    // do not send anything. Mark the action skipped so the sequence advances
+    // cleanly without retrying. Flip mkt_channels.active back to true to resume.
+    const { data: waChannel } = await supabase
+      .from('mkt_channels')
+      .select('active')
+      .eq('channel_key', 'whatsapp')
+      .maybeSingle();
+
+    if (!waChannel?.active) {
+      if (action_id) {
+        await supabase
+          .from('mkt_sequence_actions')
+          .update({
+            status: 'skipped',
+            failure_reason: 'WhatsApp channel paused (mkt_channels.active=false)',
+          })
+          .eq('id', action_id);
+      }
+      await logger.info('whatsapp-channel-paused', { action_id, lead_id });
+      return jsonResponse({ success: true, skipped: true, reason: 'whatsapp channel paused' });
+    }
+
     // Fetch lead
     const { data: lead, error: leadError } = await supabase
       .from('contacts')
