@@ -81,6 +81,20 @@ Deno.serve(async (req) => {
   const dry = new URL(req.url).searchParams.get("dry") === "1";
   const now = Date.now();
 
+  // Honour the Sentinel's snooze window. When the Sentinel is deliberately paused
+  // (SENTINEL_SNOOZE_UNTIL in the future), its heartbeats intentionally go stale —
+  // so the tripwire must NOT page about it. It auto-rearms when the snooze passes.
+  const snoozeRaw = Deno.env.get("SENTINEL_SNOOZE_UNTIL");
+  if (snoozeRaw) {
+    const until = Date.parse(snoozeRaw);
+    if (!Number.isNaN(until) && now < until) {
+      return new Response(
+        JSON.stringify({ ok: true, snoozed: true, resumes_at: snoozeRaw, note: "Tripwire paused with the Sentinel — heartbeats not checked until resumes_at." }, null, 2),
+        { headers: { "Content-Type": "application/json" } },
+      );
+    }
+  }
+
   const hb = await readHeartbeats();
   const problems: string[] = [];
 

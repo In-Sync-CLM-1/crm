@@ -695,8 +695,28 @@ async function reconcile(results: { ref: string; name: string; checks: Check[] }
   return { restored, autoMsgs, openMsgs };
 }
 
+// Snooze gate: while SENTINEL_SNOOZE_UNTIL (ISO) is in the future, the Sentinel
+// goes fully quiet — no checks, no digest, no reconcile/auto-fix, no escalation.
+// It resumes BY ITSELF the moment that timestamp passes (no redeploy/intervention
+// needed). sentinel-tripwire honours the same secret, so silencing the Sentinel
+// this way does NOT make the watchman cry "gone dark". Set/clear via the crm
+// project secret of the same name.
+function snoozedUntil(): string | null {
+  const raw = Deno.env.get("SENTINEL_SNOOZE_UNTIL");
+  if (!raw) return null;
+  const until = Date.parse(raw);
+  return !Number.isNaN(until) && Date.now() < until ? raw : null;
+}
+
 Deno.serve(async (req) => {
   try {
+    const snooze = snoozedUntil();
+    if (snooze) {
+      return new Response(
+        JSON.stringify({ ok: true, snoozed: true, resumes_at: snooze, note: "Health Sentinel is paused — no checks, digest, auto-fix, or escalation until resumes_at." }, null, 2),
+        { headers: { "Content-Type": "application/json" } },
+      );
+    }
     if (!token()) return new Response(JSON.stringify({ error: "MGMT_TOKEN not set" }), { status: 500 });
 
     // Discover the live project list (so new projects are covered automatically).
