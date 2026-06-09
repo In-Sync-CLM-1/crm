@@ -22,7 +22,7 @@ npm run dev
 
 ## Deployment
 
-The app deploys to Cloudflare Pages via `wrangler pages deploy dist` after `npm run build`.
+The frontend deploys to Cloudflare Pages automatically on every push to `main` via `.github/workflows/pages-deploy.yml`; the backend (migrations + edge functions) deploys via `.github/workflows/supabase-deploy.yml` on the same push. Pushing to `main` is the only deploy path — no manual Wrangler or Supabase CLI step.
 
 ## Custom Domain
 
