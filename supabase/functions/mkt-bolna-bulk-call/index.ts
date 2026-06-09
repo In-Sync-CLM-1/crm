@@ -135,6 +135,24 @@ Deno.serve(async (req) => {
     const bolnaKey = required('BOLNA_API_KEY');
     const supabase = getSupabaseClient();
 
+    // ── Bolna AI-call kill switch (paused till further notice) ──────────────
+    // Block all outbound call placement when mkt_engine_config.ai_calls_paused
+    // is true. Utility branches above (user_me/get_execution/…) still work.
+    // Flip the config value back to false to resume.
+    const { data: pauseCfg } = await supabase
+      .from('mkt_engine_config')
+      .select('config_value')
+      .eq('config_key', 'ai_calls_paused')
+      .maybeSingle();
+    if (pauseCfg?.config_value === true) {
+      await logger.info('bolna-calls-paused', { contact_count: body.contact_ids.length });
+      return done(200, {
+        ok: true,
+        skipped: true,
+        reason: 'Bolna AI calls paused (mkt_engine_config.ai_calls_paused=true)',
+      });
+    }
+
     // Pull triggering user from JWT (best-effort; not auth-gated here).
     const authHeader = req.headers.get('Authorization')?.replace('Bearer ', '');
     let triggeredBy: string | null = null;
