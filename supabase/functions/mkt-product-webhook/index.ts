@@ -543,7 +543,7 @@ async function sendResendEmail(params: ResendEmailParams): Promise<void> {
         Authorization: `Bearer ${resendApiKey}`,
       },
       body: JSON.stringify({
-        from: Deno.env.get('RESEND_FROM_EMAIL') || 'notifications@updates.yourdomain.com',
+        from: Deno.env.get('RESEND_FROM_EMAIL') || 'notifications@in-sync.co.in',
         to: params.to,
         subject: params.subject,
         html: params.html,

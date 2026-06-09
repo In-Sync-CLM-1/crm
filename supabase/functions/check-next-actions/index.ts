@@ -520,7 +520,7 @@ async function createActivityNotificationWithEmail(
           'Authorization': `Bearer ${RESEND_API_KEY}`,
         },
         body: JSON.stringify({
-          from: "In-Sync CRM <notifications@resend.dev>",
+          from: "In-Sync CRM <notifications@in-sync.co.in>",
           to: [userProfile.email],
           subject: emailSubject,
           html: emailHtml,
@@ -718,7 +718,7 @@ async function createTaskNotificationWithEmail(
           'Authorization': `Bearer ${RESEND_API_KEY}`,
         },
         body: JSON.stringify({
-          from: "In-Sync CRM <notifications@resend.dev>",
+          from: "In-Sync CRM <notifications@in-sync.co.in>",
           to: [userProfile.email],
           subject: emailSubject,
           html: emailHtml,
