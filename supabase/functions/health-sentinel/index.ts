@@ -122,11 +122,22 @@ async function checkDialer(ref: string): Promise<Check[]> {
       "select dialing_active, calling_windows from organization_settings where org_id='61f7f96d-e80c-4d9b-a765-8eb32bd3c70d'",
     );
     const active = cfg[0]?.dialing_active === true;
-    out.push({
-      label: "Dialer switched on",
-      status: active ? "ok" : "fail",
-      detail: active ? "dialing_active = true" : "dialing_active = false (dialer is OFF)",
-    });
+
+    // A dialer manually switched off (dialing_active = false) is an INTENTIONAL
+    // pause, not a fault. Report it as paused (status "ok" → no incident, no
+    // escalation) and skip the downstream liveness checks: zero calls is the
+    // EXPECTED outcome while paused, so "dialer is silent" would be a false alarm.
+    // Only when the dialer is switched ON do an empty queue or silence count as bugs.
+    if (!active) {
+      out.push({
+        label: "Dialer",
+        status: "ok",
+        detail: "PAUSED — dialing_active = false (manually switched off; not a fault). Liveness checks resume when it's switched back on.",
+      });
+      return out;
+    }
+
+    out.push({ label: "Dialer switched on", status: "ok", detail: "dialing_active = true" });
 
     // Ready-to-call leads for each active, owned script (catches an empty queue
     // or a script that lost its owner).
