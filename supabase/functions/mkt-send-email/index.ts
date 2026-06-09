@@ -35,6 +35,33 @@ Deno.serve(async (req) => {
     const body: SendEmailRequest = await req.json();
     const { action_id, enrollment_id, lead_id, step_id, campaign_name, template_id, ab_test_id } = body;
 
+    // ── Email channel kill switch ────────────────────────────────────────────
+    // If the marketing email channel is paused (mkt_channels.active = false),
+    // do not send anything. Mark the action skipped so the sequence advances
+    // cleanly without retrying. Flip mkt_channels.active back to true to resume.
+    const { data: emailChannel } = await supabase
+      .from('mkt_channels')
+      .select('active')
+      .eq('channel_key', 'email')
+      .maybeSingle();
+
+    if (!emailChannel?.active) {
+      if (action_id) {
+        await supabase
+          .from('mkt_sequence_actions')
+          .update({
+            status: 'skipped',
+            failure_reason: 'Email channel paused (mkt_channels.active=false)',
+          })
+          .eq('id', action_id);
+      }
+      await logger.info('email-channel-paused', { action_id, lead_id });
+      return new Response(
+        JSON.stringify({ success: true, skipped: true, reason: 'email channel paused' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Fetch lead data
     const { data: lead, error: leadError } = await supabase
       .from('contacts')
