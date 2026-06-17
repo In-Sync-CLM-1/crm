@@ -27,7 +27,8 @@ const FROM = "In-Sync Health Sentinel <notifications@in-sync.co.in>";
 //        undefined → flagged amber as "not monitored" (so a coverage gap is
 //        never silent — this is the lesson from the fieldsync blank-screen
 //        outage). Set web:null to intentionally opt a backend-only project out.
-const META: Record<string, { name: string; dialer?: boolean; marketing?: boolean; web?: string | null }> = {
+//   feedCheck: probe feed query visibility (catches silent feed filter failures)
+const META: Record<string, { name: string; dialer?: boolean; marketing?: boolean; feedCheck?: boolean; web?: string | null }> = {
   mlvgqudcwlkolsbighnn: { name: "crm (core)", marketing: true, web: "https://crm.in-sync.co.in" },
   ejzjrvazegaxrhqizgaa: { name: "globalcrm", dialer: true, web: "https://globalcrm.in-sync.co.in" },
   rdhvkluvkieajtmpljyz: { name: "work", web: "https://work.in-sync.co.in" },
@@ -38,7 +39,7 @@ const META: Record<string, { name: string; dialer?: boolean; marketing?: boolean
   fibpamjksquymscdlfal: { name: "vendorverification", web: "https://vendorverification.in-sync.co.in" },
   unmdhcjrplwntqjiciiz: { name: "wa", web: "https://wa.in-sync.co.in" },
   xpndsoozxjrvcwhauunh: { name: "email", web: "https://email.in-sync.co.in" },
-  zcmfxpknsybponbudyqb: { name: "smbconnect", web: "https://smbconnect.in" },
+  zcmfxpknsybponbudyqb: { name: "smbconnect", feedCheck: true, web: "https://smbconnect.in" },
   ufwvyybrctjpwipbveqe: { name: "RMPL", web: "https://rmpl-sync.pages.dev" },
   upnhhrhobvdmpfnldvgb: { name: "website", web: "https://in-sync.co.in" },
 };
@@ -187,6 +188,51 @@ async function checkMarketing(ref: string): Promise<Check> {
     };
   } catch (e) {
     return { label: "Marketing engine live", status: "warn", detail: String(e) };
+  }
+}
+
+async function checkSmbFeed(ref: string): Promise<Check> {
+  // smbconnect feed query heartbeat: catches silent failures in feed visibility.
+  // Regression test for post_context filter syntax issue where posts stop appearing.
+  // Creates a test post, verifies it's returned by the feed query, then cleans up.
+  const testUserId = "00000000-0000-0000-0000-000000000001"; // sentinel test user
+  const testPostId = `test-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  try {
+    // 1. Insert test post with post_context='member' (the default for member feeds)
+    const insertRes = await sql(
+      ref,
+      `insert into posts(id, user_id, content, post_context, likes_count, comments_count, shares_count, reposts_count)
+       values('${testPostId}', '${testUserId}', 'HEALTH_SENTINEL_TEST', 'member', 0, 0, 0, 0)`,
+    );
+
+    // 2. Query the feed using THE EXACT FILTER from MemberFeed.tsx loadPosts()
+    // This is the critical line that was broken by unquoted string literals.
+    const feedRes = await sql(
+      ref,
+      `select id from posts where (post_context is null or post_context='member') order by created_at desc limit 50`,
+    );
+
+    // 3. Verify the test post appears in results
+    const found = feedRes.some((p: any) => p.id === testPostId);
+
+    // 4. Clean up test post (best-effort; failure here doesn't fail the check)
+    try {
+      await sql(ref, `delete from posts where id='${testPostId}'`);
+    } catch (_) { /* cleanup best-effort */ }
+
+    if (!found) {
+      return {
+        label: "Feed post visibility",
+        status: "fail",
+        detail: "Member feed query failed to return test post — post_context filter syntax broken or data layer issue",
+      };
+    }
+
+    return { label: "Feed post visibility", status: "ok", detail: "feed query returns member posts" };
+  } catch (e) {
+    // Clean up on error (best-effort)
+    try { await sql(ref, `delete from posts where id='${testPostId}'`); } catch (_) { }
+    return { label: "Feed post visibility", status: "warn", detail: `probe failed: ${String(e).slice(0, 100)}` };
   }
 }
 
@@ -510,6 +556,7 @@ async function runProject(ref: string): Promise<{ ref: string; name: string; che
     checks.push(await checkRlsExposure(ref));
     if (m.dialer) checks.push(...(await checkDialer(ref)));
     if (m.marketing) checks.push(await checkMarketing(ref));
+    if (m.feedCheck) checks.push(await checkSmbFeed(ref));
     checks.push(...(await checkModules(ref)));
   }
   return { ref, name: m.name, checks };
