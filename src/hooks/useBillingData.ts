@@ -10,7 +10,7 @@ import type {
   BillingDocumentType,
   BillingDocumentStatus,
 } from "@/types/billing";
-import { getCurrentFinancialYear } from "@/utils/billingUtils";
+import { getCurrentFinancialYear, sellerFromSettings } from "@/utils/billingUtils";
 import { INDIAN_STATES } from "@/types/billing";
 
 // Default billing settings
@@ -164,6 +164,7 @@ export function useBillingData() {
           original_invoice_id: d.original_invoice_id || undefined,
           original_invoice_number: d.original_invoice_number || undefined,
           converted_from_id: (d as any).converted_from_id || undefined,
+          seller: (d as any).seller_snapshot || undefined,
           items,
           created_at: d.created_at || undefined,
           updated_at: d.updated_at || undefined,
@@ -330,6 +331,10 @@ export function useBillingData() {
       terms_and_conditions: docData.terms_and_conditions || null,
       original_invoice_id: docData.original_invoice_id || null,
       original_invoice_number: docData.original_invoice_number || null,
+      // Freeze the issuing company. Credit notes carry the source invoice's issuer
+      // (docData.seller); everything else freezes the current company settings so a
+      // later profile change can never rewrite who issued this document.
+      seller_snapshot: docData.seller || sellerFromSettings(settings),
     };
 
     const { data, error } = await supabase.from("billing_documents").insert(row).select().single();
@@ -529,6 +534,7 @@ export function useBillingData() {
         notes: resolvedNotes,
         terms_and_conditions: resolvedTerms,
         converted_from_id: id || null,
+        seller_snapshot: docData.seller || sellerFromSettings(currentSettings as any),
       };
 
       const { data, error } = await supabase.from("billing_documents").insert(row).select().single();
@@ -686,32 +692,6 @@ export function useBillingData() {
     }
   }, [effectiveOrgId, settings.id]);
 
-  // ─── Issue Credit Note ───
-  const issueCreditNote = useCallback(async (cancelledInvoice: BillingDocument) => {
-    if (!effectiveOrgId) return cancelledInvoice;
-    const fy = getCurrentFinancialYear();
-    const prefix = settings.credit_note_prefix;
-    const nextNum = settings.next_credit_note_number;
-    const newDoc: BillingDocument = {
-      ...cancelledInvoice,
-      id: "",
-      doc_type: "credit_note",
-      doc_number: `${prefix}-${fy}-${String(nextNum).padStart(4, "0")}`,
-      status: "draft",
-      original_invoice_id: cancelledInvoice.id,
-      original_invoice_number: cancelledInvoice.doc_number,
-      amount_paid: 0,
-      balance_due: cancelledInvoice.total_amount,
-      doc_date: new Date().toISOString().split("T")[0],
-      notes: settings.default_credit_note_terms || `Credit Note against ${cancelledInvoice.doc_number}`,
-      terms_and_conditions: settings.default_credit_note_terms || `Credit Note against ${cancelledInvoice.doc_number}`,
-      created_at: new Date().toISOString(),
-      org_id: effectiveOrgId,
-    };
-    await addDocument(newDoc);
-    return newDoc;
-  }, [settings, addDocument, effectiveOrgId]);
-
   return {
     documents,
     payments,
@@ -726,7 +706,6 @@ export function useBillingData() {
     updateSettings,
     getDocumentPayments,
     getNextDocNumber,
-    issueCreditNote,
     refetch: fetchAll,
   };
 }

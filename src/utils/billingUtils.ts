@@ -1,4 +1,31 @@
-import type { SupplyType, BillingDocumentItem } from "@/types/billing";
+import type { SupplyType, BillingDocumentItem, BillingSettings, BillingSellerSnapshot } from "@/types/billing";
+
+// Build a frozen issuer snapshot from the current company settings.
+export function sellerFromSettings(s: BillingSettings): BillingSellerSnapshot {
+  return {
+    company_name: s.company_name || "",
+    company_gstin: s.company_gstin || "",
+    company_pan: s.company_pan || "",
+    company_state: s.company_state || "",
+    company_state_code: s.company_state_code || "",
+    company_address: s.company_address || "",
+    company_email: s.company_email || "",
+    company_phone: s.company_phone || "",
+    bank_name: s.bank_name || "",
+    bank_account_number: s.bank_account_number || "",
+    bank_ifsc: s.bank_ifsc || "",
+    bank_branch: s.bank_branch || "",
+    bank_upi_id: s.bank_upi_id || "",
+    logo_url: s.logo_url,
+    signature_url: s.signature_url,
+  };
+}
+
+// Resolve the issuer to render for a document: its frozen snapshot when present
+// (the entity that actually issued it), otherwise the current company settings.
+export function resolveIssuer(seller: BillingSellerSnapshot | undefined, settings: BillingSettings): BillingSellerSnapshot {
+  return seller || sellerFromSettings(settings);
+}
 
 export function formatINR(n: number): string {
   return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(n);

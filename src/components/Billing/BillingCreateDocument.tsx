@@ -39,6 +39,12 @@ interface BillingCreateDocumentProps {
   onRecordAdvance?: (payload: { document_id: string; amount: number; payment_date: string; reference_number?: string; notes?: string; org_id: string }) => Promise<void> | void;
   existingAdvanceTotal?: number;
   advanceHasPaymentRecord?: boolean;
+  // When set, this is a NEW credit note being issued against an existing tax
+  // invoice: the form pre-fills from the invoice (client + line items) and the
+  // resulting credit note is linked to it via original_invoice_id. The invoice
+  // itself is left untouched (it stays a valid issued document). The user can
+  // trim line items / quantities down for a partial credit, or keep the full value.
+  seedFromInvoice?: BillingDocument;
 }
 
 interface RawItem {
@@ -63,9 +69,21 @@ function getDefaultNotes(settings: BillingSettings, docType: BillingDocumentType
   return settings.default_notes || "We value your business and trust.";
 }
 
-export function BillingCreateDocument({ docType, clients, settings, documents, getNextDocNumber, onSave, onBack, editDoc, onUpdateSettings, onUpdateClientBilling, onRecordAdvance, existingAdvanceTotal = 0, advanceHasPaymentRecord = false }: BillingCreateDocumentProps) {
+export function BillingCreateDocument({ docType, clients, settings, documents, getNextDocNumber, onSave, onBack, editDoc, onUpdateSettings, onUpdateClientBilling, onRecordAdvance, existingAdvanceTotal = 0, advanceHasPaymentRecord = false, seedFromInvoice }: BillingCreateDocumentProps) {
   const { getClientBillingDetails, saveClientBillingDetails } = useBillingClientCache();
   const isEdit = !!editDoc;
+  // The document whose client + line items seed the form: the edited doc when
+  // editing, otherwise the source invoice when issuing a credit note against it.
+  const sourceDoc = editDoc || seedFromInvoice;
+  // The tax invoice this document is raised against (shown read-only + saved as
+  // the link). Comes from the edited credit note's stored link, or from the
+  // invoice we're seeding a new credit note from.
+  const againstInvoiceId = editDoc?.original_invoice_id ?? seedFromInvoice?.id;
+  const againstInvoiceNumber = editDoc?.original_invoice_number ?? seedFromInvoice?.doc_number;
+  // Skip the auto pre-fill effect (and lock the client) whenever the client is
+  // already fixed: when editing, or when seeding from an invoice the credit note
+  // must stay tied to that invoice's client.
+  const clientPrefilled = isEdit || !!seedFromInvoice;
   // Lock the advance field only when a payment record backs it (edits there
   // must go through the payment workflow). When the advance only lives on
   // doc.amount_paid (legacy / no record yet), keep it editable so the user
@@ -87,7 +105,7 @@ export function BillingCreateDocument({ docType, clients, settings, documents, g
 
   const [form, setForm] = useState({
     doc_number: editDoc?.doc_number || getNextDocNumber(docType),
-    client_id: editDoc?.client_id || "",
+    client_id: sourceDoc?.client_id || "",
     doc_date: editDoc?.doc_date || new Date().toISOString().split("T")[0],
     due_date: editDoc?.due_date || "",
     terms: initialTerms,
@@ -98,8 +116,8 @@ export function BillingCreateDocument({ docType, clients, settings, documents, g
   });
 
   const [items, setItems] = useState<RawItem[]>(
-    editDoc?.items?.length
-      ? editDoc.items.map(item => ({
+    sourceDoc?.items?.length
+      ? sourceDoc.items.map(item => ({
           description: item.description,
           hsn_sac: item.hsn_sac,
           qty: item.qty,
@@ -113,14 +131,14 @@ export function BillingCreateDocument({ docType, clients, settings, documents, g
 
   // Editable billing details for the selected client
   const [billingDetails, setBillingDetails] = useState({
-    invoice_company_name: editDoc?.client?.invoice_company_name || "",
-    gstin: editDoc?.client?.gstin || "",
-    pan: editDoc?.client?.pan || "",
-    billing_address: editDoc?.client?.billing_address || "",
-    city: editDoc?.client?.city || "",
-    state: editDoc?.client?.state || "",
-    state_code: editDoc?.client?.billing_state_code || "",
-    pin_code: editDoc?.client?.pin_code || "",
+    invoice_company_name: sourceDoc?.client?.invoice_company_name || "",
+    gstin: sourceDoc?.client?.gstin || "",
+    pan: sourceDoc?.client?.pan || "",
+    billing_address: sourceDoc?.client?.billing_address || "",
+    city: sourceDoc?.client?.city || "",
+    state: sourceDoc?.client?.state || "",
+    state_code: sourceDoc?.client?.billing_state_code || "",
+    pin_code: sourceDoc?.client?.pin_code || "",
   });
 
   const selectedClient = clients.find(c => c.id === form.client_id);
@@ -132,7 +150,7 @@ export function BillingCreateDocument({ docType, clients, settings, documents, g
   //   3. localStorage cache (legacy device-local fallback)
   // Skip when editing — editDoc already seeded the form.
   useEffect(() => {
-    if (isEdit) return;
+    if (clientPrefilled) return;
     if (!selectedClient) {
       setBillingDetails({ invoice_company_name: "", gstin: "", pan: "", billing_address: "", city: "", state: "", state_code: "", pin_code: "" });
       return;
@@ -164,7 +182,7 @@ export function BillingCreateDocument({ docType, clients, settings, documents, g
       ),
       pin_code: pick(selectedClient.pin_code, snap?.pin_code, cached?.pin_code),
     });
-  }, [selectedClient, documents, getClientBillingDetails, isEdit]);
+  }, [selectedClient, documents, getClientBillingDetails, clientPrefilled]);
 
   const updateBillingField = (key: keyof typeof billingDetails, value: string) => {
     const next = { ...billingDetails, [key]: value };
@@ -179,9 +197,15 @@ export function BillingCreateDocument({ docType, clients, settings, documents, g
   };
 
   const supplyType: SupplyType = useMemo(() => {
+    // A credit note against an invoice mirrors that invoice's supply type exactly
+    // (same issuer + same buyer), regardless of the current company's state.
+    if (seedFromInvoice) return seedFromInvoice.supply_type;
     if (!billingDetails.state_code) return "inter_state";
-    return detectSupplyType(settings.company_state_code, billingDetails.state_code);
-  }, [billingDetails.state_code, settings.company_state_code]);
+    // Tax split is between the ISSUER's state and the buyer's. For an edited doc
+    // that's the frozen issuer; otherwise the current company settings.
+    const issuerStateCode = editDoc?.seller?.company_state_code || settings.company_state_code;
+    return detectSupplyType(issuerStateCode, billingDetails.state_code);
+  }, [seedFromInvoice, editDoc, billingDetails.state_code, settings.company_state_code]);
 
   const calcItems: BillingDocumentItem[] = useMemo(() => {
     return items.map((item, i) => {
@@ -253,8 +277,13 @@ export function BillingCreateDocument({ docType, clients, settings, documents, g
       status: derivedStatus,
       notes: form.notes,
       terms_and_conditions: form.terms,
-      original_invoice_id: editDoc?.original_invoice_id,
-      original_invoice_number: editDoc?.original_invoice_number,
+      original_invoice_id: againstInvoiceId,
+      original_invoice_number: againstInvoiceNumber,
+      // A credit note inherits the issuing company of the invoice it's raised
+      // against, so it can never show a different entity than its invoice. New
+      // invoices/proformas leave this undefined → the data layer freezes the
+      // current company settings at save time.
+      seller: editDoc?.seller ?? seedFromInvoice?.seller,
       items: calcItems,
       created_at: editDoc?.created_at || new Date().toISOString(),
     };
@@ -311,7 +340,15 @@ export function BillingCreateDocument({ docType, clients, settings, documents, g
     <div className="space-y-5">
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={onBack}><ChevronLeft className="h-5 w-5" /></Button>
-        <h2 className="text-2xl font-bold">{isEdit ? "Edit" : "Create"} {DOC_TYPE_LABELS[docType]}</h2>
+        <div>
+          <h2 className="text-2xl font-bold">
+            {seedFromInvoice ? "Issue" : isEdit ? "Edit" : "Create"} {DOC_TYPE_LABELS[docType]}
+            {againstInvoiceNumber && <span className="text-base font-medium text-muted-foreground"> against {againstInvoiceNumber}</span>}
+          </h2>
+          {seedFromInvoice && (
+            <p className="text-xs text-muted-foreground mt-0.5">The invoice stays valid — trim line items or quantities for a partial credit, or leave them for a full credit.</p>
+          )}
+        </div>
       </div>
 
       {/* Document Details */}
@@ -322,10 +359,10 @@ export function BillingCreateDocument({ docType, clients, settings, documents, g
             <Label>Document Number</Label>
             <Input value={form.doc_number} onChange={e => setForm({ ...form, doc_number: e.target.value })} />
           </div>
-          {editDoc?.original_invoice_number && (
+          {againstInvoiceNumber && (
             <div className="space-y-1.5">
               <Label>Against Invoice</Label>
-              <Input value={editDoc.original_invoice_number} disabled className="text-red-600 font-semibold" />
+              <Input value={againstInvoiceNumber} disabled className="text-red-600 font-semibold" />
             </div>
           )}
           <div className="space-y-1.5">
@@ -338,7 +375,7 @@ export function BillingCreateDocument({ docType, clients, settings, documents, g
           </div>
           <div className="space-y-1.5">
             <Label>Client <span className="text-red-500">*</span></Label>
-            <Select value={form.client_id} onValueChange={v => setForm({ ...form, client_id: v })}>
+            <Select value={form.client_id} onValueChange={v => setForm({ ...form, client_id: v })} disabled={!!againstInvoiceNumber}>
               <SelectTrigger><SelectValue placeholder="Select Client" /></SelectTrigger>
               <SelectContent>
                 {clients.filter(c => c.status === "active" || !c.status).map(c => (

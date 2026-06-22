@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Send } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { formatCurrencyINR } from "@/utils/billingUtils";
+import { formatCurrencyINR, resolveIssuer } from "@/utils/billingUtils";
 import { DOC_TYPE_LABELS } from "@/types/billing";
 import type { BillingDocument, BillingSettings } from "@/types/billing";
 import { toast } from "sonner";
@@ -22,6 +22,8 @@ interface SendInvoiceEmailDialogProps {
 function buildInvoiceHtml(doc: BillingDocument, settings: BillingSettings): string {
   const docLabel = DOC_TYPE_LABELS[doc.doc_type] || "Invoice";
   const isIntraState = doc.supply_type === "intra_state";
+  // Render the entity that issued THIS document, not the current company profile.
+  const issuer = resolveIssuer(doc.seller, settings);
 
   const itemRows = doc.items.map((item, i) => `
     <tr>
@@ -42,10 +44,10 @@ function buildInvoiceHtml(doc: BillingDocument, settings: BillingSettings): stri
       </div>
 
       <div style="margin-bottom:16px">
-        <h2 style="margin:0;color:#0f9d7a">${settings.company_name}</h2>
-        <p style="margin:4px 0;font-size:12px;color:#666">${settings.company_address || ""}</p>
-        ${settings.company_gstin ? `<p style="margin:2px 0;font-size:12px;color:#666">GSTIN: ${settings.company_gstin}</p>` : ""}
-        ${settings.company_email ? `<p style="margin:2px 0;font-size:12px;color:#666">Email: ${settings.company_email}${settings.company_phone ? ` | Ph: ${settings.company_phone}` : ""}</p>` : ""}
+        <h2 style="margin:0;color:#0f9d7a">${issuer.company_name}</h2>
+        <p style="margin:4px 0;font-size:12px;color:#666">${issuer.company_address || ""}</p>
+        ${issuer.company_gstin ? `<p style="margin:2px 0;font-size:12px;color:#666">GSTIN: ${issuer.company_gstin}</p>` : ""}
+        ${issuer.company_email ? `<p style="margin:2px 0;font-size:12px;color:#666">Email: ${issuer.company_email}${issuer.company_phone ? ` | Ph: ${issuer.company_phone}` : ""}</p>` : ""}
       </div>
 
       <hr style="border:none;border-top:2px solid #0f9d7a;margin:16px 0" />
@@ -96,13 +98,13 @@ function buildInvoiceHtml(doc: BillingDocument, settings: BillingSettings): stri
         <tr style="border-top:2px solid #0f9d7a"><td style="padding:8px;font-weight:bold;color:#0f9d7a;font-size:15px">Grand Total</td><td style="text-align:right;padding:8px;font-weight:bold;color:#0f9d7a;font-size:15px">${formatCurrencyINR(doc.total_amount)}</td></tr>
       </table>
 
-      ${settings.bank_name ? `
+      ${issuer.bank_name ? `
       <div style="margin-top:20px;padding:12px;background:#f9fafb;border-radius:8px;font-size:12px">
         <strong style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px">Bank Details</strong><br/>
-        Bank: ${settings.bank_name}<br/>
-        A/C: ${settings.bank_account_number}<br/>
-        IFSC: ${settings.bank_ifsc}
-        ${settings.bank_upi_id ? `<br/>UPI: ${settings.bank_upi_id}` : ""}
+        Bank: ${issuer.bank_name}<br/>
+        A/C: ${issuer.bank_account_number}<br/>
+        IFSC: ${issuer.bank_ifsc}
+        ${issuer.bank_upi_id ? `<br/>UPI: ${issuer.bank_upi_id}` : ""}
       </div>` : ""}
 
       <p style="text-align:center;color:#999;font-size:11px;margin-top:24px">This is a computer-generated document and does not require a physical signature.</p>
@@ -129,12 +131,14 @@ function saveCachedCC(clientId: string, cc: string) {
 
 export function SendInvoiceEmailDialog({ open, onClose, doc, settings, onStatusUpdate }: SendInvoiceEmailDialogProps) {
   const docLabel = DOC_TYPE_LABELS[doc.doc_type] || "Invoice";
+  // Use the entity that issued this document for the subject + sign-off.
+  const issuerName = resolveIssuer(doc.seller, settings).company_name || "";
   const [sending, setSending] = useState(false);
   const [form, setForm] = useState({
     to: doc.client?.email || "",
     cc: loadCachedCC(doc.client_id),
-    subject: `${docLabel} ${doc.doc_number} from ${settings.company_name || ""}`.trim(),
-    message: `Dear ${doc.client_name},\n\nPlease find the details of ${docLabel.toLowerCase()} ${doc.doc_number} for ${formatCurrencyINR(doc.total_amount)}.\n\nKindly arrange payment by ${doc.due_date}.\n\nRegards,\n${settings.company_name || ""}`,
+    subject: `${docLabel} ${doc.doc_number} from ${issuerName}`.trim(),
+    message: `Dear ${doc.client_name},\n\nPlease find the details of ${docLabel.toLowerCase()} ${doc.doc_number} for ${formatCurrencyINR(doc.total_amount)}.\n\nKindly arrange payment by ${doc.due_date}.\n\nRegards,\n${issuerName}`,
   });
 
   const handleSend = async () => {
