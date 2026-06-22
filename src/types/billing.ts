@@ -42,6 +42,27 @@ export interface BillingDocumentItem {
   sort_order?: number;
 }
 
+// Frozen snapshot of the issuing company ("issued by" / seller) as it was when
+// the document was created. Mirrors the company_* fields of BillingSettings so a
+// document's issuer never changes if the company profile is later edited.
+export interface BillingSellerSnapshot {
+  company_name: string;
+  company_gstin: string;
+  company_pan: string;
+  company_state: string;
+  company_state_code: string;
+  company_address: string;
+  company_email: string;
+  company_phone: string;
+  bank_name: string;
+  bank_account_number: string;
+  bank_ifsc: string;
+  bank_branch: string;
+  bank_upi_id: string;
+  logo_url?: string;
+  signature_url?: string;
+}
+
 export interface BillingDocument {
   id: string;
   org_id: string;
@@ -77,6 +98,8 @@ export interface BillingDocument {
   original_invoice_id?: string;
   original_invoice_number?: string;
   converted_from_id?: string;
+  // Frozen issuing company. Absent on legacy docs → UI falls back to current settings.
+  seller?: BillingSellerSnapshot;
   items: BillingDocumentItem[];
   created_at?: string;
   updated_at?: string;

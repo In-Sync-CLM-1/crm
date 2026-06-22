@@ -197,9 +197,15 @@ export function BillingCreateDocument({ docType, clients, settings, documents, g
   };
 
   const supplyType: SupplyType = useMemo(() => {
+    // A credit note against an invoice mirrors that invoice's supply type exactly
+    // (same issuer + same buyer), regardless of the current company's state.
+    if (seedFromInvoice) return seedFromInvoice.supply_type;
     if (!billingDetails.state_code) return "inter_state";
-    return detectSupplyType(settings.company_state_code, billingDetails.state_code);
-  }, [billingDetails.state_code, settings.company_state_code]);
+    // Tax split is between the ISSUER's state and the buyer's. For an edited doc
+    // that's the frozen issuer; otherwise the current company settings.
+    const issuerStateCode = editDoc?.seller?.company_state_code || settings.company_state_code;
+    return detectSupplyType(issuerStateCode, billingDetails.state_code);
+  }, [seedFromInvoice, editDoc, billingDetails.state_code, settings.company_state_code]);
 
   const calcItems: BillingDocumentItem[] = useMemo(() => {
     return items.map((item, i) => {
@@ -273,6 +279,11 @@ export function BillingCreateDocument({ docType, clients, settings, documents, g
       terms_and_conditions: form.terms,
       original_invoice_id: againstInvoiceId,
       original_invoice_number: againstInvoiceNumber,
+      // A credit note inherits the issuing company of the invoice it's raised
+      // against, so it can never show a different entity than its invoice. New
+      // invoices/proformas leave this undefined → the data layer freezes the
+      // current company settings at save time.
+      seller: editDoc?.seller ?? seedFromInvoice?.seller,
       items: calcItems,
       created_at: editDoc?.created_at || new Date().toISOString(),
     };

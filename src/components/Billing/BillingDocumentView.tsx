@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ChevronLeft, Download, Mail, CreditCard, Loader2, Pencil, Trash2, FileX2, ArrowRight } from "lucide-react";
-import { formatCurrencyINR, numberToWords, statusLabel, formatFinancialYear } from "@/utils/billingUtils";
+import { formatCurrencyINR, numberToWords, statusLabel, formatFinancialYear, resolveIssuer } from "@/utils/billingUtils";
 import { DOC_TYPE_LABELS, STATUS_COLORS } from "@/types/billing";
 import type { BillingDocument, BillingPayment, BillingSettings } from "@/types/billing";
 import { RecordPaymentDialog } from "./RecordPaymentDialog";
@@ -34,6 +34,10 @@ export function BillingDocumentView({ doc, payments, settings, onBack, onRecordP
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const invoiceRef = useRef<HTMLDivElement>(null);
+
+  // The issuing company frozen on this document (falls back to current settings
+  // for legacy docs without a snapshot).
+  const issuer = resolveIssuer(doc.seller, settings);
 
   const totalTds = payments.reduce((sum, p) => sum + (p.tds_amount || 0), 0);
   const advanceFromPayments = payments
@@ -187,29 +191,29 @@ export function BillingDocumentView({ doc, payments, settings, onBack, onRecordP
           {/* Company Header */}
           <div className="flex justify-between items-start mb-6">
             <div className="flex items-start gap-4">
-              {settings.logo_url && (
-                <img src={settings.logo_url} alt="Logo" className="h-14 w-auto object-contain rounded" />
+              {issuer.logo_url && (
+                <img src={issuer.logo_url} alt="Logo" className="h-14 w-auto object-contain rounded" />
               )}
               <div>
-                <h3 className="text-xl font-bold text-primary">{settings.company_name || "Your Company"}</h3>
-                <p className="text-xs text-muted-foreground mt-1">{settings.company_address}</p>
-                {(settings.company_gstin || settings.company_pan) && (
+                <h3 className="text-xl font-bold text-primary">{issuer.company_name || "Your Company"}</h3>
+                <p className="text-xs text-muted-foreground mt-1">{issuer.company_address}</p>
+                {(issuer.company_gstin || issuer.company_pan) && (
                   <p className="text-xs text-muted-foreground">
-                    {settings.company_gstin && `GSTIN: ${settings.company_gstin}`}
-                    {settings.company_gstin && settings.company_pan && " | "}
-                    {settings.company_pan && `PAN: ${settings.company_pan}`}
+                    {issuer.company_gstin && `GSTIN: ${issuer.company_gstin}`}
+                    {issuer.company_gstin && issuer.company_pan && " | "}
+                    {issuer.company_pan && `PAN: ${issuer.company_pan}`}
                   </p>
                 )}
-                {(settings.company_email || settings.company_phone) && (
+                {(issuer.company_email || issuer.company_phone) && (
                   <p className="text-xs text-muted-foreground">
-                    {settings.company_email && `Email: ${settings.company_email}`}
-                    {settings.company_email && settings.company_phone && " | "}
-                    {settings.company_phone && `Ph: ${settings.company_phone}`}
+                    {issuer.company_email && `Email: ${issuer.company_email}`}
+                    {issuer.company_email && issuer.company_phone && " | "}
+                    {issuer.company_phone && `Ph: ${issuer.company_phone}`}
                   </p>
                 )}
-                {settings.company_state && (
+                {issuer.company_state && (
                   <p className="text-xs text-muted-foreground">
-                    State: {settings.company_state}{settings.company_state_code ? ` (${settings.company_state_code})` : ""}
+                    State: {issuer.company_state}{issuer.company_state_code ? ` (${issuer.company_state_code})` : ""}
                   </p>
                 )}
               </div>
@@ -329,15 +333,15 @@ export function BillingDocumentView({ doc, payments, settings, onBack, onRecordP
           <div className="grid grid-cols-2 gap-8">
             <div>
               <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2">Bank Details</p>
-              <p className="text-xs">Bank: {settings.bank_name || "—"}</p>
-              <p className="text-xs">A/C: {settings.bank_account_number || "—"}</p>
-              <p className="text-xs">IFSC: {settings.bank_ifsc || "—"}</p>
-              {settings.bank_upi_id && <p className="text-xs">UPI: {settings.bank_upi_id}</p>}
+              <p className="text-xs">Bank: {issuer.bank_name || "—"}</p>
+              <p className="text-xs">A/C: {issuer.bank_account_number || "—"}</p>
+              <p className="text-xs">IFSC: {issuer.bank_ifsc || "—"}</p>
+              {issuer.bank_upi_id && <p className="text-xs">UPI: {issuer.bank_upi_id}</p>}
             </div>
             <div className="text-right">
-              <p className="text-xs font-semibold">For {settings.company_name || "Your Company"}</p>
-              {settings.signature_url ? (
-                <img src={settings.signature_url} alt="Signature" className="h-12 w-auto object-contain ml-auto mt-2 mb-2" />
+              <p className="text-xs font-semibold">For {issuer.company_name || "Your Company"}</p>
+              {issuer.signature_url ? (
+                <img src={issuer.signature_url} alt="Signature" className="h-12 w-auto object-contain ml-auto mt-2 mb-2" />
               ) : (
                 <div className="h-12 mt-2 mb-2" />
               )}
