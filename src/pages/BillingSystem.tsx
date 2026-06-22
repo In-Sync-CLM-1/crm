@@ -31,13 +31,14 @@ export default function BillingSystem() {
   const [viewDocId, setViewDocId] = useState<string | null>(null);
   const [createDocType, setCreateDocType] = useState<BillingDocumentType | null>(null);
   const [editDoc, setEditDoc] = useState<BillingDocument | null>(null);
+  // The tax invoice a new credit note is being issued against (pre-fills the form).
+  const [creditNoteSource, setCreditNoteSource] = useState<BillingDocument | null>(null);
   const [invoiceStatusFilter, setInvoiceStatusFilter] = useState<string | undefined>(undefined);
 
   const {
     documents, payments, settings, loading: billingLoading, busy: billingBusy,
     addDocument, updateDocument, deleteDocument, convertDocument,
     recordPayment, updateSettings, getDocumentPayments, getNextDocNumber,
-    issueCreditNote,
   } = useBillingData();
 
   const queryClient = useQueryClient();
@@ -122,6 +123,8 @@ export default function BillingSystem() {
     setView(v);
     setViewDocId(null);
     setCreateDocType(null);
+    setEditDoc(null);
+    setCreditNoteSource(null);
     if (v !== "invoices") setInvoiceStatusFilter(undefined);
   }, []);
 
@@ -144,6 +147,8 @@ export default function BillingSystem() {
   }, []);
 
   const handleCreateDoc = useCallback((docType: BillingDocumentType) => {
+    setEditDoc(null);
+    setCreditNoteSource(null);
     setCreateDocType(docType);
     setViewDocId(null);
   }, []);
@@ -152,9 +157,11 @@ export default function BillingSystem() {
     setViewDocId(null);
     setCreateDocType(null);
     setEditDoc(null);
+    setCreditNoteSource(null);
   }, []);
 
   const handleEditDoc = useCallback((doc: BillingDocument) => {
+    setCreditNoteSource(null);
     setEditDoc(doc);
     setCreateDocType(doc.doc_type);
     setViewDocId(null);
@@ -172,13 +179,15 @@ export default function BillingSystem() {
     return await addDocument(doc);
   }, [editDoc, updateDocument, addDocument]);
 
+  // Issue a credit note AGAINST an issued tax invoice. The invoice is left
+  // untouched (it stays a valid issued document); we open a pre-filled, editable
+  // credit-note form linked to it so the user can credit part or all of its value.
   const handleIssueCreditNote = useCallback((doc: BillingDocument) => {
-    updateDocument(doc.id, { status: "cancelled" });
-    const cn = issueCreditNote(doc);
-    setViewDocId(cn.id);
-    setCreateDocType(null);
     setEditDoc(null);
-  }, [issueCreditNote, updateDocument]);
+    setCreditNoteSource(doc);
+    setCreateDocType("credit_note");
+    setViewDocId(null);
+  }, []);
 
   const handleConvert = useCallback(async (doc: BillingDocument) => {
     const newDoc = await convertDocument(doc, "invoice");
@@ -206,6 +215,11 @@ export default function BillingSystem() {
       const convertedInvoice = doc.doc_type === "proforma"
         ? documents.find(d => d.doc_type === "invoice" && d.converted_from_id === doc.id)
         : undefined;
+      const relatedCreditNotes = doc.doc_type === "invoice"
+        ? documents
+            .filter(d => d.doc_type === "credit_note" && d.original_invoice_id === doc.id)
+            .map(d => ({ id: d.id, doc_number: d.doc_number, doc_date: d.doc_date, total_amount: d.total_amount }))
+        : undefined;
       return (
         <BillingDocumentView
           doc={doc}
@@ -219,6 +233,7 @@ export default function BillingSystem() {
           onConvertToInvoice={doc.doc_type === "proforma" ? handleConvert : undefined}
           onStatusUpdate={(id, updates) => updateDocument(id, updates)}
           convertedInvoice={convertedInvoice ? { id: convertedInvoice.id, doc_number: convertedInvoice.doc_number } : undefined}
+          relatedCreditNotes={relatedCreditNotes}
           onOpenDoc={setViewDocId}
           busy={billingBusy}
         />
@@ -249,6 +264,7 @@ export default function BillingSystem() {
           onSave={handleSaveDoc}
           onBack={handleBack}
           editDoc={editDoc || undefined}
+          seedFromInvoice={!editDoc ? (creditNoteSource || undefined) : undefined}
           onUpdateSettings={updateSettings}
           onUpdateClientBilling={handleUpdateClientBilling}
           onRecordAdvance={async (p) => {

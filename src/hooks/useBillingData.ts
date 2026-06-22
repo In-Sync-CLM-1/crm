@@ -686,32 +686,6 @@ export function useBillingData() {
     }
   }, [effectiveOrgId, settings.id]);
 
-  // ─── Issue Credit Note ───
-  const issueCreditNote = useCallback(async (cancelledInvoice: BillingDocument) => {
-    if (!effectiveOrgId) return cancelledInvoice;
-    const fy = getCurrentFinancialYear();
-    const prefix = settings.credit_note_prefix;
-    const nextNum = settings.next_credit_note_number;
-    const newDoc: BillingDocument = {
-      ...cancelledInvoice,
-      id: "",
-      doc_type: "credit_note",
-      doc_number: `${prefix}-${fy}-${String(nextNum).padStart(4, "0")}`,
-      status: "draft",
-      original_invoice_id: cancelledInvoice.id,
-      original_invoice_number: cancelledInvoice.doc_number,
-      amount_paid: 0,
-      balance_due: cancelledInvoice.total_amount,
-      doc_date: new Date().toISOString().split("T")[0],
-      notes: settings.default_credit_note_terms || `Credit Note against ${cancelledInvoice.doc_number}`,
-      terms_and_conditions: settings.default_credit_note_terms || `Credit Note against ${cancelledInvoice.doc_number}`,
-      created_at: new Date().toISOString(),
-      org_id: effectiveOrgId,
-    };
-    await addDocument(newDoc);
-    return newDoc;
-  }, [settings, addDocument, effectiveOrgId]);
-
   return {
     documents,
     payments,
@@ -726,7 +700,6 @@ export function useBillingData() {
     updateSettings,
     getDocumentPayments,
     getNextDocNumber,
-    issueCreditNote,
     refetch: fetchAll,
   };
 }

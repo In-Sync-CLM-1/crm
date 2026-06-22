@@ -22,11 +22,13 @@ interface BillingDocumentViewProps {
   onConvertToInvoice?: (doc: BillingDocument) => void;
   onStatusUpdate?: (id: string, updates: Partial<BillingDocument>) => void;
   convertedInvoice?: { id: string; doc_number: string };
+  // Credit notes already issued against this invoice (shown on the invoice view).
+  relatedCreditNotes?: { id: string; doc_number: string; doc_date: string; total_amount: number }[];
   onOpenDoc?: (id: string) => void;
   busy?: boolean;
 }
 
-export function BillingDocumentView({ doc, payments, settings, onBack, onRecordPayment, onEdit, onDelete, onIssueCreditNote, onConvertToInvoice, onStatusUpdate, convertedInvoice, onOpenDoc, busy }: BillingDocumentViewProps) {
+export function BillingDocumentView({ doc, payments, settings, onBack, onRecordPayment, onEdit, onDelete, onIssueCreditNote, onConvertToInvoice, onStatusUpdate, convertedInvoice, relatedCreditNotes, onOpenDoc, busy }: BillingDocumentViewProps) {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
@@ -147,11 +149,37 @@ export function BillingDocumentView({ doc, payments, settings, onBack, onRecordP
           )}
           {doc.doc_type === "invoice" && doc.status !== "cancelled" && onIssueCreditNote && (
             <Button variant="outline" className="gap-1.5 text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => onIssueCreditNote(doc)}>
-              <FileX2 className="h-4 w-4" />Cancel & Issue Credit Note
+              <FileX2 className="h-4 w-4" />Issue Credit Note
             </Button>
           )}
         </div>
       </div>
+
+      {/* Credit notes issued against this invoice */}
+      {doc.doc_type === "invoice" && relatedCreditNotes && relatedCreditNotes.length > 0 && (
+        <Card className="border-red-200 bg-red-50/50 p-4">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xs font-bold text-red-700 uppercase tracking-wider">Credit Notes Against This Invoice</h3>
+            <span className="text-sm text-red-700">
+              Total credited: <strong>{formatCurrencyINR(relatedCreditNotes.reduce((s, c) => s + c.total_amount, 0))}</strong>
+              {" "}of {formatCurrencyINR(doc.total_amount)}
+            </span>
+          </div>
+          <div className="space-y-1">
+            {relatedCreditNotes.map(cn => (
+              <button
+                key={cn.id}
+                onClick={() => onOpenDoc?.(cn.id)}
+                className="flex w-full items-center justify-between rounded-md px-3 py-2 text-sm bg-white hover:bg-red-100/60 transition-colors"
+              >
+                <span className="font-semibold text-red-700">{cn.doc_number}</span>
+                <span className="text-muted-foreground">{cn.doc_date}</span>
+                <span className="font-semibold">{formatCurrencyINR(cn.total_amount)}</span>
+              </button>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {/* Invoice Preview */}
       <Card className="p-8" ref={invoiceRef}>
