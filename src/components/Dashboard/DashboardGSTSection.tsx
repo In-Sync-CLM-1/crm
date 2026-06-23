@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { dropSupersededProformas } from "@/lib/billing";
 import { useOrgContext } from "@/hooks/useOrgContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -119,7 +120,7 @@ export function DashboardGSTSection({ dateRange }: DashboardGSTSectionProps) {
       if (!effectiveOrgId) return [];
       const { data, error } = await supabase
         .from("billing_documents")
-        .select("id, doc_number, doc_type, doc_date, client_name, total_amount, total_tax, subtotal, amount_paid, balance_due, status")
+        .select("id, doc_number, doc_type, doc_date, client_name, total_amount, total_tax, subtotal, amount_paid, balance_due, status, converted_from_id")
         .eq("org_id", effectiveOrgId)
         .in("doc_type", ["invoice", "proforma"])
         .not("status", "in", "(draft,cancelled)")
@@ -128,7 +129,7 @@ export function DashboardGSTSection({ dateRange }: DashboardGSTSectionProps) {
         .order("doc_date", { ascending: false });
 
       if (error) throw error;
-      return data || [];
+      return dropSupersededProformas(data || []);
     },
     enabled: !!effectiveOrgId,
   });
@@ -186,14 +187,14 @@ export function DashboardGSTSection({ dateRange }: DashboardGSTSectionProps) {
       if (!effectiveOrgId) return [];
       const { data, error } = await supabase
         .from("billing_documents")
-        .select("id, doc_number, doc_type, doc_date, client_name, total_amount, total_tax, subtotal, amount_paid, balance_due, status")
+        .select("id, doc_number, doc_type, doc_date, client_name, total_amount, total_tax, subtotal, amount_paid, balance_due, status, converted_from_id")
         .eq("org_id", effectiveOrgId)
         .in("doc_type", ["invoice", "proforma"])
         .not("status", "in", "(draft,cancelled)")
         .order("doc_date", { ascending: false });
 
       if (error) throw error;
-      return data || [];
+      return dropSupersededProformas(data || []);
     },
     enabled: !!effectiveOrgId,
   });

@@ -2,6 +2,7 @@ import { useMemo, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { dropSupersededProformas } from "@/lib/billing";
 import DashboardLayout from "@/components/Layout/DashboardLayout";
 import { useOrgContext } from "@/hooks/useOrgContext";
 import { LoadingState } from "@/components/common/LoadingState";
@@ -61,18 +62,6 @@ interface MonthlyRevenueData {
   month: string;
   invoiced: number;
   received: number;
-}
-
-// A proforma that has been converted into an invoice is the same money as that
-// invoice. When both sit in the same result set they would be summed twice, so
-// we drop the source proforma once an invoice present here was converted from it.
-function dropSupersededProformas<T extends { id: string; doc_type: string; converted_from_id?: string | null }>(docs: T[]): T[] {
-  const supersededProformaIds = new Set(
-    docs
-      .filter((d) => d.doc_type === "invoice" && d.converted_from_id)
-      .map((d) => d.converted_from_id as string)
-  );
-  return docs.filter((d) => !(d.doc_type === "proforma" && supersededProformaIds.has(d.id)));
 }
 
 export default function Dashboard() {
