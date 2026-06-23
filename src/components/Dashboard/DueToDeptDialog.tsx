@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { dropSupersededProformas } from "@/lib/billing";
 import { useOrgContext } from "@/hooks/useOrgContext";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -70,14 +71,14 @@ export function DueToDeptDialog({ open, onClose }: DueToDeptDialogProps) {
           .neq("document_type", "quotation"),
         supabase
           .from("billing_documents")
-          .select("total_tax, doc_date, status")
+          .select("id, doc_type, total_tax, doc_date, status, converted_from_id")
           .eq("org_id", effectiveOrgId)
           .in("doc_type", ["invoice", "proforma"])
           .not("status", "in", "(draft,cancelled)"),
       ]);
       if (clientInv.error) throw clientInv.error;
       if (billingDocs.error) throw billingDocs.error;
-      const mappedBilling = (billingDocs.data || []).map((d: any) => ({
+      const mappedBilling = dropSupersededProformas(billingDocs.data || []).map((d: any) => ({
         tax_amount: d.total_tax || 0,
         payment_received_date: null,
         invoice_date: d.doc_date,
