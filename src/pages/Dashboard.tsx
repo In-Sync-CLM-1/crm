@@ -63,6 +63,18 @@ interface MonthlyRevenueData {
   received: number;
 }
 
+// A proforma that has been converted into an invoice is the same money as that
+// invoice. When both sit in the same result set they would be summed twice, so
+// we drop the source proforma once an invoice present here was converted from it.
+function dropSupersededProformas<T extends { id: string; doc_type: string; converted_from_id?: string | null }>(docs: T[]): T[] {
+  const supersededProformaIds = new Set(
+    docs
+      .filter((d) => d.doc_type === "invoice" && d.converted_from_id)
+      .map((d) => d.converted_from_id as string)
+  );
+  return docs.filter((d) => !(d.doc_type === "proforma" && supersededProformaIds.has(d.id)));
+}
+
 export default function Dashboard() {
   const { effectiveOrgId, isLoading: orgLoading } = useOrgContext();
   const queryClient = useQueryClient();
@@ -269,7 +281,7 @@ export default function Dashboard() {
 
       const { data, error } = await supabase
         .from("billing_documents")
-        .select("id, doc_number, doc_type, doc_date, client_name, total_amount, total_tax, subtotal, amount_paid, balance_due, status")
+        .select("id, doc_number, doc_type, doc_date, client_name, total_amount, total_tax, subtotal, amount_paid, balance_due, status, converted_from_id")
         .eq("org_id", effectiveOrgId)
         .in("doc_type", ["invoice", "proforma"])
         .not("status", "in", "(draft,cancelled)")
@@ -277,7 +289,7 @@ export default function Dashboard() {
         .lte("doc_date", format(dateRange.to, "yyyy-MM-dd"));
 
       if (error) throw error;
-      return data || [];
+      return dropSupersededProformas(data || []);
     },
     enabled: !!effectiveOrgId,
   });
@@ -290,7 +302,7 @@ export default function Dashboard() {
 
       const { data, error } = await supabase
         .from("billing_documents")
-        .select("id, doc_number, doc_type, doc_date, client_name, total_amount, total_tax, subtotal, amount_paid, balance_due, status")
+        .select("id, doc_number, doc_type, doc_date, client_name, total_amount, total_tax, subtotal, amount_paid, balance_due, status, converted_from_id")
         .eq("org_id", effectiveOrgId)
         .in("doc_type", ["invoice", "proforma"])
         .eq("status", "paid")
@@ -298,7 +310,7 @@ export default function Dashboard() {
         .lte("doc_date", format(dateRange.to, "yyyy-MM-dd"));
 
       if (error) throw error;
-      return data || [];
+      return dropSupersededProformas(data || []);
     },
     enabled: !!effectiveOrgId,
   });
@@ -354,7 +366,7 @@ export default function Dashboard() {
           .neq("document_type", "quotation"),
         supabase
           .from("billing_documents")
-          .select("total_tax")
+          .select("id, doc_type, total_tax, converted_from_id")
           .eq("org_id", effectiveOrgId)
           .in("doc_type", ["invoice", "proforma"])
           .not("status", "in", "(draft,cancelled)"),
@@ -368,7 +380,7 @@ export default function Dashboard() {
       if (trackingResult.error) throw trackingResult.error;
       return {
         invoiceGst: invoicesResult.data || [],
-        billingDocGst: billingDocsResult.data || [],
+        billingDocGst: dropSupersededProformas(billingDocsResult.data || []),
         remittance: trackingResult.data || [],
       };
     },
@@ -474,14 +486,14 @@ export default function Dashboard() {
 
       const { data, error } = await supabase
         .from("billing_documents")
-        .select("id, doc_number, doc_type, doc_date, client_name, total_amount, total_tax, subtotal, amount_paid, status")
+        .select("id, doc_number, doc_type, doc_date, client_name, total_amount, total_tax, subtotal, amount_paid, status, converted_from_id")
         .eq("org_id", effectiveOrgId)
         .in("doc_type", ["invoice", "proforma"])
         .not("status", "in", "(draft,cancelled)")
         .gte("doc_date", startOfYear)
         .lte("doc_date", endOfYear);
       if (error) throw error;
-      return data || [];
+      return dropSupersededProformas(data || []);
     },
     enabled: !!effectiveOrgId,
     staleTime: 120000,
