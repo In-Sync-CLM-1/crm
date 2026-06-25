@@ -1,7 +1,7 @@
 import { useState } from "react";
 import DashboardLayout from "@/components/Layout/DashboardLayout";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Upload, ClipboardList, BookOpen, Scale, TrendingUp, BarChart3, CreditCard } from "lucide-react";
+import { Upload, ClipboardList, BookOpen, Scale, TrendingUp, BarChart3, Receipt } from "lucide-react";
 import { AccountingImport } from "@/components/Accounting/AccountingImport";
 import { AccountingReviewQueue } from "@/components/Accounting/AccountingReviewQueue";
 import { AccountingManualEntry } from "@/components/Accounting/AccountingManualEntry";
@@ -93,7 +93,7 @@ export default function Accounting() {
               <BarChart3 className="h-3.5 w-3.5" />Balance Sheet
             </TabsTrigger>
             <TabsTrigger value="manual" className="flex items-center gap-1.5 text-xs">
-              <CreditCard className="h-3.5 w-3.5" />Card Expenses
+              <Receipt className="h-3.5 w-3.5" />Director's Expenses
             </TabsTrigger>
           </TabsList>
 

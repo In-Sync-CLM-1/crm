@@ -1,14 +1,16 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { CreditCard, Plus } from "lucide-react";
+import { Receipt, Plus, Paperclip, X, ExternalLink } from "lucide-react";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useAccountingData } from "@/hooks/useAccountingData";
+import { useOrgContext } from "@/hooks/useOrgContext";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 import type { ChartOfAccount } from "@/types/accounting";
 import { format } from "date-fns";
 
@@ -58,18 +60,19 @@ function AccountPicker({ accounts, value, onChange, placeholder }: {
 
 export function AccountingManualEntry() {
   const { leafAccounts, accountByCode, categorize, useJournalEntries } = useAccountingData();
+  const { effectiveOrgId } = useOrgContext();
   const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const dueToDirectorAccount = accountByCode("2241");
 
-  // Card expense form state
   const [date,       setDate]       = useState(format(new Date(), "yyyy-MM-dd"));
   const [desc,       setDesc]       = useState("");
   const [expAccId,   setExpAccId]   = useState("");
   const [amount,     setAmount]     = useState("");
+  const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
   const [saving,     setSaving]     = useState(false);
 
-  // Outstanding Due to Director balance
   const { data: entries = [] } = useJournalEntries();
   const dueBalance = useMemo(() => {
     if (!dueToDirectorAccount) return 0;
@@ -84,7 +87,22 @@ export function AccountingManualEntry() {
 
   const expenseAccounts = leafAccounts.filter(a => a.type === "expense");
 
-  async function handleCardExpense() {
+  async function uploadInvoice(entryId: string): Promise<string | null> {
+    if (!invoiceFile || !effectiveOrgId) return null;
+    const ext = invoiceFile.name.split(".").pop() ?? "pdf";
+    const path = `${effectiveOrgId}/${entryId}_${Date.now()}.${ext}`;
+    const { error } = await supabase.storage
+      .from("accounting-invoices")
+      .upload(path, invoiceFile, { upsert: false });
+    if (error) {
+      toast({ title: "Invoice upload failed", description: error.message, variant: "destructive" });
+      return null;
+    }
+    const { data } = supabase.storage.from("accounting-invoices").getPublicUrl(path);
+    return data.publicUrl;
+  }
+
+  async function handleSave() {
     if (!expAccId || !amount || !desc) {
       toast({ title: "Fill in all fields", variant: "destructive" });
       return;
@@ -100,8 +118,8 @@ export function AccountingManualEntry() {
     }
     setSaving(true);
     try {
-      await categorize.mutateAsync({
-        bank_transaction_id: "__manual__" as string,
+      // Create the journal entry first (without invoice_url)
+      const je = await categorize.mutateAsync({
         entry_date: date,
         narration: desc,
         source: "manual",
@@ -110,14 +128,31 @@ export function AccountingManualEntry() {
           { account_id: dueToDirectorAccount.id, debit: 0,   credit: amt },
         ],
       });
-      setDesc(""); setAmount(""); setExpAccId("");
-      toast({ title: "Entry recorded", description: `₹${amt.toLocaleString("en-IN")} added to Due to Director balance.` });
+
+      // Upload invoice and patch the entry if a file was selected
+      if (invoiceFile && je?.id) {
+        const url = await uploadInvoice(je.id);
+        if (url) {
+          await supabase
+            .from("journal_entries")
+            .update({ invoice_url: url })
+            .eq("id", je.id);
+        }
+      }
+
+      setDesc(""); setAmount(""); setExpAccId(""); setInvoiceFile(null);
+      toast({
+        title: "Entry recorded",
+        description: `₹${amt.toLocaleString("en-IN")} added to Due to Director balance.`,
+      });
     } catch {
       toast({ title: "Failed to save", variant: "destructive" });
     } finally {
       setSaving(false);
     }
   }
+
+  const selectedExpAccount = leafAccounts.find(a => a.id === expAccId);
 
   return (
     <div className="space-y-6 max-w-xl">
@@ -136,12 +171,12 @@ export function AccountingManualEntry() {
         </CardContent>
       </Card>
 
-      {/* Card expense entry */}
+      {/* Expense entry */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
-            <CreditCard className="h-4 w-4" />
-            Amit paid by personal card
+            <Receipt className="h-4 w-4" />
+            Expense paid by Amit Sengupta
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -159,7 +194,7 @@ export function AccountingManualEntry() {
           </div>
 
           <div className="space-y-1">
-            <Label className="text-xs">What was purchased?</Label>
+            <Label className="text-xs">Description</Label>
             <Input placeholder="e.g. Google Workspace licence — June 2026"
               value={desc} onChange={e => setDesc(e.target.value)} className="h-9" />
           </div>
@@ -174,13 +209,48 @@ export function AccountingManualEntry() {
             />
           </div>
 
+          {/* Invoice attachment */}
+          <div className="space-y-1">
+            <Label className="text-xs">Invoice (optional — PDF, JPG, PNG)</Label>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/pdf,image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={e => setInvoiceFile(e.target.files?.[0] ?? null)}
+            />
+            {invoiceFile ? (
+              <div className="flex items-center gap-2 h-9 px-3 border border-input rounded-md text-sm bg-background">
+                <Paperclip className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <span className="truncate flex-1">{invoiceFile.name}</span>
+                <button
+                  type="button"
+                  onClick={() => { setInvoiceFile(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full h-9 justify-start text-muted-foreground font-normal"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Paperclip className="h-3.5 w-3.5 mr-2" />
+                Attach invoice…
+              </Button>
+            )}
+          </div>
+
           <div className="bg-muted/50 rounded-md p-3 text-xs text-muted-foreground space-y-1">
             <p className="font-medium text-foreground">Journal entry that will be created:</p>
-            <p>Dr {expAccId ? leafAccounts.find(a => a.id === expAccId)?.name : "[Expense account]"} — ₹{amount || "0"}</p>
+            <p>Dr {selectedExpAccount?.name ?? "[Expense account]"} — ₹{amount || "0"}</p>
             <p>Cr Due to Director — Amit Sengupta — ₹{amount || "0"}</p>
           </div>
 
-          <Button onClick={handleCardExpense} disabled={saving} className="w-full">
+          <Button onClick={handleSave} disabled={saving} className="w-full">
             <Plus className="h-4 w-4 mr-2" />
             {saving ? "Saving…" : "Record entry"}
           </Button>

@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Download } from "lucide-react";
+import { Download, Paperclip } from "lucide-react";
 import { useAccountingData } from "@/hooks/useAccountingData";
 import type { LedgerRow, ChartOfAccount } from "@/types/accounting";
 import { format, startOfYear, endOfYear } from "date-fns";
@@ -68,6 +68,7 @@ export function AccountingLedger() {
         debit:           dr,
         credit:          cr,
         running_balance: runningBal,
+        invoice_url:     entry.invoice_url ?? null,
       });
     }
     return { openingBalance: 0, rows: ledgerRows };
@@ -145,6 +146,7 @@ export function AccountingLedger() {
                     <th className="px-4 py-2 text-right">Debit (₹)</th>
                     <th className="px-4 py-2 text-right">Credit (₹)</th>
                     <th className="px-4 py-2 text-right">Balance (₹)</th>
+                    <th className="px-2 py-2" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -153,6 +155,7 @@ export function AccountingLedger() {
                     <td className="px-4 py-2 text-muted-foreground">Opening Balance</td>
                     <td /><td /><td />
                     <td className="px-4 py-2 text-right">{fmt(openingBalance)}</td>
+                    <td />
                   </tr>
                   {rows.map(row => (
                     <tr key={row.entry_id} className="hover:bg-muted/30 transition-colors">
@@ -171,6 +174,19 @@ export function AccountingLedger() {
                         <span className="text-xs text-muted-foreground ml-1">
                           {row.running_balance < 0 ? "Cr" : "Dr"}
                         </span>
+                      </td>
+                      <td className="px-2 py-2 text-center">
+                        {row.invoice_url && (
+                          <a
+                            href={row.invoice_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="View invoice"
+                            className="text-muted-foreground hover:text-foreground inline-flex"
+                          >
+                            <Paperclip className="h-3.5 w-3.5" />
+                          </a>
+                        )}
                       </td>
                     </tr>
                   ))}

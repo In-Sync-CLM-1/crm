@@ -65,6 +65,7 @@ export interface JournalEntry {
   source: JournalSource;
   bank_transaction_id: string | null;
   billing_document_id: string | null;
+  invoice_url: string | null;
   created_at: string;
   lines?: JournalEntryLine[];
 }
@@ -88,6 +89,7 @@ export interface NewJournalEntry {
   source: JournalSource;
   bank_transaction_id?: string;
   billing_document_id?: string;
+  invoice_url?: string;
   lines: Array<{
     account_id: string;
     debit: number;
@@ -129,4 +131,5 @@ export interface LedgerRow {
   debit: number;
   credit: number;
   running_balance: number;
+  invoice_url: string | null;
 }

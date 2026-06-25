@@ -368,6 +368,7 @@ export function useAccountingData() {
           source: entry.source,
           bank_transaction_id: entry.bank_transaction_id || null,
           billing_document_id: entry.billing_document_id || null,
+          invoice_url: entry.invoice_url || null,
           created_by: user?.id,
         })
         .select()
