@@ -99,6 +99,7 @@ const Documentation = lazy(() => import("./pages/Documentation"));
 const RedefineDataRepository = lazy(() => import("./pages/RedefineDataRepository"));
 const Inventory = lazy(() => import("./pages/Inventory"));
 const BillingSystem = lazy(() => import("./pages/BillingSystem"));
+const Accounting = lazy(() => import("./pages/Accounting"));
 const Tasks = lazy(() => import("./pages/Tasks"));
 const Calendar = lazy(() => import("./pages/Calendar"));
 const Chat = lazy(() => import("./pages/Chat"));
@@ -509,6 +510,12 @@ const App = () => (
           <Route path="/billing-system" element={
             <ProtectedRoute>
               <BillingSystem />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/accounting" element={
+            <ProtectedRoute>
+              <Accounting />
             </ProtectedRoute>
           } />
           
