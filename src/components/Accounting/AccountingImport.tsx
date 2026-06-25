@@ -28,6 +28,12 @@ function parseDate(raw: string): string {
     const m = months[mmm[2].toLowerCase()];
     return m ? `${mmm[3]}-${m}-${mmm[1].padStart(2,"0")}` : "";
   }
+  // DD-Mon-YY (e.g. 18-Jun-26) — IDFC FIRST Bank format
+  const dmy2 = raw.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{2})$/);
+  if (dmy2) {
+    const m = months[dmy2[2].toLowerCase()];
+    return m ? `20${dmy2[3]}-${m}-${dmy2[1].padStart(2,"0")}` : "";
+  }
   if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
   return "";
 }
