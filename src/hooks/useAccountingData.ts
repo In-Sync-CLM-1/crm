@@ -215,7 +215,9 @@ export function useAccountingData() {
         .insert(toInsert);
       if (txnErr) throw txnErr;
 
-      // 4. Auto-categorize Amit rows immediately (create journal entries)
+      // 4. Auto-categorize Amit rows immediately.
+      //    Credit → Director's Loan (auto-posted).
+      //    Debit  → settle Due to Director balance first, rest is Salary.
       if (bankAccountId && loanAccountId && salaryAccountId) {
         const amitRows = toInsert.filter(r => r.auto_rule === "amit_loan" || r.auto_rule === "amit_salary");
         for (const row of amitRows) {
@@ -261,12 +263,45 @@ export function useAccountingData() {
       .maybeSingle();
     if (!txn) return;
 
-    const isLoan   = row.auto_rule === "amit_loan";
-    const isSalary = row.auto_rule === "amit_salary";
-    const amount   = isLoan ? row.credit : row.debit;
+    const isLoan = row.auto_rule === "amit_loan";
+    const amount = isLoan ? row.credit : row.debit;
+
+    // For Amit debits: settle outstanding Due to Director balance first, rest is salary
+    let settleAmount = 0;
+    let salaryAmount = amount;
+
+    if (!isLoan) {
+      const dueToDirectorId = (await supabase
+        .from("chart_of_accounts")
+        .select("id")
+        .eq("code", "2241")
+        .or(`org_id.eq.${row.org_id},org_id.is.null`)
+        .maybeSingle()
+      ).data?.id;
+
+      if (dueToDirectorId) {
+        // Compute outstanding Due to Director balance (credit-normal)
+        const { data: dueLines } = await supabase
+          .from("journal_entry_lines")
+          .select("debit, credit, entry:journal_entries!inner(org_id)")
+          .eq("account_id", dueToDirectorId)
+          .eq("entry.org_id", row.org_id);
+
+        const dueBalance = ((dueLines ?? []) as Array<{ debit: number; credit: number }>)
+          .reduce((s, l) => s + (l.credit - l.debit), 0);
+
+        settleAmount = Math.min(amount, Math.max(0, dueBalance));
+        salaryAmount = amount - settleAmount;
+      }
+    }
+
     const narration = isLoan
       ? `Director's Loan received - ${row.narration}`
-      : `Salary paid - ${row.narration}`;
+      : settleAmount > 0 && salaryAmount > 0
+        ? `Reimbursement (₹${settleAmount.toLocaleString("en-IN")}) + Salary (₹${salaryAmount.toLocaleString("en-IN")}) - ${row.narration}`
+        : settleAmount > 0
+          ? `Reimbursement to Amit Sengupta - ${row.narration}`
+          : `Salary paid - ${row.narration}`;
 
     const { data: je, error: jeErr } = await supabase
       .from("journal_entries")
@@ -282,15 +317,35 @@ export function useAccountingData() {
       .single();
     if (jeErr || !je) return;
 
-    const lines = isLoan
-      ? [
-          { entry_id: je.id, account_id: bankAccountId,  debit: amount,  credit: 0,      sort_order: 0 },
-          { entry_id: je.id, account_id: loanAccountId,  debit: 0,       credit: amount,  sort_order: 1 },
-        ]
-      : [
-          { entry_id: je.id, account_id: salaryAccountId, debit: amount,  credit: 0,      sort_order: 0 },
-          { entry_id: je.id, account_id: bankAccountId,   debit: 0,       credit: amount,  sort_order: 1 },
-        ];
+    let lines: Array<{ entry_id: string; account_id: string; debit: number; credit: number; sort_order: number }>;
+
+    if (isLoan) {
+      lines = [
+        { entry_id: je.id, account_id: bankAccountId, debit: amount,  credit: 0,      sort_order: 0 },
+        { entry_id: je.id, account_id: loanAccountId, debit: 0,       credit: amount,  sort_order: 1 },
+      ];
+    } else {
+      // Build debit legs: settle Due to Director first, then salary for the rest
+      const debitLegs: Array<{ entry_id: string; account_id: string; debit: number; credit: number; sort_order: number }> = [];
+      let order = 0;
+
+      if (settleAmount > 0) {
+        const dueAccId = (await supabase
+          .from("chart_of_accounts").select("id").eq("code", "2241")
+          .or(`org_id.eq.${row.org_id},org_id.is.null`).maybeSingle()
+        ).data?.id;
+        if (dueAccId) {
+          debitLegs.push({ entry_id: je.id, account_id: dueAccId, debit: settleAmount, credit: 0, sort_order: order++ });
+        } else {
+          salaryAmount += settleAmount; // fallback: treat all as salary
+        }
+      }
+      if (salaryAmount > 0) {
+        debitLegs.push({ entry_id: je.id, account_id: salaryAccountId, debit: salaryAmount, credit: 0, sort_order: order++ });
+      }
+      debitLegs.push({ entry_id: je.id, account_id: bankAccountId, debit: 0, credit: amount, sort_order: order });
+      lines = debitLegs;
+    }
 
     await supabase.from("journal_entry_lines").insert(lines);
     await supabase
@@ -299,9 +354,9 @@ export function useAccountingData() {
       .eq("id", txn.id);
   }
 
-  // ── Categorize a single transaction ──────────────────────────
+  // ── Categorize a single transaction (or record a manual entry) ─
   const categorize = useMutation({
-    mutationFn: async (entry: NewJournalEntry & { bank_transaction_id: string }) => {
+    mutationFn: async (entry: NewJournalEntry & { bank_transaction_id?: string }) => {
       if (!effectiveOrgId) throw new Error("No org");
 
       const { data: je, error: jeErr } = await supabase
@@ -311,7 +366,7 @@ export function useAccountingData() {
           entry_date: entry.entry_date,
           narration: entry.narration,
           source: entry.source,
-          bank_transaction_id: entry.bank_transaction_id,
+          bank_transaction_id: entry.bank_transaction_id || null,
           billing_document_id: entry.billing_document_id || null,
           created_by: user?.id,
         })
@@ -330,10 +385,12 @@ export function useAccountingData() {
       const { error: lineErr } = await supabase.from("journal_entry_lines").insert(lines);
       if (lineErr) throw lineErr;
 
-      await supabase
-        .from("bank_transactions")
-        .update({ status: "categorized", journal_entry_id: je.id })
-        .eq("id", entry.bank_transaction_id);
+      if (entry.bank_transaction_id) {
+        await supabase
+          .from("bank_transactions")
+          .update({ status: "categorized", journal_entry_id: je.id })
+          .eq("id", entry.bank_transaction_id);
+      }
 
       qc.invalidateQueries({ queryKey: ["bank-transactions-pending"] });
       qc.invalidateQueries({ queryKey: ["journal-entries"] });

@@ -1,9 +1,10 @@
 import { useState } from "react";
 import DashboardLayout from "@/components/Layout/DashboardLayout";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Upload, ClipboardList, BookOpen, Scale, TrendingUp, BarChart3 } from "lucide-react";
+import { Upload, ClipboardList, BookOpen, Scale, TrendingUp, BarChart3, CreditCard } from "lucide-react";
 import { AccountingImport } from "@/components/Accounting/AccountingImport";
 import { AccountingReviewQueue } from "@/components/Accounting/AccountingReviewQueue";
+import { AccountingManualEntry } from "@/components/Accounting/AccountingManualEntry";
 import { AccountingLedger } from "@/components/Accounting/AccountingLedger";
 import { AccountingTrialBalance } from "@/components/Accounting/AccountingTrialBalance";
 import { AccountingPnL } from "@/components/Accounting/AccountingPnL";
@@ -91,6 +92,9 @@ export default function Accounting() {
             <TabsTrigger value="bs" className="flex items-center gap-1.5 text-xs">
               <BarChart3 className="h-3.5 w-3.5" />Balance Sheet
             </TabsTrigger>
+            <TabsTrigger value="manual" className="flex items-center gap-1.5 text-xs">
+              <CreditCard className="h-3.5 w-3.5" />Card Expenses
+            </TabsTrigger>
           </TabsList>
 
           <div className="mt-4">
@@ -131,6 +135,10 @@ export default function Accounting() {
                 show="asof"
               />
               <AccountingBalanceSheet asOf={asOf} />
+            </TabsContent>
+
+            <TabsContent value="manual">
+              <AccountingManualEntry />
             </TabsContent>
           </div>
         </Tabs>
