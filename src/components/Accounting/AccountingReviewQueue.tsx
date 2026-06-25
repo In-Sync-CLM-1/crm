@@ -81,8 +81,44 @@ function TransactionCard({
   const [narration, setNarration] = useState(txn.narration);
   const [saving, setSaving] = useState(false);
 
+  const isDirectorExpense = txn.auto_rule === "director_expense";
   const amount = txn.credit > 0 ? txn.credit : txn.debit;
   const isCredit = txn.credit > 0;
+
+  const dueToDirectorAccount = accountByCode("2241");
+  // For director expenses: show only expense accounts; for company bank: show all
+  const pickerAccounts = isDirectorExpense
+    ? accounts.filter(a => a.type === "expense")
+    : accounts;
+
+  async function handleDirectorExpense() {
+    if (!contraAccountId) {
+      toast({ title: "Select an expense category first", variant: "destructive" });
+      return;
+    }
+    if (!dueToDirectorAccount) {
+      toast({ title: "Due to Director account not found", variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    try {
+      await categorize.mutateAsync({
+        bank_transaction_id: txn.id,
+        entry_date: txn.transaction_date,
+        narration,
+        source: "manual",
+        lines: [
+          { account_id: contraAccountId,          debit: amount, credit: 0      },
+          { account_id: dueToDirectorAccount.id,  debit: 0,      credit: amount },
+        ],
+      });
+      onDone();
+    } catch {
+      toast({ title: "Failed to save", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function handleSave(invoiceId?: string) {
     if (!contraAccountId) {
@@ -91,16 +127,14 @@ function TransactionCard({
     }
     setSaving(true);
     try {
-      // Bank credit: Debit Bank, Credit contra
-      // Bank debit:  Debit contra, Credit Bank
       const lines = isCredit
         ? [
-            { account_id: bankAccountId, debit: amount, credit: 0 },
-            { account_id: contraAccountId, debit: 0, credit: amount },
+            { account_id: bankAccountId,    debit: amount, credit: 0      },
+            { account_id: contraAccountId,  debit: 0,      credit: amount },
           ]
         : [
-            { account_id: contraAccountId, debit: amount, credit: 0 },
-            { account_id: bankAccountId, debit: 0, credit: amount },
+            { account_id: contraAccountId,  debit: amount, credit: 0      },
+            { account_id: bankAccountId,    debit: 0,      credit: amount },
           ];
 
       await categorize.mutateAsync({
@@ -126,8 +160,8 @@ function TransactionCard({
     setSaving(true);
     try {
       const lines = [
-        { account_id: bankAccountId, debit: amount, credit: 0 },
-        { account_id: trAccountId, debit: 0, credit: amount },
+        { account_id: bankAccountId,  debit: amount, credit: 0      },
+        { account_id: trAccountId,    debit: 0,      credit: amount },
       ];
       await categorize.mutateAsync({
         bank_transaction_id: txn.id,
@@ -143,6 +177,54 @@ function TransactionCard({
     } finally {
       setSaving(false);
     }
+  }
+
+  if (isDirectorExpense) {
+    return (
+      <Card className="border-l-4 border-l-violet-400">
+        <CardContent className="pt-4 space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <Badge variant="secondary" className="text-xs mb-1">Amit's personal account</Badge>
+              <p className="text-xs text-muted-foreground">
+                {format(new Date(txn.transaction_date), "dd MMM yyyy")}
+                {txn.reference && <span className="ml-2">Ref: {txn.reference}</span>}
+              </p>
+              <p className="text-sm font-medium">{txn.narration}</p>
+            </div>
+            <p className="text-red-600 font-semibold text-base shrink-0">
+              −₹{amount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label className="text-xs">What was this expense for?</Label>
+              <AccountPicker accounts={pickerAccounts} value={contraAccountId} onChange={setContraAccountId} />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Narration</Label>
+              <Input value={narration} onChange={e => setNarration(e.target.value)} className="h-8 text-sm" />
+            </div>
+            {contraAccountId && dueToDirectorAccount && (
+              <div className="bg-muted/50 rounded-md p-3 text-xs text-muted-foreground space-y-1">
+                <p className="font-medium text-foreground">Journal entry:</p>
+                <p>Dr {accounts.find(a => a.id === contraAccountId)?.name} — ₹{amount.toLocaleString("en-IN")}</p>
+                <p>Cr Due to Director — Amit Sengupta — ₹{amount.toLocaleString("en-IN")}</p>
+              </div>
+            )}
+            <Button
+              className="w-full"
+              disabled={!contraAccountId || saving}
+              onClick={handleDirectorExpense}
+            >
+              {saving ? "Saving…" : "Record expense"}
+              <ChevronRight className="h-4 w-4 ml-1" />
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
   }
 
   return (

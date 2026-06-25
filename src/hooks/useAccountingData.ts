@@ -120,13 +120,20 @@ export function useAccountingData() {
       filename,
       fromDate,
       toDate,
+      statementType = "company",
     }: {
       rows: ParsedBankRow[];
       filename: string;
       fromDate: string;
       toDate: string;
+      statementType?: "company" | "director_personal";
     }) => {
       if (!effectiveOrgId) throw new Error("No org");
+
+      // For personal statements: only import debit rows (expenses paid by Amit)
+      const rowsToProcess = statementType === "director_personal"
+        ? rows.filter(r => r.debit > 0)
+        : rows;
 
       // 1. Create statement record
       const { data: stmt, error: stmtErr } = await supabase
@@ -136,14 +143,49 @@ export function useAccountingData() {
           filename,
           from_date: fromDate,
           to_date: toDate,
-          row_count: rows.length,
+          row_count: rowsToProcess.length,
           uploaded_by: user?.id,
+          statement_type: statementType,
         })
         .select()
         .single();
       if (stmtErr) throw stmtErr;
 
-      // 2. Fetch outstanding invoices for amount matching
+      if (statementType === "director_personal") {
+        // Director personal: all debits → director_expense, need manual categorization
+        const { data: existing } = await supabase
+          .from("bank_transactions")
+          .select("transaction_date, narration, debit, credit")
+          .eq("org_id", effectiveOrgId);
+        const existingKeys = new Set(
+          (existing || []).map(r => `${r.transaction_date}|${r.narration}|${r.debit}|${r.credit}`)
+        );
+        const toInsert = rowsToProcess
+          .filter(r => !existingKeys.has(`${r.transaction_date}|${r.narration}|${r.debit}|${r.credit}`))
+          .map(row => ({
+            org_id: effectiveOrgId,
+            statement_id: stmt.id,
+            transaction_date: row.transaction_date,
+            value_date: row.value_date || null,
+            narration: row.narration,
+            reference: row.reference || null,
+            debit: row.debit,
+            credit: 0,
+            balance: row.balance,
+            status: "pending" as const,
+            auto_rule: "director_expense",
+            suggested_invoice_id: null,
+          }));
+        if (toInsert.length > 0) {
+          const { error: txnErr } = await supabase.from("bank_transactions").insert(toInsert);
+          if (txnErr) throw txnErr;
+        }
+        qc.invalidateQueries({ queryKey: ["bank-transactions-pending"] });
+        qc.invalidateQueries({ queryKey: ["bank-statements"] });
+        return { imported: toInsert.length, skipped: rowsToProcess.length - toInsert.length, statementId: stmt.id };
+      }
+
+      // 2. Company bank: Fetch outstanding invoices for amount matching
       const { data: invoices } = await supabase
         .from("billing_documents")
         .select("id, doc_number, client_name, total_amount, balance_due")
@@ -165,13 +207,12 @@ export function useAccountingData() {
         (existing || []).map(r => `${r.transaction_date}|${r.narration}|${r.debit}|${r.credit}`)
       );
 
-      const toInsert = rows
+      const toInsert = rowsToProcess
         .filter(r => !existingKeys.has(`${r.transaction_date}|${r.narration}|${r.debit}|${r.credit}`))
         .map(row => {
           const narrationUpper = row.narration.toUpperCase();
           const isAmit = narrationUpper.includes("AMIT SENGUPTA");
 
-          // Auto-rule detection
           let auto_rule: string | null = null;
           let status: "pending" | "suggested" = "pending";
           let suggested_invoice_id: string | null = null;
@@ -181,10 +222,7 @@ export function useAccountingData() {
           } else if (isAmit && row.debit > 0) {
             auto_rule = "amit_salary";
           } else if (row.credit > 0 && invoices) {
-            // Look for an invoice amount match (exact or within ₹1 rounding)
-            const match = invoices.find(
-              inv => Math.abs(inv.balance_due - row.credit) < 1
-            );
+            const match = invoices.find(inv => Math.abs(inv.balance_due - row.credit) < 1);
             if (match) {
               auto_rule = "invoice_match";
               status = "suggested";
@@ -208,16 +246,12 @@ export function useAccountingData() {
           };
         });
 
-      if (toInsert.length === 0) return { imported: 0, skipped: rows.length, statementId: stmt.id };
+      if (toInsert.length === 0) return { imported: 0, skipped: rowsToProcess.length, statementId: stmt.id };
 
-      const { error: txnErr } = await supabase
-        .from("bank_transactions")
-        .insert(toInsert);
+      const { error: txnErr } = await supabase.from("bank_transactions").insert(toInsert);
       if (txnErr) throw txnErr;
 
       // 4. Auto-categorize Amit rows immediately.
-      //    Credit → Director's Loan (auto-posted).
-      //    Debit  → settle Due to Director balance first, rest is Salary.
       if (bankAccountId && loanAccountId && salaryAccountId) {
         const amitRows = toInsert.filter(r => r.auto_rule === "amit_loan" || r.auto_rule === "amit_salary");
         for (const row of amitRows) {
@@ -230,7 +264,7 @@ export function useAccountingData() {
 
       return {
         imported: toInsert.length,
-        skipped: rows.length - toInsert.length,
+        skipped: rowsToProcess.length - toInsert.length,
         statementId: stmt.id,
       };
     },
