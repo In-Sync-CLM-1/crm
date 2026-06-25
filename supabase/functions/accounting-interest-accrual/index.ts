@@ -4,30 +4,26 @@
 //                Credit Accrued Interest — Director's Loan (2111)
 // Idempotent: skips months where a system_interest entry already exists.
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const ANNUAL_RATE  = 0.08;
+const ANNUAL_RATE = 0.08;
 
 Deno.serve(async () => {
-  const sb = createClient(SUPABASE_URL, SERVICE_KEY);
+  const sb = getSupabaseClient();
 
-  // Fetch all orgs
   const { data: orgs } = await sb.from("organizations").select("id");
   if (!orgs?.length) return new Response("no orgs\n");
 
   const results: string[] = [];
 
   for (const { id: orgId } of orgs) {
-    // Find account IDs by code
     const { data: accts } = await sb
       .from("chart_of_accounts")
       .select("id, code")
       .in("code", ["2110", "2111", "5080"])
       .or(`org_id.eq.${orgId},org_id.is.null`);
 
-    const byCode = Object.fromEntries((accts ?? []).map(a => [a.code, a.id]));
+    const byCode = Object.fromEntries((accts ?? []).map((a: { code: string; id: string }) => [a.code, a.id]));
     const loanAccId     = byCode["2110"];
     const accruedAccId  = byCode["2111"];
     const interestExpId = byCode["5080"];
@@ -45,7 +41,7 @@ Deno.serve(async () => {
     const periodEnd   = `${year}-${String(month).padStart(2,"0")}-${String(lastDayOfMonth).padStart(2,"0")}`;
     const periodLabel = `${year}-${String(month).padStart(2,"0")}`;
 
-    // Check if already accrued for this month
+    // Idempotency check
     const { data: existing } = await sb
       .from("journal_entries")
       .select("id")
@@ -59,7 +55,7 @@ Deno.serve(async () => {
       continue;
     }
 
-    // Get running balance of Loan from Director account up to period end
+    // Running balance of Director's Loan up to period end
     const { data: lines } = await sb
       .from("journal_entry_lines")
       .select("debit, credit, entry:journal_entries!inner(org_id, entry_date)")
@@ -67,10 +63,8 @@ Deno.serve(async () => {
       .lte("entry.entry_date", periodEnd)
       .eq("entry.org_id", orgId);
 
-    const loanBalance = (lines ?? []).reduce((sum, l) => {
-      // Loan is credit-normal: balance = credits - debits
-      return sum + (l.credit - l.debit);
-    }, 0);
+    const loanBalance = ((lines ?? []) as Array<{ debit: number; credit: number }>)
+      .reduce((sum, l) => sum + (l.credit - l.debit), 0);
 
     if (loanBalance <= 0) {
       results.push(`${orgId}: no loan balance, skipping`);
@@ -79,7 +73,6 @@ Deno.serve(async () => {
 
     const interestAmount = parseFloat(((loanBalance * ANNUAL_RATE) / 12).toFixed(2));
 
-    // Create journal entry
     const { data: je, error: jeErr } = await sb
       .from("journal_entries")
       .insert({
@@ -93,7 +86,7 @@ Deno.serve(async () => {
       .single();
 
     if (jeErr || !je) {
-      results.push(`${orgId}: failed to create entry — ${jeErr?.message}`);
+      results.push(`${orgId}: failed — ${jeErr?.message}`);
       continue;
     }
 
@@ -102,7 +95,7 @@ Deno.serve(async () => {
       { entry_id: je.id, account_id: accruedAccId,  debit: 0,              credit: interestAmount, sort_order: 1 },
     ]);
 
-    results.push(`${orgId}: accrued ₹${interestAmount} for ${periodLabel} on loan balance ₹${loanBalance}`);
+    results.push(`${orgId}: accrued ₹${interestAmount} for ${periodLabel} on balance ₹${loanBalance}`);
   }
 
   return new Response(results.join("\n") + "\n");
