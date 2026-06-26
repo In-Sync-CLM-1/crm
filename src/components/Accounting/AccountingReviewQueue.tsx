@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CheckCircle, ChevronRight, Info } from "lucide-react";
+import { CheckCircle, ChevronRight, Info, RefreshCw, DollarSign } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -75,7 +75,7 @@ function TransactionCard({
   bankAccountId: string;
   onDone: () => void;
 }) {
-  const { categorize, accountByCode } = useAccountingData();
+  const { categorize, settleDirectorDrawings, accountByCode } = useAccountingData();
   const { toast } = useToast();
   const [contraAccountId, setContraAccountId] = useState("");
   const [narration, setNarration] = useState(txn.narration);
@@ -112,6 +112,8 @@ function TransactionCard({
           { account_id: dueToDirectorAccount.id,  debit: 0,      credit: amount },
         ],
       });
+      // Auto-settle against any director drawings sitting in suspense
+      await settleDirectorDrawings.mutateAsync();
       onDone();
     } catch {
       toast({ title: "Failed to save", variant: "destructive" });
@@ -303,11 +305,81 @@ function TransactionCard({
 }
 
 export function AccountingReviewQueue() {
-  const { pendingTransactions, pendingLoading, leafAccounts, accountByCode } = useAccountingData();
+  const { pendingTransactions, pendingLoading, leafAccounts, accountByCode, settleDirectorDrawings, closeDirectorSalary } = useAccountingData();
+  const { toast } = useToast();
   const [currentIdx, setCurrentIdx] = useState(0);
+  const [monthLabel, setMonthLabel] = useState(() => {
+    const d = new Date();
+    return d.toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+  });
 
   const bankAccount = accountByCode("1111");
   const bankAccountId = bankAccount?.id ?? "";
+
+  async function handleSettle() {
+    try {
+      await settleDirectorDrawings.mutateAsync();
+      toast({ title: "Settlement done", description: "Director expenses matched against drawings." });
+    } catch {
+      toast({ title: "Settlement failed", variant: "destructive" });
+    }
+  }
+
+  async function handleCloseMonth() {
+    try {
+      const result = await closeDirectorSalary.mutateAsync(monthLabel);
+      const amount = (result as { closed: number } | undefined)?.closed ?? 0;
+      if (amount === 0) {
+        toast({ title: "Nothing to close", description: "Suspense balance is zero." });
+      } else {
+        toast({ title: "Month closed", description: `₹${amount.toLocaleString("en-IN")} booked as Director Salary — ${monthLabel}.` });
+      }
+    } catch {
+      toast({ title: "Close failed", variant: "destructive" });
+    }
+  }
+
+  const directorPanel = (
+    <Card className="border-l-4 border-l-blue-400">
+      <CardHeader className="py-3">
+        <CardTitle className="text-sm flex items-center gap-2">
+          <DollarSign className="h-4 w-4 text-blue-500" />
+          Director Drawings
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 pt-0">
+        <p className="text-xs text-muted-foreground">
+          Withdrawals are parked in suspense. Settle them against recorded expenses, then close the month to book the remainder as salary.
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full"
+          onClick={handleSettle}
+          disabled={settleDirectorDrawings.isPending}
+        >
+          <RefreshCw className={`h-3.5 w-3.5 mr-2 ${settleDirectorDrawings.isPending ? "animate-spin" : ""}`} />
+          Settle against Director Expenses
+        </Button>
+        <div className="flex gap-2">
+          <Input
+            value={monthLabel}
+            onChange={e => setMonthLabel(e.target.value)}
+            className="h-8 text-sm"
+            placeholder="e.g. June 2026"
+          />
+          <Button
+            size="sm"
+            className="shrink-0"
+            onClick={handleCloseMonth}
+            disabled={closeDirectorSalary.isPending}
+          >
+            {closeDirectorSalary.isPending ? "Closing…" : "Close as Salary"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
 
   if (pendingLoading) {
     return <p className="text-sm text-muted-foreground py-8 text-center">Loading…</p>;
@@ -315,10 +387,13 @@ export function AccountingReviewQueue() {
 
   if (pendingTransactions.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-center">
-        <CheckCircle className="h-12 w-12 text-green-500 mb-4" />
-        <h3 className="text-lg font-semibold">All clear!</h3>
-        <p className="text-sm text-muted-foreground mt-1">No transactions waiting for review.</p>
+      <div className="space-y-4">
+        <div className="flex flex-col items-center justify-center py-10 text-center">
+          <CheckCircle className="h-12 w-12 text-green-500 mb-4" />
+          <h3 className="text-lg font-semibold">All clear!</h3>
+          <p className="text-sm text-muted-foreground mt-1">No transactions waiting for review.</p>
+        </div>
+        {directorPanel}
       </div>
     );
   }
@@ -370,6 +445,8 @@ export function AccountingReviewQueue() {
           </div>
         </CardContent>
       </Card>
+
+      {directorPanel}
     </div>
   );
 }
