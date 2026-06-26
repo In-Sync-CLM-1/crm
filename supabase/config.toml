@@ -215,3 +215,9 @@ verify_jwt = false
 
 [functions.ticket-email-reply]
 verify_jwt = false
+
+[functions.upload-invoice]
+verify_jwt = true
+
+[functions.backfill-invoice-meta]
+verify_jwt = false
