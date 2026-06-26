@@ -9,6 +9,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useAccountingData } from "@/hooks/useAccountingData";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 import type { BankTransaction, ChartOfAccount } from "@/types/accounting";
 import { format } from "date-fns";
 
@@ -84,6 +85,7 @@ function TransactionCard({
   const isDirectorExpense = txn.auto_rule === "director_expense";
   const amount = txn.credit > 0 ? txn.credit : txn.debit;
   const isCredit = txn.credit > 0;
+  const [tdsAmount, setTdsAmount] = useState(0);
 
   const dueToDirectorAccount = accountByCode("2241");
   // For director expenses: show only expense accounts; for company bank: show all
@@ -157,13 +159,20 @@ function TransactionCard({
 
   async function handleInvoiceMatch() {
     if (!txn.suggested_invoice_id) return;
-    const trAccountId = accountByCode("1120")?.id;
+    const trAccountId  = accountByCode("1120")?.id;
+    const tdsAccountId = accountByCode("1150")?.id;
     if (!trAccountId) { toast({ title: "Trade Receivables account not found", variant: "destructive" }); return; }
+
+    const bankAmt  = amount;
+    const tdsAmt   = tdsAmount;
+    const totalCleared = bankAmt + tdsAmt;
+
     setSaving(true);
     try {
       const lines = [
-        { account_id: bankAccountId,  debit: amount, credit: 0      },
-        { account_id: trAccountId,    debit: 0,      credit: amount },
+        { account_id: bankAccountId, debit: bankAmt,  credit: 0 },
+        ...(tdsAmt > 0 && tdsAccountId ? [{ account_id: tdsAccountId, debit: tdsAmt, credit: 0 }] : []),
+        { account_id: trAccountId,   debit: 0,         credit: totalCleared },
       ];
       await categorize.mutateAsync({
         bank_transaction_id: txn.id,
@@ -173,6 +182,31 @@ function TransactionCard({
         billing_document_id: txn.suggested_invoice_id,
         lines,
       });
+
+      // Create billing_payment record to keep billing module in sync
+      await supabase.from("billing_payments").insert({
+        org_id: txn.org_id,
+        document_id: txn.suggested_invoice_id,
+        payment_date: txn.transaction_date,
+        amount: bankAmt,
+        tds_amount: tdsAmt,
+        payment_mode: "bank_transfer",
+        reference_number: txn.reference ?? null,
+      });
+
+      // Update invoice amount_paid / balance_due
+      if (txn.suggested_invoice) {
+        const inv = txn.suggested_invoice;
+        const alreadyPaid = inv.total_amount - inv.balance_due;
+        const newPaid = alreadyPaid + totalCleared;
+        const newBalance = Math.max(0, inv.total_amount - newPaid);
+        await supabase.from("billing_documents").update({
+          amount_paid: newPaid,
+          balance_due: newBalance,
+          status: newBalance <= 0 ? "paid" : "partially_paid",
+        }).eq("id", inv.id);
+      }
+
       onDone();
     } catch {
       toast({ title: "Failed to save", variant: "destructive" });
@@ -268,6 +302,21 @@ function TransactionCard({
               <span className="font-medium">{txn.suggested_invoice.doc_number}</span>
               {" — "}{txn.suggested_invoice.client_name}
               {" — "}₹{txn.suggested_invoice.balance_due.toLocaleString("en-IN", { minimumFractionDigits: 2 })} outstanding
+            </div>
+            <div className="flex items-center gap-3">
+              <Label className="text-xs shrink-0">TDS deducted (₹)</Label>
+              <Input
+                type="number"
+                placeholder="0"
+                value={tdsAmount || ""}
+                onChange={e => setTdsAmount(parseFloat(e.target.value) || 0)}
+                className="h-7 text-sm w-28"
+              />
+              {tdsAmount > 0 && (
+                <span className="text-xs text-blue-700">
+                  Clears ₹{(amount + tdsAmount).toLocaleString("en-IN")} of AR
+                </span>
+              )}
             </div>
             <Button size="sm" onClick={handleInvoiceMatch} disabled={saving} className="w-full">
               <CheckCircle className="h-4 w-4 mr-2" />

@@ -103,7 +103,10 @@ function buildBS(
   const totalEquityLiab     = shareholdersFunds + longTermBorrowings + totalCurrentLiab;
 
   const fixedAssetItems     = groupBySubType("fixed_asset");
-  const totalFixedAssets    = fixedAssetItems.reduce((s, i) => s + i.amount, 0);
+  const accDepItems         = groupBySubType("accumulated_depreciation");
+  const grossFixedAssets    = fixedAssetItems.reduce((s, i) => s + i.amount, 0);
+  const totalAccDep         = accDepItems.reduce((s, i) => s + i.amount, 0);
+  const totalFixedAssets    = grossFixedAssets - totalAccDep; // Net Block
 
   const bankAmount          = getAmount("1111");
   const cashAmount          = getAmount("1110");
@@ -124,7 +127,7 @@ function buildBS(
     shareCapital, reservesSurplus, currentYearPL, retainedEarnings, shareholdersFunds,
     directorLoan, accruedInterest, longTermBorrowings,
     currentLiabItems, totalCurrentLiab, totalEquityLiab,
-    fixedAssetItems, totalFixedAssets,
+    fixedAssetItems, accDepItems, grossFixedAssets, totalAccDep, totalFixedAssets,
     bankAmount, cashAmount, tradeReceivables, tdsReceivable,
     advancePrepaid, gstInputCgst, gstInputSgst, gstInputIgst, otherCurrentAssets,
     totalCurrentAssets, totalAssets,
@@ -224,14 +227,33 @@ export function AccountingBalanceSheet({
 
               <p className="text-xs font-semibold text-muted-foreground uppercase mt-2">I. Non-current Assets</p>
               <p className="text-xs text-muted-foreground pl-4 mt-1">(a) Fixed Assets (Tangible)</p>
+              {bs.fixedAssetItems.length === 0 && (
+                <p className="pl-6 text-xs text-muted-foreground">None</p>
+              )}
               {bs.fixedAssetItems.map(i => (
                 <BSRow key={i.label} label={i.label} amount={i.amount} indent
                   accountCode={i.code} onAccountClick={onAccountClick} />
               ))}
-              {bs.fixedAssetItems.length === 0 && (
-                <p className="pl-6 text-xs text-muted-foreground">None</p>
+              {bs.fixedAssetItems.length > 0 && (
+                <div className="pl-6 flex justify-between text-xs text-muted-foreground border-t border-dashed pt-0.5 mt-0.5">
+                  <span>Gross Block</span>
+                  <span>{fmt(bs.grossFixedAssets)}</span>
+                </div>
               )}
-              <BSSubtotal label="Total Non-current Assets" amount={bs.totalFixedAssets} />
+              {bs.accDepItems.length > 0 && (
+                <>
+                  <p className="text-xs text-muted-foreground pl-4 mt-1">Less: Accumulated Depreciation</p>
+                  {bs.accDepItems.map(i => (
+                    <BSRow key={i.label} label={i.label} amount={i.amount} indent
+                      accountCode={i.code} onAccountClick={onAccountClick} />
+                  ))}
+                  <div className="pl-6 flex justify-between text-xs text-muted-foreground border-t border-dashed pt-0.5 mt-0.5">
+                    <span>Total Accumulated Depreciation</span>
+                    <span className="text-red-600">({fmt(bs.totalAccDep)})</span>
+                  </div>
+                </>
+              )}
+              <BSSubtotal label="Net Block (Fixed Assets)" amount={bs.totalFixedAssets} />
 
               <p className="text-xs font-semibold text-muted-foreground uppercase mt-3">II. Current Assets</p>
               <BSRow label="Cash in Hand" amount={bs.cashAmount} indent

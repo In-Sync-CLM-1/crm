@@ -23,6 +23,8 @@ const SOURCE_LABEL: Record<string, string> = {
   system_interest: "System",
   director_settlement: "Settlement",
   director_salary: "Salary",
+  invoice: "Invoice",
+  credit_note: "Credit Note",
 };
 
 export function JournalEntryEditDialog({

@@ -99,17 +99,38 @@ function buildSections(
     return items;
   }
 
-  const revenueItems     = sumType(["income"], ["operating_revenue"]);
-  const otherIncomeItems = sumType(["income"], ["other_income"]);
-  const expenseItems     = sumType(["expense"]);
+  const revenueItems         = sumType(["income"], ["operating_revenue"]);
+  const otherIncomeItems     = sumType(["income"], ["other_income"]);
+  const employeeItems        = sumType(["expense"], ["employee_benefits", "salaries"]);
+  const financeItems         = sumType(["expense"], ["finance_cost", "interest_expense", "bank_charges"]);
+  const depreciationItems    = sumType(["expense"], ["depreciation", "amortisation", "amortization"]);
+  // Other expenses = all expense accounts not in the above sub_types
+  const scheduledSubTypes    = new Set(["employee_benefits", "salaries", "finance_cost", "interest_expense", "bank_charges", "depreciation", "amortisation", "amortization"]);
+  const otherExpenseItems    = sumType(["expense"]).filter(i => {
+    const acc = [...accMap.values()].find(a => a.name === i.label);
+    return acc ? !scheduledSubTypes.has(acc.sub_type) : true;
+  });
 
-  const revenueTotal     = revenueItems.reduce((s, i) => s + i.amount, 0);
-  const otherIncomeTotal = otherIncomeItems.reduce((s, i) => s + i.amount, 0);
-  const totalRevenue     = revenueTotal + otherIncomeTotal;
-  const totalExpenses    = expenseItems.reduce((s, i) => s + i.amount, 0);
-  const pbt              = totalRevenue - totalExpenses;
+  const revenueTotal         = revenueItems.reduce((s, i) => s + i.amount, 0);
+  const otherIncomeTotal     = otherIncomeItems.reduce((s, i) => s + i.amount, 0);
+  const totalRevenue         = revenueTotal + otherIncomeTotal;
+  const totalEmployeeCost    = employeeItems.reduce((s, i) => s + i.amount, 0);
+  const totalFinanceCost     = financeItems.reduce((s, i) => s + i.amount, 0);
+  const totalDepreciation    = depreciationItems.reduce((s, i) => s + i.amount, 0);
+  const totalOtherExpenses   = otherExpenseItems.reduce((s, i) => s + i.amount, 0);
+  const totalExpenses        = totalEmployeeCost + totalFinanceCost + totalDepreciation + totalOtherExpenses;
+  const pbt                  = totalRevenue - totalExpenses;
 
-  return { revenueItems, otherIncomeItems, expenseItems, revenueTotal, otherIncomeTotal, totalRevenue, totalExpenses, pbt };
+  // Keep expenseItems as flat list for CSV export back-compat
+  const expenseItems = [...employeeItems, ...financeItems, ...depreciationItems, ...otherExpenseItems];
+
+  return {
+    revenueItems, otherIncomeItems, expenseItems,
+    employeeItems, financeItems, depreciationItems, otherExpenseItems,
+    revenueTotal, otherIncomeTotal, totalRevenue,
+    totalEmployeeCost, totalFinanceCost, totalDepreciation, totalOtherExpenses,
+    totalExpenses, pbt,
+  };
 }
 
 export function AccountingPnL({ fromDate, toDate }: { fromDate: string; toDate: string }) {
@@ -166,13 +187,72 @@ export function AccountingPnL({ fromDate, toDate }: { fromDate: string; toDate: 
 
               <div className="space-y-1">
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground pt-2">IV. Expenses</p>
-                {sections.expenseItems.map(item => (
-                  <div key={item.label} className="flex justify-between text-sm py-0.5 pl-4">
-                    <span>{item.label}</span>
-                    <span>{fmt(item.amount)}</span>
-                  </div>
-                ))}
-                <div className="flex justify-between text-sm font-semibold border-t pt-1">
+
+                {sections.employeeItems.length > 0 && (
+                  <>
+                    <p className="text-xs text-muted-foreground pl-4 mt-1">(a) Employee Benefits Expense</p>
+                    {sections.employeeItems.map(item => (
+                      <div key={item.label} className="flex justify-between text-sm py-0.5 pl-8">
+                        <span>{item.label}</span>
+                        <span>{fmt(item.amount)}</span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between text-xs text-muted-foreground pl-4 border-t border-dashed pt-0.5">
+                      <span>Total Employee Benefits</span>
+                      <span>{fmt(sections.totalEmployeeCost)}</span>
+                    </div>
+                  </>
+                )}
+
+                {sections.financeItems.length > 0 && (
+                  <>
+                    <p className="text-xs text-muted-foreground pl-4 mt-2">(b) Finance Costs</p>
+                    {sections.financeItems.map(item => (
+                      <div key={item.label} className="flex justify-between text-sm py-0.5 pl-8">
+                        <span>{item.label}</span>
+                        <span>{fmt(item.amount)}</span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between text-xs text-muted-foreground pl-4 border-t border-dashed pt-0.5">
+                      <span>Total Finance Costs</span>
+                      <span>{fmt(sections.totalFinanceCost)}</span>
+                    </div>
+                  </>
+                )}
+
+                {sections.depreciationItems.length > 0 && (
+                  <>
+                    <p className="text-xs text-muted-foreground pl-4 mt-2">(c) Depreciation &amp; Amortisation</p>
+                    {sections.depreciationItems.map(item => (
+                      <div key={item.label} className="flex justify-between text-sm py-0.5 pl-8">
+                        <span>{item.label}</span>
+                        <span>{fmt(item.amount)}</span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between text-xs text-muted-foreground pl-4 border-t border-dashed pt-0.5">
+                      <span>Total Depreciation</span>
+                      <span>{fmt(sections.totalDepreciation)}</span>
+                    </div>
+                  </>
+                )}
+
+                {sections.otherExpenseItems.length > 0 && (
+                  <>
+                    <p className="text-xs text-muted-foreground pl-4 mt-2">{sections.employeeItems.length || sections.financeItems.length || sections.depreciationItems.length ? "(d) Other Expenses" : "(a) Other Expenses"}</p>
+                    {sections.otherExpenseItems.map(item => (
+                      <div key={item.label} className="flex justify-between text-sm py-0.5 pl-8">
+                        <span>{item.label}</span>
+                        <span>{fmt(item.amount)}</span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between text-xs text-muted-foreground pl-4 border-t border-dashed pt-0.5">
+                      <span>Total Other Expenses</span>
+                      <span>{fmt(sections.totalOtherExpenses)}</span>
+                    </div>
+                  </>
+                )}
+
+                <div className="flex justify-between text-sm font-semibold border-t pt-1 mt-2">
                   <span>V. Total Expenses</span>
                   <span>{fmt(sections.totalExpenses)}</span>
                 </div>
