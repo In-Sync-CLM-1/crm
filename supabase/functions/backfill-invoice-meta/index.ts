@@ -2,14 +2,32 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { encode as base64Encode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 
-const PARSE_PROMPT = `Extract these four fields from this invoice/receipt document:
+const PARSE_PROMPT = `Extract these five fields from this invoice/receipt document:
 - party: the vendor or supplier name (who issued the invoice)
 - date: the invoice date in YYYY-MM-DD format
 - description: a short description of what was purchased (10 words max)
 - amount: the total payable amount as a number (no currency symbol)
+- currency: the 3-letter currency code of the amount (e.g. "USD", "INR", "EUR", "GBP")
 
-Return ONLY a JSON object, e.g.: {"party":"ABC Pvt Ltd","date":"2026-06-18","description":"Cloud hosting services","amount":5900.00}
+Return ONLY a JSON object, e.g.: {"party":"ABC Pvt Ltd","date":"2026-06-18","description":"Cloud hosting services","amount":59.00,"currency":"USD"}
 If a field is missing, use null.`;
+
+const FALLBACK_RATES: Record<string, number> = { USD: 84, EUR: 91, GBP: 107, AUD: 55, SGD: 63, CAD: 62 };
+
+async function convertToInr(amount: number, currency: string, date: string | null): Promise<number> {
+  const cur = (currency ?? "").toUpperCase();
+  if (!cur || cur === "INR") return amount;
+  try {
+    const dateStr = date ?? new Date().toISOString().split("T")[0];
+    const res = await fetch(`https://api.frankfurter.app/${dateStr}?from=${cur}&to=INR`);
+    if (res.ok) {
+      const data = await res.json();
+      const rate = data.rates?.INR;
+      if (rate) return Math.round(amount * rate * 100) / 100;
+    }
+  } catch { /* fall through */ }
+  return Math.round(amount * (FALLBACK_RATES[cur] ?? 84) * 100) / 100;
+}
 
 async function parseWithGroq(b64: string, mime: string): Promise<Record<string, unknown> | null> {
   if (mime === "application/pdf") return null;
@@ -57,7 +75,10 @@ async function parseWithAnthropic(b64: string, mime: string): Promise<Record<str
   } catch (e) { console.error("Anthropic exception", e); return null; }
 }
 
-serve(async (_req) => {
+serve(async (req) => {
+  const url    = new URL(req.url);
+  const reparse = url.searchParams.get("reparse") === "true";
+
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
@@ -66,68 +87,121 @@ serve(async (_req) => {
   const workerUrl    = Deno.env.get("R2_INVOICE_WORKER_URL")!;
   const uploadSecret = Deno.env.get("R2_INVOICE_UPLOAD_SECRET")!;
 
-  // All invoice entries not yet on R2 (Supabase storage URL contains "supabase.co")
-  const { data: entries, error } = await supabase
-    .from("journal_entries")
-    .select("id, invoice_url")
-    .not("invoice_url", "is", null)
-    .like("invoice_url", "%supabase.co%");
+  let entries: Array<{ id: string; invoice_url: string; invoice_date?: string | null }> = [];
 
-  if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+  if (reparse) {
+    // Re-parse existing R2 invoices to fix currency conversion
+    const { data, error } = await supabase
+      .from("journal_entries")
+      .select("id, invoice_url, invoice_date")
+      .not("invoice_url", "is", null)
+      .not("invoice_url", "like", "%supabase.co%");
+    if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+    entries = data ?? [];
+  } else {
+    // Original mode: migrate from Supabase storage → R2
+    const { data, error } = await supabase
+      .from("journal_entries")
+      .select("id, invoice_url")
+      .not("invoice_url", "is", null)
+      .like("invoice_url", "%supabase.co%");
+    if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+    entries = data ?? [];
+  }
 
-  const results: Array<{ id: string; status: string; party?: unknown }> = [];
+  const results: Array<{ id: string; status: string; party?: unknown; currency?: unknown; inrAmount?: unknown }> = [];
 
-  for (const entry of (entries ?? [])) {
+  for (const entry of entries) {
     try {
-      // Extract storage path: everything after /accounting-invoices/
-      const storagePath = entry.invoice_url.split("/accounting-invoices/")[1];
-      if (!storagePath) { results.push({ id: entry.id, status: "skip:no_path" }); continue; }
+      let buf: ArrayBuffer;
+      let mime: string;
 
-      // Download from Supabase private storage using service role
-      const { data: blob, error: dlErr } = await supabase.storage
-        .from("accounting-invoices")
-        .download(storagePath);
-      if (dlErr || !blob) { results.push({ id: entry.id, status: `dl_err:${dlErr?.message}` }); continue; }
+      if (reparse) {
+        // Download directly from R2 public URL
+        const dlRes = await fetch(entry.invoice_url);
+        if (!dlRes.ok) { results.push({ id: entry.id, status: `dl_err:${dlRes.status}` }); continue; }
+        buf  = await dlRes.arrayBuffer();
+        const ct = dlRes.headers.get("content-type") ?? "";
+        mime = ct.startsWith("image/") || ct === "application/pdf" ? ct.split(";")[0].trim() : "application/pdf";
+      } else {
+        // Extract storage path: everything after /accounting-invoices/
+        const storagePath = entry.invoice_url.split("/accounting-invoices/")[1];
+        if (!storagePath) { results.push({ id: entry.id, status: "skip:no_path" }); continue; }
 
-      const ext  = storagePath.split(".").pop()?.toLowerCase() ?? "pdf";
-      const mime = ext === "pdf" ? "application/pdf"
-        : ext === "png"  ? "image/png"
-        : ext === "webp" ? "image/webp"
-        : "image/jpeg";
+        const { data: blob, error: dlErr } = await supabase.storage
+          .from("accounting-invoices")
+          .download(storagePath);
+        if (dlErr || !blob) { results.push({ id: entry.id, status: `dl_err:${dlErr?.message}` }); continue; }
 
-      const buf = await blob.arrayBuffer();
+        const ext = storagePath.split(".").pop()?.toLowerCase() ?? "pdf";
+        mime = ext === "pdf" ? "application/pdf"
+          : ext === "png"  ? "image/png"
+          : ext === "webp" ? "image/webp"
+          : "image/jpeg";
+        buf = await blob.arrayBuffer();
 
-      // Upload to R2 via Worker
-      const r2Key = storagePath; // keep same path structure
-      const uploadRes = await fetch(`${workerUrl}/upload?key=${encodeURIComponent(r2Key)}`, {
-        method: "PUT",
-        headers: { "x-upload-secret": uploadSecret, "content-type": mime },
-        body: buf,
-      });
-      if (!uploadRes.ok) { results.push({ id: entry.id, status: `r2_err:${uploadRes.status}` }); continue; }
-      const { url: r2Url } = await uploadRes.json() as { key: string; url: string };
+        // Upload to R2
+        const r2Key = storagePath;
+        const uploadRes = await fetch(`${workerUrl}/upload?key=${encodeURIComponent(r2Key)}`, {
+          method: "PUT",
+          headers: { "x-upload-secret": uploadSecret, "content-type": mime },
+          body: buf,
+        });
+        if (!uploadRes.ok) { results.push({ id: entry.id, status: `r2_err:${uploadRes.status}` }); continue; }
+        const { url: r2Url } = await uploadRes.json() as { key: string; url: string };
 
-      // Parse with AI
+        // Parse and update with new R2 URL
+        const b64 = base64Encode(buf);
+        let parsed = await parseWithGroq(b64, mime);
+        if (!parsed) parsed = await parseWithAnthropic(b64, mime);
+
+        const rawAmount = typeof parsed?.amount === "number" ? parsed.amount : null;
+        const currency  = typeof parsed?.currency === "string" ? parsed.currency.toUpperCase() : null;
+        const inrAmount = rawAmount !== null
+          ? await convertToInr(rawAmount, currency ?? "USD", parsed?.date as string | null ?? null)
+          : null;
+
+        await supabase.from("journal_entries").update({
+          invoice_url:         r2Url,
+          invoice_party:       parsed?.party        ?? null,
+          invoice_date:        parsed?.date         ?? null,
+          invoice_description: parsed?.description  ?? null,
+          invoice_amount:      inrAmount,
+          invoice_currency:    currency             ?? null,
+        }).eq("id", entry.id);
+
+        results.push({ id: entry.id, status: "ok", party: parsed?.party, currency, inrAmount });
+        continue;
+      }
+
+      // Reparse path: re-parse file from R2 and update amounts
       const b64 = base64Encode(buf);
       let parsed = await parseWithGroq(b64, mime);
       if (!parsed) parsed = await parseWithAnthropic(b64, mime);
 
-      // Update DB: new R2 URL + parsed metadata
+      const rawAmount = typeof parsed?.amount === "number" ? parsed.amount : null;
+      const currency  = typeof parsed?.currency === "string" ? parsed.currency.toUpperCase() : null;
+      // Use existing invoice_date if AI didn't return one (date already stored)
+      const dateForRate = (parsed?.date as string | null) ?? entry.invoice_date ?? null;
+      const inrAmount = rawAmount !== null
+        ? await convertToInr(rawAmount, currency ?? "USD", dateForRate)
+        : null;
+
       await supabase.from("journal_entries").update({
-        invoice_url:         r2Url,
         invoice_party:       parsed?.party        ?? null,
         invoice_date:        parsed?.date         ?? null,
         invoice_description: parsed?.description  ?? null,
-        invoice_amount:      parsed?.amount       ?? null,
+        invoice_amount:      inrAmount,
+        invoice_currency:    currency             ?? null,
       }).eq("id", entry.id);
 
-      results.push({ id: entry.id, status: "ok", party: parsed?.party });
+      results.push({ id: entry.id, status: "ok", party: parsed?.party, currency, inrAmount });
     } catch (e) {
       results.push({ id: entry.id, status: `error:${e}` });
     }
   }
 
-  return new Response(JSON.stringify({ processed: results.length, results }), {
+  return new Response(JSON.stringify({ mode: reparse ? "reparse" : "migrate", processed: results.length, results }), {
     headers: { "Content-Type": "application/json" },
   });
 });

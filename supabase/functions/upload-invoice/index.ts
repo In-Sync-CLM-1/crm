@@ -7,18 +7,36 @@ const cors = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const PARSE_PROMPT = `Extract these four fields from this invoice/receipt document:
+const PARSE_PROMPT = `Extract these five fields from this invoice/receipt document:
 - party: the vendor or supplier name (who issued the invoice)
 - date: the invoice date in YYYY-MM-DD format
 - description: a short description of what was purchased (10 words max)
 - amount: the total payable amount as a number (no currency symbol)
+- currency: the 3-letter currency code of the amount (e.g. "USD", "INR", "EUR", "GBP")
 
-Return ONLY a JSON object, e.g.: {"party":"ABC Pvt Ltd","date":"2026-06-18","description":"Cloud hosting services","amount":5900.00}
+Return ONLY a JSON object, e.g.: {"party":"ABC Pvt Ltd","date":"2026-06-18","description":"Cloud hosting services","amount":59.00,"currency":"USD"}
 If a field is missing, use null.`;
+
+const FALLBACK_RATES: Record<string, number> = { USD: 84, EUR: 91, GBP: 107, AUD: 55, SGD: 63, CAD: 62 };
+
+async function convertToInr(amount: number, currency: string, date: string | null): Promise<number> {
+  const cur = (currency ?? "").toUpperCase();
+  if (!cur || cur === "INR") return amount;
+  try {
+    const dateStr = date ?? new Date().toISOString().split("T")[0];
+    const res = await fetch(`https://api.frankfurter.app/${dateStr}?from=${cur}&to=INR`);
+    if (res.ok) {
+      const data = await res.json();
+      const rate = data.rates?.INR;
+      if (rate) return Math.round(amount * rate * 100) / 100;
+    }
+  } catch { /* fall through to fallback */ }
+  return Math.round(amount * (FALLBACK_RATES[cur] ?? 84) * 100) / 100;
+}
 
 async function parseWithGroq(base64Data: string, mimeType: string): Promise<Record<string, unknown> | null> {
   const key = Deno.env.get("GROQ_API_KEY");
-  if (!key || mimeType === "application/pdf") return null; // Groq doesn't support PDFs
+  if (!key || mimeType === "application/pdf") return null;
   try {
     const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
@@ -108,7 +126,14 @@ serve(async (req) => {
     let parsed = await parseWithGroq(b64, mimeType);
     if (!parsed) parsed = await parseWithAnthropic(b64, mimeType);
 
-    // 3. Patch journal_entry
+    // 3. Convert amount to INR
+    const rawAmount = typeof parsed?.amount === "number" ? parsed.amount : null;
+    const currency  = typeof parsed?.currency === "string" ? parsed.currency.toUpperCase() : null;
+    const inrAmount = rawAmount !== null
+      ? await convertToInr(rawAmount, currency ?? "USD", parsed?.date as string | null ?? null)
+      : null;
+
+    // 4. Patch journal_entry
     const sbUrl  = Deno.env.get("SUPABASE_URL")!;
     const sbKey  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const authHeader = req.headers.get("Authorization") ?? "";
@@ -119,10 +144,11 @@ serve(async (req) => {
       invoice_party:       parsed?.party       ?? null,
       invoice_date:        parsed?.date        ?? null,
       invoice_description: parsed?.description ?? null,
-      invoice_amount:      parsed?.amount      ?? null,
+      invoice_amount:      inrAmount,
+      invoice_currency:    currency ?? null,
     }).eq("id", journalEntryId);
 
-    return new Response(JSON.stringify({ url, parsed }), {
+    return new Response(JSON.stringify({ url, parsed, inrAmount, currency }), {
       headers: { ...cors, "Content-Type": "application/json" },
     });
   } catch (e) {
