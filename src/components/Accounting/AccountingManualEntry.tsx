@@ -88,18 +88,20 @@ export function AccountingManualEntry() {
   const expenseAccounts = leafAccounts.filter(a => a.type === "expense");
 
   async function uploadInvoice(entryId: string): Promise<string | null> {
-    if (!invoiceFile || !effectiveOrgId) return null;
-    const ext = invoiceFile.name.split(".").pop() ?? "pdf";
-    const path = `${effectiveOrgId}/${entryId}_${Date.now()}.${ext}`;
-    const { error } = await supabase.storage
-      .from("accounting-invoices")
-      .upload(path, invoiceFile, { upsert: false });
-    if (error) {
-      toast({ title: "Invoice upload failed", description: error.message, variant: "destructive" });
+    if (!invoiceFile) return null;
+    const form = new FormData();
+    form.append("file", invoiceFile);
+    form.append("journal_entry_id", entryId);
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await supabase.functions.invoke("upload-invoice", {
+      body: form,
+      headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+    });
+    if (res.error) {
+      toast({ title: "Invoice upload failed", description: res.error.message, variant: "destructive" });
       return null;
     }
-    const { data } = supabase.storage.from("accounting-invoices").getPublicUrl(path);
-    return data.publicUrl;
+    return (res.data as { url: string })?.url ?? null;
   }
 
   async function handleSave() {
@@ -129,15 +131,9 @@ export function AccountingManualEntry() {
         ],
       });
 
-      // Upload invoice and patch the entry if a file was selected
+      // Upload invoice to R2 + AI-parse metadata (edge function updates journal_entry directly)
       if (invoiceFile && je?.id) {
-        const url = await uploadInvoice(je.id);
-        if (url) {
-          await supabase
-            .from("journal_entries")
-            .update({ invoice_url: url })
-            .eq("id", je.id);
-        }
+        await uploadInvoice(je.id);
       }
 
       setDesc(""); setAmount(""); setExpAccId(""); setInvoiceFile(null);

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import DashboardLayout from "@/components/Layout/DashboardLayout";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Upload, ClipboardList, BookOpen, Scale, TrendingUp, BarChart3, Receipt } from "lucide-react";
+import { Upload, ClipboardList, BookOpen, Scale, TrendingUp, BarChart3, Receipt, FolderOpen } from "lucide-react";
 import { AccountingImport } from "@/components/Accounting/AccountingImport";
 import { AccountingReviewQueue } from "@/components/Accounting/AccountingReviewQueue";
 import { AccountingManualEntry } from "@/components/Accounting/AccountingManualEntry";
@@ -9,6 +9,7 @@ import { AccountingLedger } from "@/components/Accounting/AccountingLedger";
 import { AccountingTrialBalance } from "@/components/Accounting/AccountingTrialBalance";
 import { AccountingPnL } from "@/components/Accounting/AccountingPnL";
 import { AccountingBalanceSheet } from "@/components/Accounting/AccountingBalanceSheet";
+import { AccountingDocuments } from "@/components/Accounting/AccountingDocuments";
 import { useAccountingData } from "@/hooks/useAccountingData";
 import { Badge } from "@/components/ui/badge";
 import { format, startOfYear, endOfYear } from "date-fns";
@@ -95,6 +96,9 @@ export default function Accounting() {
             <TabsTrigger value="manual" className="flex items-center gap-1.5 text-xs">
               <Receipt className="h-3.5 w-3.5" />Director's Expenses
             </TabsTrigger>
+            <TabsTrigger value="documents" className="flex items-center gap-1.5 text-xs">
+              <FolderOpen className="h-3.5 w-3.5" />Documents
+            </TabsTrigger>
           </TabsList>
 
           <div className="mt-4">
@@ -139,6 +143,10 @@ export default function Accounting() {
 
             <TabsContent value="manual">
               <AccountingManualEntry />
+            </TabsContent>
+
+            <TabsContent value="documents">
+              <AccountingDocuments />
             </TabsContent>
           </div>
         </Tabs>

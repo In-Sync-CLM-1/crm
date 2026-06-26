@@ -1,7 +1,7 @@
 export type AccountType = 'asset' | 'liability' | 'equity' | 'income' | 'expense';
 export type NormalBalance = 'debit' | 'credit';
 export type TransactionStatus = 'pending' | 'suggested' | 'categorized';
-export type JournalSource = 'bank_import' | 'manual' | 'system_interest';
+export type JournalSource = 'bank_import' | 'manual' | 'system_interest' | 'director_settlement' | 'director_salary';
 
 export interface ChartOfAccount {
   id: string;
@@ -66,6 +66,10 @@ export interface JournalEntry {
   bank_transaction_id: string | null;
   billing_document_id: string | null;
   invoice_url: string | null;
+  invoice_party: string | null;
+  invoice_date: string | null;
+  invoice_description: string | null;
+  invoice_amount: number | null;
   created_at: string;
   lines?: JournalEntryLine[];
 }
