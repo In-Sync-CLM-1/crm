@@ -2,14 +2,15 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { encode as base64Encode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 
-const PARSE_PROMPT = `Extract these five fields from this invoice/receipt document:
+const PARSE_PROMPT = `Extract these six fields from this invoice/receipt document:
 - party: the vendor or supplier name (who issued the invoice)
 - date: the invoice date in YYYY-MM-DD format
 - description: a short description of what was purchased (10 words max)
 - amount: the total payable amount as a number (no currency symbol)
 - currency: the 3-letter currency code of the amount (e.g. "USD", "INR", "EUR", "GBP")
+- invoice_number: the invoice or receipt number as printed on the document (e.g. "INV-2025-001", "RC-00123"); null if not present
 
-Return ONLY a JSON object, e.g.: {"party":"ABC Pvt Ltd","date":"2026-06-18","description":"Cloud hosting services","amount":59.00,"currency":"USD"}
+Return ONLY a JSON object, e.g.: {"party":"ABC Pvt Ltd","date":"2026-06-18","description":"Cloud hosting services","amount":59.00,"currency":"USD","invoice_number":"INV-2026-0042"}
 If a field is missing, use null.`;
 
 const FALLBACK_RATES: Record<string, number> = { USD: 84, EUR: 91, GBP: 107, AUD: 55, SGD: 63, CAD: 62 };
@@ -161,6 +162,9 @@ serve(async (req) => {
           ? await convertToInr(rawAmount, currency ?? "USD", parsed?.date as string | null ?? null)
           : null;
 
+        const invoiceNumber = typeof parsed?.invoice_number === "string" && parsed.invoice_number
+          ? (parsed.invoice_number as string).trim() : null;
+
         await supabase.from("journal_entries").update({
           invoice_url:         r2Url,
           invoice_party:       parsed?.party        ?? null,
@@ -168,6 +172,7 @@ serve(async (req) => {
           invoice_description: parsed?.description  ?? null,
           invoice_amount:      inrAmount,
           invoice_currency:    currency             ?? null,
+          invoice_number:      invoiceNumber,
         }).eq("id", entry.id);
 
         results.push({ id: entry.id, status: "ok", party: parsed?.party, currency, inrAmount });
@@ -187,12 +192,16 @@ serve(async (req) => {
         ? await convertToInr(rawAmount, currency ?? "USD", dateForRate)
         : null;
 
+      const invoiceNumber = typeof parsed?.invoice_number === "string" && parsed.invoice_number
+        ? (parsed.invoice_number as string).trim() : null;
+
       await supabase.from("journal_entries").update({
         invoice_party:       parsed?.party        ?? null,
         invoice_date:        parsed?.date         ?? null,
         invoice_description: parsed?.description  ?? null,
         invoice_amount:      inrAmount,
         invoice_currency:    currency             ?? null,
+        invoice_number:      invoiceNumber,
       }).eq("id", entry.id);
 
       results.push({ id: entry.id, status: "ok", party: parsed?.party, currency, inrAmount });

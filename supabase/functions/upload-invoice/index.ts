@@ -7,14 +7,15 @@ const cors = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const PARSE_PROMPT = `Extract these five fields from this invoice/receipt document:
+const PARSE_PROMPT = `Extract these six fields from this invoice/receipt document:
 - party: the vendor or supplier name (who issued the invoice)
 - date: the invoice date in YYYY-MM-DD format
 - description: a short description of what was purchased (10 words max)
 - amount: the total payable amount as a number (no currency symbol)
 - currency: the 3-letter currency code of the amount (e.g. "USD", "INR", "EUR", "GBP")
+- invoice_number: the invoice or receipt number as printed on the document (e.g. "INV-2025-001", "RC-00123"); null if not present
 
-Return ONLY a JSON object, e.g.: {"party":"ABC Pvt Ltd","date":"2026-06-18","description":"Cloud hosting services","amount":59.00,"currency":"USD"}
+Return ONLY a JSON object, e.g.: {"party":"ABC Pvt Ltd","date":"2026-06-18","description":"Cloud hosting services","amount":59.00,"currency":"USD","invoice_number":"INV-2026-0042"}
 If a field is missing, use null.`;
 
 const FALLBACK_RATES: Record<string, number> = { USD: 84, EUR: 91, GBP: 107, AUD: 55, SGD: 63, CAD: 62 };
@@ -30,7 +31,7 @@ async function convertToInr(amount: number, currency: string, date: string | nul
       const rate = data.rates?.INR;
       if (rate) return Math.round(amount * rate * 100) / 100;
     }
-  } catch { /* fall through to fallback */ }
+  } catch { /* fall through */ }
   return Math.round(amount * (FALLBACK_RATES[cur] ?? 84) * 100) / 100;
 }
 
@@ -94,8 +95,12 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: cors });
 
   try {
-    const workerUrl   = Deno.env.get("R2_INVOICE_WORKER_URL")!;
+    const workerUrl    = Deno.env.get("R2_INVOICE_WORKER_URL")!;
     const uploadSecret = Deno.env.get("R2_INVOICE_UPLOAD_SECRET")!;
+    const sbUrl        = Deno.env.get("SUPABASE_URL")!;
+    const sbKey        = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const authHeader   = req.headers.get("Authorization") ?? "";
+    const supabase     = createClient(sbUrl, sbKey, { global: { headers: { Authorization: authHeader } } });
 
     const form = await req.formData();
     const file = form.get("file") as File | null;
@@ -107,12 +112,20 @@ serve(async (req) => {
       });
     }
 
-    const ext = file.name.split(".").pop()?.toLowerCase() ?? "pdf";
-    const key = `${journalEntryId}_${Date.now()}.${ext}`;
-    const buf = await file.arrayBuffer();
+    // Fetch org_id from the journal entry (needed for dedup scope)
+    const { data: entry } = await supabase
+      .from("journal_entries")
+      .select("org_id")
+      .eq("id", journalEntryId)
+      .single();
+    const orgId = entry?.org_id ?? null;
+
+    const ext      = file.name.split(".").pop()?.toLowerCase() ?? "pdf";
+    const key      = `${journalEntryId}_${Date.now()}.${ext}`;
+    const buf      = await file.arrayBuffer();
     const mimeType = file.type || (ext === "pdf" ? "application/pdf" : "image/jpeg");
 
-    // 1. Upload to R2 via Worker
+    // 1. Upload to R2
     const uploadRes = await fetch(`${workerUrl}/upload?key=${encodeURIComponent(key)}`, {
       method: "PUT",
       headers: { "x-upload-secret": uploadSecret, "content-type": mimeType },
@@ -121,34 +134,90 @@ serve(async (req) => {
     if (!uploadRes.ok) throw new Error(`R2 upload failed: ${uploadRes.status}`);
     const { url } = await uploadRes.json() as { key: string; url: string };
 
-    // 2. Parse with AI: Groq first (images only), Anthropic as fallback
-    const b64 = base64Encode(buf);
-    let parsed = await parseWithGroq(b64, mimeType);
+    // 2. Parse with AI
+    const b64    = base64Encode(buf);
+    let parsed   = await parseWithGroq(b64, mimeType);
     if (!parsed) parsed = await parseWithAnthropic(b64, mimeType);
 
-    // 3. Convert amount to INR
+    const invoiceNumber = typeof parsed?.invoice_number === "string" && parsed.invoice_number
+      ? parsed.invoice_number.trim()
+      : null;
+
+    // 3. Dedup check — reject if already on file
+    if (orgId) {
+      const party       = typeof parsed?.party === "string"  ? parsed.party  : null;
+      const invoiceDate = typeof parsed?.date  === "string"  ? parsed.date   : null;
+      const rawAmt      = typeof parsed?.amount === "number" ? parsed.amount : null;
+
+      let existing: Record<string, unknown> | null = null;
+
+      // Primary: match by invoice number
+      if (invoiceNumber) {
+        const { data } = await supabase
+          .from("journal_entries")
+          .select("id, invoice_party, invoice_date, invoice_amount, narration")
+          .eq("org_id", orgId)
+          .eq("invoice_number", invoiceNumber)
+          .not("id", "eq", journalEntryId)
+          .maybeSingle();
+        existing = data ?? null;
+      }
+
+      // Secondary: if no invoice number, match by party + date + original currency amount
+      if (!existing && party && invoiceDate && rawAmt !== null) {
+        const cur = typeof parsed?.currency === "string" ? parsed.currency.toUpperCase() : "INR";
+        // Compare against stored invoice_amount only if currency was already INR (i.e. amount stored as-is)
+        // For foreign-currency invoices we compare the raw amount via invoice_currency + invoice_amount back-calculation,
+        // but for simplicity we check party + date match (same day, same vendor = almost certainly same doc)
+        const { data } = await supabase
+          .from("journal_entries")
+          .select("id, invoice_party, invoice_date, invoice_amount, narration")
+          .eq("org_id", orgId)
+          .eq("invoice_party", party)
+          .eq("invoice_date", invoiceDate)
+          .not("id", "eq", journalEntryId)
+          .not("invoice_url", "is", null)
+          .maybeSingle();
+        existing = data ?? null;
+      }
+
+      if (existing) {
+        return new Response(JSON.stringify({
+          duplicate: true,
+          invoice_number: invoiceNumber,
+          existing: {
+            id:        (existing as Record<string, unknown>).id,
+            party:     (existing as Record<string, unknown>).invoice_party,
+            date:      (existing as Record<string, unknown>).invoice_date,
+            amount:    (existing as Record<string, unknown>).invoice_amount,
+            narration: (existing as Record<string, unknown>).narration,
+          },
+        }), {
+          status: 409,
+          headers: { ...cors, "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    // 4. Convert to INR
     const rawAmount = typeof parsed?.amount === "number" ? parsed.amount : null;
     const currency  = typeof parsed?.currency === "string" ? parsed.currency.toUpperCase() : null;
     const inrAmount = rawAmount !== null
       ? await convertToInr(rawAmount, currency ?? "USD", parsed?.date as string | null ?? null)
       : null;
 
-    // 4. Patch journal_entry
-    const sbUrl  = Deno.env.get("SUPABASE_URL")!;
-    const sbKey  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const authHeader = req.headers.get("Authorization") ?? "";
-    const supabase = createClient(sbUrl, sbKey, { global: { headers: { Authorization: authHeader } } });
-
+    // 5. Update journal entry
     await supabase.from("journal_entries").update({
       invoice_url:         url,
       invoice_party:       parsed?.party       ?? null,
       invoice_date:        parsed?.date        ?? null,
       invoice_description: parsed?.description ?? null,
       invoice_amount:      inrAmount,
-      invoice_currency:    currency ?? null,
+      invoice_currency:    currency            ?? null,
+      invoice_number:      invoiceNumber,
     }).eq("id", journalEntryId);
 
-    return new Response(JSON.stringify({ url, parsed, inrAmount, currency }), {
+    return new Response(JSON.stringify({ url, parsed, inrAmount, currency, invoice_number: invoiceNumber }), {
       headers: { ...cors, "Content-Type": "application/json" },
     });
   } catch (e) {

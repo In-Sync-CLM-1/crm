@@ -87,7 +87,7 @@ export function AccountingManualEntry() {
 
   const expenseAccounts = leafAccounts.filter(a => a.type === "expense");
 
-  async function uploadInvoice(entryId: string): Promise<string | null> {
+  async function uploadInvoice(entryId: string): Promise<{ url: string } | { duplicate: true; invoice_number: string } | null> {
     if (!invoiceFile) return null;
     const form = new FormData();
     form.append("file", invoiceFile);
@@ -101,7 +101,7 @@ export function AccountingManualEntry() {
       toast({ title: "Invoice upload failed", description: res.error.message, variant: "destructive" });
       return null;
     }
-    return (res.data as { url: string })?.url ?? null;
+    return res.data as { url: string } | { duplicate: true; invoice_number: string };
   }
 
   async function handleSave() {
@@ -131,9 +131,21 @@ export function AccountingManualEntry() {
         ],
       });
 
-      // Upload invoice to R2 + AI-parse metadata (edge function updates journal_entry directly)
+      // Upload invoice to R2 + AI-parse metadata
       if (invoiceFile && je?.id) {
-        await uploadInvoice(je.id);
+        const uploadResult = await uploadInvoice(je.id);
+
+        // Duplicate invoice detected — roll back the journal entry we just created
+        if (uploadResult && "duplicate" in uploadResult && uploadResult.duplicate) {
+          await supabase.from("journal_entry_lines").delete().eq("entry_id", je.id);
+          await supabase.from("journal_entries").delete().eq("id", je.id);
+          toast({
+            title: "Duplicate invoice",
+            description: `Invoice ${uploadResult.invoice_number} has already been uploaded. Entry rolled back.`,
+            variant: "destructive",
+          });
+          return;
+        }
       }
 
       setDesc(""); setAmount(""); setExpAccId(""); setInvoiceFile(null);
