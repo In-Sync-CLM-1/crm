@@ -1,10 +1,11 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Download, Paperclip } from "lucide-react";
+import { Download, Paperclip, Pencil } from "lucide-react";
 import { useAccountingData } from "@/hooks/useAccountingData";
-import type { LedgerRow, ChartOfAccount } from "@/types/accounting";
+import { JournalEntryEditDialog } from "./JournalEntryEditDialog";
+import type { LedgerRow, ChartOfAccount, JournalEntry } from "@/types/accounting";
 import { format, startOfYear, endOfYear } from "date-fns";
 
 function fmt(n: number) {
@@ -13,9 +14,9 @@ function fmt(n: number) {
 }
 
 function exportCsv(account: ChartOfAccount, rows: LedgerRow[], openingBalance: number) {
-  const header = ["Date","Particulars","J.F.","Debit (₹)","Credit (₹)","Balance (₹)"];
+  const header = ["Date", "Particulars", "J.F.", "Debit (₹)", "Credit (₹)", "Balance (₹)"];
   const lines: string[][] = [
-    ["Opening Balance","","","","",openingBalance.toFixed(2)],
+    ["Opening Balance", "", "", "", "", openingBalance.toFixed(2)],
     ...rows.map(r => [
       format(new Date(r.entry_date), "dd/MM/yyyy"),
       r.narration,
@@ -29,15 +30,20 @@ function exportCsv(account: ChartOfAccount, rows: LedgerRow[], openingBalance: n
   const blob = new Blob([csv], { type: "text/csv" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a"); a.href = url;
-  a.download = `Ledger_${account.code}_${account.name.replace(/\s+/g,"_")}.csv`;
+  a.download = `Ledger_${account.code}_${account.name.replace(/\s+/g, "_")}.csv`;
   a.click(); URL.revokeObjectURL(url);
 }
 
-export function AccountingLedger() {
+export function AccountingLedger({ defaultAccountCode }: { defaultAccountCode?: string }) {
   const { accounts, accountsLoading, useJournalEntries } = useAccountingData();
-  const [selectedCode, setSelectedCode] = useState("1111");
+  const [selectedCode, setSelectedCode] = useState(defaultAccountCode ?? "1111");
   const [fromDate, setFromDate] = useState(format(startOfYear(new Date()), "yyyy-MM-dd"));
-  const [toDate,   setToDate]   = useState(format(endOfYear(new Date()),   "yyyy-MM-dd"));
+  const [toDate, setToDate] = useState(format(endOfYear(new Date()), "yyyy-MM-dd"));
+  const [editEntry, setEditEntry] = useState<JournalEntry | null>(null);
+
+  useEffect(() => {
+    if (defaultAccountCode) setSelectedCode(defaultAccountCode);
+  }, [defaultAccountCode]);
 
   const { data: entries = [], isLoading: entriesLoading } = useJournalEntries(fromDate, toDate);
 
@@ -60,21 +66,26 @@ export function AccountingLedger() {
       const cr = line.credit;
       runningBal += isDebitNormal ? (dr - cr) : (cr - dr);
       ledgerRows.push({
-        entry_id:        entry.id,
-        entry_date:      entry.entry_date,
-        narration:       entry.narration,
-        reference:       entry.reference,
-        source:          entry.source,
-        debit:           dr,
-        credit:          cr,
+        entry_id: entry.id,
+        entry_date: entry.entry_date,
+        narration: entry.narration,
+        reference: entry.reference,
+        source: entry.source,
+        debit: dr,
+        credit: cr,
         running_balance: runningBal,
-        invoice_url:     entry.invoice_url ?? null,
+        invoice_url: entry.invoice_url ?? null,
       });
     }
     return { openingBalance: 0, rows: ledgerRows };
   }, [entries, selectedAccount]);
 
   const leafAccounts = accounts.filter(a => !accounts.some(b => b.parent_code === a.code));
+
+  function openEdit(entryId: string) {
+    const found = entries.find(e => e.id === entryId) ?? null;
+    setEditEntry(found);
+  }
 
   return (
     <div className="space-y-4">
@@ -158,10 +169,14 @@ export function AccountingLedger() {
                     <td />
                   </tr>
                   {rows.map(row => (
-                    <tr key={row.entry_id} className="hover:bg-muted/30 transition-colors">
+                    <tr
+                      key={row.entry_id}
+                      className="hover:bg-muted/30 transition-colors cursor-pointer group"
+                      onClick={() => openEdit(row.entry_id)}
+                    >
                       <td className="px-4 py-2 whitespace-nowrap">{format(new Date(row.entry_date), "dd MMM yyyy")}</td>
                       <td className="px-4 py-2 max-w-xs">
-                        <p className="truncate">{row.narration}</p>
+                        <p className="truncate group-hover:text-primary">{row.narration}</p>
                         {row.reference && <p className="text-xs text-muted-foreground">{row.reference}</p>}
                       </td>
                       <td className="px-4 py-2 text-center text-xs text-muted-foreground">
@@ -176,16 +191,19 @@ export function AccountingLedger() {
                         </span>
                       </td>
                       <td className="px-2 py-2 text-center">
-                        {row.invoice_url && (
+                        {row.invoice_url ? (
                           <a
                             href={row.invoice_url}
                             target="_blank"
                             rel="noopener noreferrer"
                             title="View invoice"
                             className="text-muted-foreground hover:text-foreground inline-flex"
+                            onClick={e => e.stopPropagation()}
                           >
                             <Paperclip className="h-3.5 w-3.5" />
                           </a>
+                        ) : (
+                          <Pencil className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                         )}
                       </td>
                     </tr>
@@ -196,6 +214,13 @@ export function AccountingLedger() {
           )}
         </CardContent>
       </Card>
+
+      <JournalEntryEditDialog
+        entry={editEntry}
+        accounts={accounts}
+        open={!!editEntry}
+        onClose={() => setEditEntry(null)}
+      />
     </div>
   );
 }

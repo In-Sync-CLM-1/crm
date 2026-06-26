@@ -1,10 +1,11 @@
 import { useState } from "react";
 import DashboardLayout from "@/components/Layout/DashboardLayout";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Upload, ClipboardList, BookOpen, Scale, TrendingUp, BarChart3, Receipt, FolderOpen } from "lucide-react";
+import { Upload, ClipboardList, BookOpen, Scale, TrendingUp, BarChart3, Receipt, FolderOpen, PenLine } from "lucide-react";
 import { AccountingImport } from "@/components/Accounting/AccountingImport";
 import { AccountingReviewQueue } from "@/components/Accounting/AccountingReviewQueue";
 import { AccountingManualEntry } from "@/components/Accounting/AccountingManualEntry";
+import { AccountingJournalEntry } from "@/components/Accounting/AccountingJournalEntry";
 import { AccountingLedger } from "@/components/Accounting/AccountingLedger";
 import { AccountingTrialBalance } from "@/components/Accounting/AccountingTrialBalance";
 import { AccountingPnL } from "@/components/Accounting/AccountingPnL";
@@ -52,12 +53,18 @@ function DateRangeBar({
 export default function Accounting() {
   const { pendingTransactions } = useAccountingData();
   const [tab, setTab] = useState("import");
+  const [selectedLedgerCode, setSelectedLedgerCode] = useState<string | undefined>(undefined);
 
   const [fromDate, setFromDate] = useState(format(startOfYear(new Date()), "yyyy-MM-dd"));
-  const [toDate,   setToDate]   = useState(format(endOfYear(new Date()),   "yyyy-MM-dd"));
-  const [asOf,     setAsOf]     = useState(format(new Date(), "yyyy-MM-dd"));
+  const [toDate, setToDate] = useState(format(endOfYear(new Date()), "yyyy-MM-dd"));
+  const [asOf, setAsOf] = useState(format(new Date(), "yyyy-MM-dd"));
 
   const pendingCount = pendingTransactions.length;
+
+  function handleAccountClick(code: string) {
+    setSelectedLedgerCode(code);
+    setTab("ledger");
+  }
 
   return (
     <DashboardLayout>
@@ -80,6 +87,9 @@ export default function Accounting() {
                   {pendingCount}
                 </Badge>
               )}
+            </TabsTrigger>
+            <TabsTrigger value="journal" className="flex items-center gap-1.5 text-xs">
+              <PenLine className="h-3.5 w-3.5" />Journal Entry
             </TabsTrigger>
             <TabsTrigger value="ledger" className="flex items-center gap-1.5 text-xs">
               <BookOpen className="h-3.5 w-3.5" />Ledger
@@ -110,8 +120,12 @@ export default function Accounting() {
               <AccountingReviewQueue />
             </TabsContent>
 
+            <TabsContent value="journal">
+              <AccountingJournalEntry />
+            </TabsContent>
+
             <TabsContent value="ledger">
-              <AccountingLedger />
+              <AccountingLedger defaultAccountCode={selectedLedgerCode} />
             </TabsContent>
 
             <TabsContent value="trial">
@@ -120,7 +134,7 @@ export default function Accounting() {
                 onFromDate={setFromDate} onToDate={setToDate} onAsOf={setAsOf}
                 show="asof"
               />
-              <AccountingTrialBalance asOf={asOf} />
+              <AccountingTrialBalance asOf={asOf} onAccountClick={handleAccountClick} />
             </TabsContent>
 
             <TabsContent value="pnl">
@@ -138,7 +152,7 @@ export default function Accounting() {
                 onFromDate={setFromDate} onToDate={setToDate} onAsOf={setAsOf}
                 show="asof"
               />
-              <AccountingBalanceSheet asOf={asOf} />
+              <AccountingBalanceSheet asOf={asOf} onAccountClick={handleAccountClick} />
             </TabsContent>
 
             <TabsContent value="manual">

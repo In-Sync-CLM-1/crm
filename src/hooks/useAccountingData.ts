@@ -431,6 +431,48 @@ export function useAccountingData() {
     },
   });
 
+  // ── Update an existing journal entry ─────────────────────────────
+  const updateJournalEntry = useMutation({
+    mutationFn: async ({
+      id,
+      entry_date,
+      narration,
+      reference,
+      lines,
+    }: {
+      id: string;
+      entry_date: string;
+      narration: string;
+      reference?: string;
+      lines: Array<{ account_id: string; debit: number; credit: number; narration?: string }>;
+    }) => {
+      const { error: jeErr } = await supabase
+        .from("journal_entries")
+        .update({ entry_date, narration, reference: reference || null })
+        .eq("id", id);
+      if (jeErr) throw jeErr;
+
+      const { error: delErr } = await supabase
+        .from("journal_entry_lines")
+        .delete()
+        .eq("entry_id", id);
+      if (delErr) throw delErr;
+
+      const newLines = lines.map((l, i) => ({
+        entry_id: id,
+        account_id: l.account_id,
+        debit: l.debit,
+        credit: l.credit,
+        narration: l.narration || null,
+        sort_order: i,
+      }));
+      const { error: insertErr } = await supabase.from("journal_entry_lines").insert(newLines);
+      if (insertErr) throw insertErr;
+
+      qc.invalidateQueries({ queryKey: ["journal-entries"] });
+    },
+  });
+
   // ── Settle director drawings against expenses on demand ──────────
   const settleDirectorDrawings = useMutation({
     mutationFn: async () => {
@@ -501,6 +543,7 @@ export function useAccountingData() {
     useJournalEntries,
     importStatement,
     categorize,
+    updateJournalEntry,
     settleDirectorDrawings,
     closeDirectorSalary,
   };

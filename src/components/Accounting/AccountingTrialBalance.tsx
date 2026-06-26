@@ -30,7 +30,10 @@ function exportCsv(rows: TrialBalanceRow[], asOf: string) {
   a.click(); URL.revokeObjectURL(url);
 }
 
-export function AccountingTrialBalance({ asOf }: { asOf: string }) {
+export function AccountingTrialBalance({ asOf, onAccountClick }: {
+  asOf: string;
+  onAccountClick?: (code: string) => void;
+}) {
   const { accounts, accountsLoading, useJournalEntries } = useAccountingData();
   const { data: entries = [], isLoading: entriesLoading } = useJournalEntries(undefined, asOf);
 
@@ -135,9 +138,12 @@ export function AccountingTrialBalance({ asOf }: { asOf: string }) {
                           </td>
                         </tr>
                         {group.map(row => (
-                          <tr key={row.account_id} className="border-b hover:bg-muted/20">
+                          <tr key={row.account_id}
+                            className={["border-b", onAccountClick ? "cursor-pointer hover:bg-muted/40" : "hover:bg-muted/20"].join(" ")}
+                            onClick={onAccountClick ? () => onAccountClick(row.code) : undefined}
+                          >
                             <td className="px-4 py-2 text-xs text-muted-foreground">{row.code}</td>
-                            <td className="px-4 py-2">{row.name}</td>
+                            <td className={["px-4 py-2", onAccountClick ? "text-primary hover:underline underline-offset-2" : ""].join(" ")}>{row.name}</td>
                             <td className="px-4 py-2 text-right">{fmt(row.total_debit)}</td>
                             <td className="px-4 py-2 text-right">{fmt(row.total_credit)}</td>
                           </tr>
