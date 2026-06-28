@@ -561,6 +561,11 @@ export function useBillingData() {
       // Save items
       await saveItems(data.id, items || []);
 
+      // Mark the source document as converted so it is excluded from revenue/GST reports
+      if (id) {
+        await supabase.from("billing_documents").update({ status: "converted", updated_at: new Date().toISOString() }).eq("id", id);
+      }
+
       // Increment next number
       const numKey = targetType === "proforma" ? "next_proforma_number" : "next_invoice_number";
       if (currentSettings.id) {

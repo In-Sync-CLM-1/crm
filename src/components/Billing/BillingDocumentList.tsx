@@ -28,18 +28,20 @@ export function BillingDocumentList({ documents, docType, onView, onCreate, onCo
   const docs = documents.filter(d => d.doc_type === docType);
 
   const filtered = docs.filter(d => {
+    // "all" hides converted docs — they need the explicit "converted" filter to surface
+    if (statusFilter === "all" && d.status === "converted") return false;
     if (statusFilter !== "all" && d.status !== statusFilter) return false;
     if (search && !d.doc_number.toLowerCase().includes(search.toLowerCase()) && !d.client_name.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
 
   const receivable = filtered.reduce((s, d) => {
-    if (["paid", "cancelled", "draft"].includes(d.status)) return s;
+    if (["paid", "cancelled", "converted", "draft"].includes(d.status)) return s;
     return s + (d.balance_due || 0);
   }, 0);
 
   const statuses = docType === "proforma"
-    ? ["all", "draft", "sent", "paid", "cancelled"]
+    ? ["all", "draft", "sent", "paid", "cancelled", "converted"]
     : docType === "credit_note"
     ? ["all", "draft", "sent", "issued", "cancelled"]
     : ["all", "draft", "sent", "paid", "partially_paid", "overdue", "cancelled"];
@@ -106,7 +108,7 @@ export function BillingDocumentList({ documents, docType, onView, onCreate, onCo
                   <TableCell className="text-right text-muted-foreground">{formatCurrencyINR(d.total_tax)}</TableCell>
                   <TableCell className="text-right font-bold">{formatCurrencyINR(d.total_amount)}</TableCell>
                   <TableCell className="text-right">
-                    {d.status === "paid" || d.status === "cancelled" ? (
+                    {d.status === "paid" || d.status === "cancelled" || d.status === "converted" ? (
                       <span className="text-muted-foreground">—</span>
                     ) : d.amount_paid > 0 ? (
                       <span className="font-bold text-amber-600">{formatCurrencyINR(d.balance_due)}</span>
@@ -125,7 +127,7 @@ export function BillingDocumentList({ documents, docType, onView, onCreate, onCo
                           <ArrowRight className="h-4 w-4" />Tax Inv.
                         </Button>
                       )}
-                      {docType === "proforma" && onConvert && d.status !== "paid" && d.status !== "partially_paid" && d.status !== "cancelled" && (
+                      {docType === "proforma" && onConvert && d.status !== "paid" && d.status !== "partially_paid" && d.status !== "cancelled" && d.status !== "converted" && (
                         <Button variant="ghost" size="icon" onClick={() => { if (window.confirm(`Convert ${d.doc_number} to Tax Invoice?`)) onConvert(d); }} title="Convert to Tax Invoice" className="text-muted-foreground hover:text-emerald-600">
                           <ArrowRight className="h-4 w-4" />
                         </Button>

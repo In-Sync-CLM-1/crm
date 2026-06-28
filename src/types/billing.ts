@@ -21,7 +21,7 @@ export const INDIAN_STATES = [
 
 export type SupplyType = "intra_state" | "inter_state";
 export type BillingDocumentType = "proforma" | "invoice" | "credit_note";
-export type BillingDocumentStatus = "draft" | "sent" | "paid" | "partially_paid" | "overdue" | "cancelled" | "accepted" | "rejected" | "expired" | "issued";
+export type BillingDocumentStatus = "draft" | "sent" | "paid" | "partially_paid" | "overdue" | "cancelled" | "accepted" | "rejected" | "expired" | "issued" | "converted";
 export type PaymentMethod = "bank_transfer" | "upi" | "cheque" | "cash" | "online" | "advance";
 
 export interface BillingDocumentItem {
@@ -192,6 +192,7 @@ export const STATUS_COLORS: Record<string, string> = {
   accepted: "bg-emerald-100 text-emerald-700",
   rejected: "bg-red-100 text-red-700",
   expired: "bg-gray-200 text-gray-500",
+  converted: "bg-violet-100 text-violet-600",
 };
 
 export const DOC_TYPE_COLORS: Record<string, string> = {
