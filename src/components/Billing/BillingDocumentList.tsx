@@ -81,8 +81,8 @@ export function BillingDocumentList({ documents, docType, onView, onCreate, onCo
             <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by document number or client..." className="pl-9" />
           </div>
         </div>
-        <Table>
-          <TableHeader>
+        <Table stickyHeader>
+          <TableHeader sticky>
             <TableRow>
               <TableHead>Doc #</TableHead>
               <TableHead>Client</TableHead>
