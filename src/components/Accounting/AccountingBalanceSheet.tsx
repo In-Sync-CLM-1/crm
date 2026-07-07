@@ -174,7 +174,7 @@ export function AccountingBalanceSheet({
       </div>
 
       <Card>
-        <CardContent className="py-4 px-6 space-y-1">
+        <CardContent className="py-4 px-6">
           {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
           {!loading && !bs && <p className="text-sm text-muted-foreground">No journal entries found up to {asOf}.</p>}
 
@@ -182,108 +182,111 @@ export function AccountingBalanceSheet({
             <>
               <div className="text-center pb-3 border-b mb-3">
                 <p className="font-bold text-base">Prosync AI Solutions</p>
-                <p className="text-sm text-muted-foreground">Balance Sheet (Schedule III — Companies Act 2013)</p>
+                <p className="text-sm text-muted-foreground">Balance Sheet</p>
                 <p className="text-xs text-muted-foreground">As at {format(new Date(asOf), "dd MMMM yyyy")}</p>
               </div>
 
-              {/* ── EQUITY & LIABILITIES ── */}
-              <p className="font-bold text-sm uppercase tracking-wide border-b pb-1">EQUITY AND LIABILITIES</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-0 md:divide-x">
+                {/* ── LIABILITIES (left) ── */}
+                <div className="space-y-1 md:pr-6">
+                  <p className="font-bold text-sm uppercase tracking-wide border-b pb-1">Liabilities</p>
 
-              <p className="text-xs font-semibold text-muted-foreground uppercase mt-2">I. Shareholders' Funds</p>
-              <BSRow label="(a) Share Capital" amount={bs.shareCapital} indent
-                accountCode="2010" onAccountClick={onAccountClick} />
-              <div className="pl-6">
-                <p className="text-xs text-muted-foreground mt-1">(b) Reserves &amp; Surplus</p>
-                <BSRow label="Retained Earnings" amount={bs.retainedEarnings} indent
-                  accountCode="2020" onAccountClick={onAccountClick} />
-                <BSRow label="Profit for the Period" amount={bs.currentYearPL} indent />
-              </div>
-              <BSSubtotal label="Total Shareholders' Funds" amount={bs.shareholdersFunds} />
+                  <p className="text-xs font-semibold text-muted-foreground uppercase mt-2">Capital Account</p>
+                  <BSRow label="Share Capital" amount={bs.shareCapital} indent
+                    accountCode="2010" onAccountClick={onAccountClick} />
 
-              <p className="text-xs font-semibold text-muted-foreground uppercase mt-3">II. Non-current Liabilities</p>
-              <p className="text-xs text-muted-foreground pl-4 mt-1">(a) Long-term Borrowings</p>
-              <BSRow label="Loan from Director — Amit Sengupta" amount={bs.directorLoan} indent
-                accountCode="2110" onAccountClick={onAccountClick} />
-              <BSRow label="Accrued Interest — Director's Loan" amount={bs.accruedInterest} indent
-                accountCode="2111" onAccountClick={onAccountClick} />
-              <BSSubtotal label="Total Non-current Liabilities" amount={bs.longTermBorrowings} />
+                  <p className="text-xs font-semibold text-muted-foreground uppercase mt-3">Reserves &amp; Surplus</p>
+                  <BSRow label="Retained Earnings" amount={bs.retainedEarnings} indent
+                    accountCode="2020" onAccountClick={onAccountClick} />
+                  <BSRow label="Profit for the Period" amount={bs.currentYearPL} indent />
+                  <BSSubtotal label="Total Capital &amp; Reserves" amount={bs.shareholdersFunds} />
 
-              <p className="text-xs font-semibold text-muted-foreground uppercase mt-3">III. Current Liabilities</p>
-              {bs.currentLiabItems.map(i => (
-                <BSRow key={i.label} label={i.label} amount={i.amount} indent
-                  accountCode={i.code} onAccountClick={onAccountClick} />
-              ))}
-              {bs.currentLiabItems.length === 0 && (
-                <p className="pl-6 text-xs text-muted-foreground">None</p>
-              )}
-              <BSSubtotal label="Total Current Liabilities" amount={bs.totalCurrentLiab} />
+                  <p className="text-xs font-semibold text-muted-foreground uppercase mt-3">Unsecured Loans</p>
+                  <BSRow label="Loan from Director — Amit Sengupta" amount={bs.directorLoan} indent
+                    accountCode="2110" onAccountClick={onAccountClick} />
+                  <BSRow label="Accrued Interest — Director's Loan" amount={bs.accruedInterest} indent
+                    accountCode="2111" onAccountClick={onAccountClick} />
+                  <BSSubtotal label="Total Loans" amount={bs.longTermBorrowings} />
 
-              <div className="border-t-2 border-border mt-2 pt-2">
-                <BSRow label="TOTAL (EQUITY AND LIABILITIES)" amount={bs.totalEquityLiab} bold />
-              </div>
-
-              {/* ── ASSETS ── */}
-              <p className="font-bold text-sm uppercase tracking-wide border-b pb-1 mt-6">ASSETS</p>
-
-              <p className="text-xs font-semibold text-muted-foreground uppercase mt-2">I. Non-current Assets</p>
-              <p className="text-xs text-muted-foreground pl-4 mt-1">(a) Fixed Assets (Tangible)</p>
-              {bs.fixedAssetItems.length === 0 && (
-                <p className="pl-6 text-xs text-muted-foreground">None</p>
-              )}
-              {bs.fixedAssetItems.map(i => (
-                <BSRow key={i.label} label={i.label} amount={i.amount} indent
-                  accountCode={i.code} onAccountClick={onAccountClick} />
-              ))}
-              {bs.fixedAssetItems.length > 0 && (
-                <div className="pl-6 flex justify-between text-xs text-muted-foreground border-t border-dashed pt-0.5 mt-0.5">
-                  <span>Gross Block</span>
-                  <span>{fmt(bs.grossFixedAssets)}</span>
-                </div>
-              )}
-              {bs.accDepItems.length > 0 && (
-                <>
-                  <p className="text-xs text-muted-foreground pl-4 mt-1">Less: Accumulated Depreciation</p>
-                  {bs.accDepItems.map(i => (
+                  <p className="text-xs font-semibold text-muted-foreground uppercase mt-3">Current Liabilities &amp; Provisions</p>
+                  {bs.currentLiabItems.map(i => (
                     <BSRow key={i.label} label={i.label} amount={i.amount} indent
                       accountCode={i.code} onAccountClick={onAccountClick} />
                   ))}
-                  <div className="pl-6 flex justify-between text-xs text-muted-foreground border-t border-dashed pt-0.5 mt-0.5">
-                    <span>Total Accumulated Depreciation</span>
-                    <span className="text-red-600">({fmt(bs.totalAccDep)})</span>
+                  {bs.currentLiabItems.length === 0 && (
+                    <p className="pl-6 text-xs text-muted-foreground">None</p>
+                  )}
+                  <BSSubtotal label="Total Current Liabilities" amount={bs.totalCurrentLiab} />
+
+                  <div className="border-t-2 border-border mt-2 pt-2">
+                    <BSRow label="Total Liabilities" amount={bs.totalEquityLiab} bold />
                   </div>
-                </>
-              )}
-              <BSSubtotal label="Net Block (Fixed Assets)" amount={bs.totalFixedAssets} />
+                </div>
 
-              <p className="text-xs font-semibold text-muted-foreground uppercase mt-3">II. Current Assets</p>
-              <BSRow label="Cash in Hand" amount={bs.cashAmount} indent
-                accountCode="1110" onAccountClick={onAccountClick} />
-              <BSRow label="Bank — IDFC FIRST (A/C 10288101744)" amount={bs.bankAmount} indent
-                accountCode="1111" onAccountClick={onAccountClick} />
-              <BSRow label="Trade Receivables" amount={bs.tradeReceivables} indent
-                accountCode="1120" onAccountClick={onAccountClick} />
-              <BSRow label="TDS Receivable" amount={bs.tdsReceivable} indent
-                accountCode="1150" onAccountClick={onAccountClick} />
-              <BSRow label="Advance &amp; Prepaid Expenses" amount={bs.advancePrepaid} indent
-                accountCode="1140" onAccountClick={onAccountClick} />
-              {(bs.gstInputCgst + bs.gstInputSgst + bs.gstInputIgst) > 0 && (
-                <>
-                  <BSRow label="GST Input Credit — CGST" amount={bs.gstInputCgst} indent
-                    accountCode="1130" onAccountClick={onAccountClick} />
-                  <BSRow label="GST Input Credit — SGST" amount={bs.gstInputSgst} indent
-                    accountCode="1131" onAccountClick={onAccountClick} />
-                  <BSRow label="GST Input Credit — IGST" amount={bs.gstInputIgst} indent
-                    accountCode="1132" onAccountClick={onAccountClick} />
-                </>
-              )}
-              {bs.otherCurrentAssets > 0 && (
-                <BSRow label="Other Current Assets" amount={bs.otherCurrentAssets} indent
-                  accountCode="1160" onAccountClick={onAccountClick} />
-              )}
-              <BSSubtotal label="Total Current Assets" amount={bs.totalCurrentAssets} />
+                {/* ── ASSETS (right) ── */}
+                <div className="space-y-1 md:pl-6">
+                  <p className="font-bold text-sm uppercase tracking-wide border-b pb-1">Assets</p>
 
-              <div className="border-t-2 border-border mt-2 pt-2">
-                <BSRow label="TOTAL (ASSETS)" amount={bs.totalAssets} bold />
+                  <p className="text-xs font-semibold text-muted-foreground uppercase mt-2">Fixed Assets</p>
+                  {bs.fixedAssetItems.length === 0 && (
+                    <p className="pl-6 text-xs text-muted-foreground">None</p>
+                  )}
+                  {bs.fixedAssetItems.map(i => (
+                    <BSRow key={i.label} label={i.label} amount={i.amount} indent
+                      accountCode={i.code} onAccountClick={onAccountClick} />
+                  ))}
+                  {bs.fixedAssetItems.length > 0 && (
+                    <div className="pl-6 flex justify-between text-xs text-muted-foreground border-t border-dashed pt-0.5 mt-0.5">
+                      <span>Gross Block</span>
+                      <span>{fmt(bs.grossFixedAssets)}</span>
+                    </div>
+                  )}
+                  {bs.accDepItems.length > 0 && (
+                    <>
+                      <p className="text-xs text-muted-foreground pl-4 mt-1">Less: Accumulated Depreciation</p>
+                      {bs.accDepItems.map(i => (
+                        <BSRow key={i.label} label={i.label} amount={i.amount} indent
+                          accountCode={i.code} onAccountClick={onAccountClick} />
+                      ))}
+                      <div className="pl-6 flex justify-between text-xs text-muted-foreground border-t border-dashed pt-0.5 mt-0.5">
+                        <span>Total Accumulated Depreciation</span>
+                        <span className="text-red-600">({fmt(bs.totalAccDep)})</span>
+                      </div>
+                    </>
+                  )}
+                  <BSSubtotal label="Net Block (Fixed Assets)" amount={bs.totalFixedAssets} />
+
+                  <p className="text-xs font-semibold text-muted-foreground uppercase mt-3">Current Assets, Loans &amp; Advances</p>
+                  <BSRow label="Cash in Hand" amount={bs.cashAmount} indent
+                    accountCode="1110" onAccountClick={onAccountClick} />
+                  <BSRow label="Bank — IDFC FIRST (A/C 10288101744)" amount={bs.bankAmount} indent
+                    accountCode="1111" onAccountClick={onAccountClick} />
+                  <BSRow label="Trade Receivables" amount={bs.tradeReceivables} indent
+                    accountCode="1120" onAccountClick={onAccountClick} />
+                  <BSRow label="TDS Receivable" amount={bs.tdsReceivable} indent
+                    accountCode="1150" onAccountClick={onAccountClick} />
+                  <BSRow label="Advance &amp; Prepaid Expenses" amount={bs.advancePrepaid} indent
+                    accountCode="1140" onAccountClick={onAccountClick} />
+                  {(bs.gstInputCgst + bs.gstInputSgst + bs.gstInputIgst) > 0 && (
+                    <>
+                      <BSRow label="GST Input Credit — CGST" amount={bs.gstInputCgst} indent
+                        accountCode="1130" onAccountClick={onAccountClick} />
+                      <BSRow label="GST Input Credit — SGST" amount={bs.gstInputSgst} indent
+                        accountCode="1131" onAccountClick={onAccountClick} />
+                      <BSRow label="GST Input Credit — IGST" amount={bs.gstInputIgst} indent
+                        accountCode="1132" onAccountClick={onAccountClick} />
+                    </>
+                  )}
+                  {bs.otherCurrentAssets > 0 && (
+                    <BSRow label="Other Current Assets" amount={bs.otherCurrentAssets} indent
+                      accountCode="1160" onAccountClick={onAccountClick} />
+                  )}
+                  <BSSubtotal label="Total Current Assets" amount={bs.totalCurrentAssets} />
+
+                  <div className="border-t-2 border-border mt-2 pt-2">
+                    <BSRow label="Total Assets" amount={bs.totalAssets} bold />
+                  </div>
+                </div>
               </div>
             </>
           )}
