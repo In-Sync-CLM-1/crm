@@ -186,7 +186,7 @@ function TransactionCard({
         ...(tdsAmt > 0 && tdsAccountId ? [{ account_id: tdsAccountId, debit: tdsAmt, credit: 0 }] : []),
         { account_id: trAccountId,   debit: 0,         credit: totalCleared },
       ];
-      await categorize.mutateAsync({
+      const je = await categorize.mutateAsync({
         bank_transaction_id: txn.id,
         entry_date: txn.transaction_date,
         narration: `Payment received — ${txn.suggested_invoice?.doc_number ?? ""} — ${txn.suggested_invoice?.client_name ?? ""}`,
@@ -195,7 +195,11 @@ function TransactionCard({
         lines,
       });
 
-      // Create billing_payment record to keep billing module in sync
+      // Create billing_payment record to keep billing module in sync. This
+      // single entry both records AND clears the payment — the bank
+      // statement is the first and only confirmation of this money, so it
+      // skips the Undeposited Funds staging step entirely (journal_entry_id
+      // is already set, so the payment-posting trigger is a no-op here).
       await supabase.from("billing_payments").insert({
         org_id: txn.org_id,
         document_id: txn.suggested_invoice_id,
@@ -204,6 +208,8 @@ function TransactionCard({
         tds_amount: tdsAmt,
         payment_mode: "bank_transfer",
         reference_number: txn.reference ?? null,
+        journal_entry_id: je.id,
+        cleared_journal_entry_id: je.id,
       });
 
       // Update invoice amount_paid / balance_due
@@ -219,6 +225,39 @@ function TransactionCard({
         }).eq("id", inv.id);
       }
 
+      onDone();
+    } catch {
+      toast({ title: "Failed to save", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Clears money that was already recorded as a payment in Billing (parked in
+  // Undeposited Funds) once the matching bank-statement line confirms it —
+  // never touches Trade Receivables again, since that was already cleared
+  // when the payment was first recorded.
+  async function handleClearUndepositedFunds() {
+    const pmt = txn.suggested_billing_payment;
+    if (!pmt) return;
+    const undepositedAccountId = accountByCode("1121")?.id;
+    if (!undepositedAccountId) { toast({ title: "Undeposited Funds account not found", variant: "destructive" }); return; }
+
+    setSaving(true);
+    try {
+      const je = await categorize.mutateAsync({
+        bank_transaction_id: txn.id,
+        entry_date: txn.transaction_date,
+        narration: `Payment cleared — ${pmt.document?.doc_number ?? ""} — ${pmt.document?.client_name ?? ""}`,
+        source: "billing_payment_clearing",
+        billing_document_id: pmt.document_id,
+        lines: [
+          { account_id: bankAccountId,       debit: amount, credit: 0 },
+          { account_id: undepositedAccountId, debit: 0,      credit: amount },
+        ],
+      });
+
+      await supabase.from("billing_payments").update({ cleared_journal_entry_id: je.id }).eq("id", pmt.id);
       onDone();
     } catch {
       toast({ title: "Failed to save", variant: "destructive" });
@@ -345,6 +384,25 @@ function TransactionCard({
             <Button size="sm" onClick={handleInvoiceMatch} disabled={saving} className="w-full">
               <CheckCircle className="h-4 w-4 mr-2" />
               Confirm — Match to this invoice
+            </Button>
+          </div>
+        )}
+
+        {/* Undeposited Funds clearing suggestion — payment already recorded in Billing */}
+        {txn.status === "suggested" && txn.suggested_billing_payment && (
+          <div className="bg-blue-50 border border-blue-200 rounded-md p-3 space-y-2">
+            <div className="flex items-center gap-2 text-sm text-blue-700">
+              <Info className="h-4 w-4 shrink-0" />
+              <span className="font-medium">Already recorded as a payment in Billing</span>
+            </div>
+            <div className="text-sm">
+              <span className="font-medium">{txn.suggested_billing_payment.document?.doc_number}</span>
+              {" — "}{txn.suggested_billing_payment.document?.client_name}
+              {" — "}₹{txn.suggested_billing_payment.amount.toLocaleString("en-IN", { minimumFractionDigits: 2 })} pending bank confirmation
+            </div>
+            <Button size="sm" onClick={handleClearUndepositedFunds} disabled={saving} className="w-full">
+              <CheckCircle className="h-4 w-4 mr-2" />
+              Confirm — Clear against this payment
             </Button>
           </div>
         )}

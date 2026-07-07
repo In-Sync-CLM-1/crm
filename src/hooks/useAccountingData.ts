@@ -58,6 +58,10 @@ export function useAccountingData() {
           *,
           suggested_invoice:billing_documents!suggested_invoice_id(
             id, doc_number, client_name, total_amount, balance_due
+          ),
+          suggested_billing_payment:billing_payments!suggested_billing_payment_id(
+            id, amount, tds_amount, document_id,
+            document:billing_documents(doc_number, client_name)
           )
         `)
         .eq("org_id", effectiveOrgId)
@@ -197,6 +201,19 @@ export function useAccountingData() {
         .gt("balance_due", 0);
       const invoices = (invoicesRaw ?? []).filter(isProsyncIssuedDoc);
 
+      // Payments already recorded manually in Billing (posted to Undeposited
+      // Funds, not yet confirmed against the bank) — when the matching bank
+      // credit shows up, it clears Undeposited Funds, never Trade Receivables
+      // again (that would double-count money already recognized as paid).
+      const { data: unclearedPaymentsRaw } = await supabase
+        .from("billing_payments")
+        .select("id, amount, document:billing_documents!inner(seller_snapshot)")
+        .eq("org_id", effectiveOrgId)
+        .not("journal_entry_id", "is", null)
+        .is("cleared_journal_entry_id", null);
+      const unclearedPayments = ((unclearedPaymentsRaw ?? []) as unknown as Array<{ id: string; amount: number; document: { seller_snapshot: unknown } }>)
+        .filter(p => isProsyncIssuedDoc({ seller_snapshot: p.document?.seller_snapshot }));
+
       const bankAccountId     = accounts.find(a => a.code === "1111")?.id;
       const loanAccountId     = accounts.find(a => a.code === "2110")?.id;
       const salaryAccountId   = accounts.find(a => a.code === "5010")?.id;
@@ -222,6 +239,7 @@ export function useAccountingData() {
           let auto_rule: string | null = null;
           let status: "pending" | "suggested" = "pending";
           let suggested_invoice_id: string | null = null;
+          let suggested_billing_payment_id: string | null = null;
 
           if (isAmit && row.credit > 0) {
             auto_rule = "amit_loan";
@@ -233,6 +251,13 @@ export function useAccountingData() {
               auto_rule = "invoice_match";
               status = "suggested";
               suggested_invoice_id = match.id;
+            } else {
+              const pmtMatch = unclearedPayments.find(p => Math.abs(p.amount - row.credit) < 1);
+              if (pmtMatch) {
+                auto_rule = "undeposited_funds_match";
+                status = "suggested";
+                suggested_billing_payment_id = pmtMatch.id;
+              }
             }
           }
 
@@ -249,6 +274,7 @@ export function useAccountingData() {
             status,
             auto_rule,
             suggested_invoice_id,
+            suggested_billing_payment_id,
           };
         });
 

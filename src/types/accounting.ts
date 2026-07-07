@@ -1,7 +1,7 @@
 export type AccountType = 'asset' | 'liability' | 'equity' | 'income' | 'expense';
 export type NormalBalance = 'debit' | 'credit';
 export type TransactionStatus = 'pending' | 'suggested' | 'categorized' | 'ignored';
-export type JournalSource = 'bank_import' | 'manual' | 'system_interest' | 'director_settlement' | 'director_salary' | 'invoice' | 'credit_note';
+export type JournalSource = 'bank_import' | 'manual' | 'system_interest' | 'director_settlement' | 'director_salary' | 'invoice' | 'credit_note' | 'billing_payment' | 'billing_payment_clearing';
 
 export interface ChartOfAccount {
   id: string;
@@ -44,6 +44,7 @@ export interface BankTransaction {
   journal_entry_id: string | null;
   auto_rule: string | null;
   suggested_invoice_id: string | null;
+  suggested_billing_payment_id: string | null;
   created_at: string;
   // joined
   statement?: BankStatement;
@@ -53,6 +54,13 @@ export interface BankTransaction {
     client_name: string;
     total_amount: number;
     balance_due: number;
+  };
+  suggested_billing_payment?: {
+    id: string;
+    amount: number;
+    tds_amount: number;
+    document_id: string;
+    document?: { doc_number: string; client_name: string };
   };
 }
 
