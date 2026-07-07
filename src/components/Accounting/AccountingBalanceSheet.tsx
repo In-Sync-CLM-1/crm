@@ -117,10 +117,15 @@ function buildBS(
   const gstInputSgst        = getAmount("1131");
   const gstInputIgst        = getAmount("1132");
   const otherCurrentAssets  = getAmount("1160");
+  // Director drawings sit here until settled against recorded expenses or
+  // closed to salary at month-end — until then it's a real receivable from
+  // the director, so it belongs on the Assets side like any other advance.
+  const directorDrawings    = getAmount("1170");
 
   const totalCurrentAssets  =
     bankAmount + cashAmount + tradeReceivables + tdsReceivable +
-    advancePrepaid + gstInputCgst + gstInputSgst + gstInputIgst + otherCurrentAssets;
+    advancePrepaid + gstInputCgst + gstInputSgst + gstInputIgst + otherCurrentAssets +
+    directorDrawings;
   const totalAssets         = totalFixedAssets + totalCurrentAssets;
 
   return {
@@ -130,7 +135,7 @@ function buildBS(
     fixedAssetItems, accDepItems, grossFixedAssets, totalAccDep, totalFixedAssets,
     bankAmount, cashAmount, tradeReceivables, tdsReceivable,
     advancePrepaid, gstInputCgst, gstInputSgst, gstInputIgst, otherCurrentAssets,
-    totalCurrentAssets, totalAssets,
+    directorDrawings, totalCurrentAssets, totalAssets,
   };
 }
 
@@ -280,6 +285,10 @@ export function AccountingBalanceSheet({
                   {bs.otherCurrentAssets > 0 && (
                     <BSRow label="Other Current Assets" amount={bs.otherCurrentAssets} indent
                       accountCode="1160" onAccountClick={onAccountClick} />
+                  )}
+                  {bs.directorDrawings !== 0 && (
+                    <BSRow label="Advance to Director — Pending Settlement" amount={bs.directorDrawings} indent
+                      accountCode="1170" onAccountClick={onAccountClick} />
                   )}
                   <BSSubtotal label="Total Current Assets" amount={bs.totalCurrentAssets} />
 
