@@ -528,9 +528,11 @@ export function useBillingData() {
         subtotal: docData.subtotal,
         total_tax: docData.total_tax,
         total_amount: docData.total_amount,
-        amount_paid: 0,
-        balance_due: docData.total_amount,
-        status: "draft",
+        // Carry the proforma's payment state onto the invoice rather than
+        // resetting it — any advance already collected still applies.
+        amount_paid: docData.amount_paid || 0,
+        balance_due: docData.balance_due ?? docData.total_amount,
+        status: docData.status || "draft",
         notes: resolvedNotes,
         terms_and_conditions: resolvedTerms,
         converted_from_id: id || null,
@@ -561,12 +563,40 @@ export function useBillingData() {
       // Save items
       await saveItems(data.id, items || []);
 
-      // Mark the source document as converted so it is excluded from revenue/GST reports
       if (id) {
-        await supabase.from("billing_documents").update({ status: "converted", updated_at: new Date().toISOString() }).eq("id", id);
+        // Re-parent any payments (e.g. an advance) from the source document
+        // onto the new invoice before removing the source, so payment history
+        // is preserved rather than cascade-deleted with it.
+        await supabase.from("billing_payments").update({ document_id: data.id }).eq("document_id", id);
+
+        // The source document is fully superseded by the new one — remove it
+        // rather than just marking it "converted".
+        await supabase.from("billing_documents").delete().eq("id", id);
+
+        // Free up its number: recompute the source type's counter from what
+        // actually remains, same reconciliation deleteDocument() does.
+        const sourceCounterKey =
+          doc.doc_type === "proforma" ? "next_proforma_number" :
+          doc.doc_type === "credit_note" ? "next_credit_note_number" :
+          "next_invoice_number";
+        const { data: remaining } = await supabase
+          .from("billing_documents")
+          .select("doc_number")
+          .eq("org_id", effectiveOrgId)
+          .eq("doc_type", doc.doc_type);
+        const maxRemaining = (remaining || []).reduce((mx, r: any) => {
+          const m = /-(\d+)$/.exec(r.doc_number || "");
+          const n = m ? parseInt(m[1], 10) : 0;
+          return n > mx ? n : mx;
+        }, 0);
+        if (currentSettings.id) {
+          await supabase.from("billing_settings")
+            .update({ [sourceCounterKey]: maxRemaining + 1, updated_at: new Date().toISOString() })
+            .eq("id", currentSettings.id);
+        }
       }
 
-      // Increment next number
+      // Increment next number for the new document's own type
       const numKey = targetType === "proforma" ? "next_proforma_number" : "next_invoice_number";
       if (currentSettings.id) {
         await supabase.from("billing_settings").update({ [numKey]: nextNum + 1, updated_at: new Date().toISOString() }).eq("id", currentSettings.id);
