@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CheckCircle, ChevronRight, Info, RefreshCw, DollarSign } from "lucide-react";
+import { CheckCircle, ChevronRight, Info, RefreshCw, DollarSign, Ban } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -76,11 +76,23 @@ function TransactionCard({
   bankAccountId: string;
   onDone: () => void;
 }) {
-  const { categorize, settleDirectorDrawings, accountByCode } = useAccountingData();
+  const { categorize, ignoreTransaction, settleDirectorDrawings, accountByCode } = useAccountingData();
   const { toast } = useToast();
   const [contraAccountId, setContraAccountId] = useState("");
   const [narration, setNarration] = useState(txn.narration);
   const [saving, setSaving] = useState(false);
+
+  async function handleIgnore() {
+    setSaving(true);
+    try {
+      await ignoreTransaction.mutateAsync(txn.id);
+      onDone();
+    } catch {
+      toast({ title: "Failed to ignore", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  }
 
   const isDirectorExpense = txn.auto_rule === "director_expense";
   const amount = txn.credit > 0 ? txn.credit : txn.debit;
@@ -249,14 +261,26 @@ function TransactionCard({
                 <p>Cr Due to Director — Amit Sengupta — ₹{amount.toLocaleString("en-IN")}</p>
               </div>
             )}
-            <Button
-              className="w-full"
-              disabled={!contraAccountId || saving}
-              onClick={handleDirectorExpense}
-            >
-              {saving ? "Saving…" : "Record expense"}
-              <ChevronRight className="h-4 w-4 ml-1" />
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                className="flex-1"
+                disabled={!contraAccountId || saving}
+                onClick={handleDirectorExpense}
+              >
+                {saving ? "Saving…" : "Record expense"}
+                <ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
+              <Button
+                variant="outline"
+                className="shrink-0 text-muted-foreground hover:text-destructive"
+                disabled={saving}
+                onClick={handleIgnore}
+                title="Not a business expense"
+              >
+                <Ban className="h-4 w-4 mr-1.5" />
+                Ignore
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -339,14 +363,26 @@ function TransactionCard({
             <Label className="text-xs">Narration</Label>
             <Input value={narration} onChange={e => setNarration(e.target.value)} className="h-8 text-sm" />
           </div>
-          <Button
-            className="w-full"
-            disabled={!contraAccountId || saving}
-            onClick={() => handleSave()}
-          >
-            {saving ? "Saving…" : "Record journal entry"}
-            <ChevronRight className="h-4 w-4 ml-1" />
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              className="flex-1"
+              disabled={!contraAccountId || saving}
+              onClick={() => handleSave()}
+            >
+              {saving ? "Saving…" : "Record journal entry"}
+              <ChevronRight className="h-4 w-4 ml-1" />
+            </Button>
+            <Button
+              variant="outline"
+              className="shrink-0 text-muted-foreground hover:text-destructive"
+              disabled={saving}
+              onClick={handleIgnore}
+              title="Not a business transaction"
+            >
+              <Ban className="h-4 w-4 mr-1.5" />
+              Ignore
+            </Button>
+          </div>
         </div>
       </CardContent>
     </Card>

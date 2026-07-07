@@ -431,6 +431,18 @@ export function useAccountingData() {
     },
   });
 
+  // ── Dismiss a transaction as "not a business expense" ──────────
+  const ignoreTransaction = useMutation({
+    mutationFn: async (bankTransactionId: string) => {
+      const { error } = await supabase
+        .from("bank_transactions")
+        .update({ status: "ignored" })
+        .eq("id", bankTransactionId);
+      if (error) throw error;
+      qc.invalidateQueries({ queryKey: ["bank-transactions-pending"] });
+    },
+  });
+
   // ── Update an existing journal entry ─────────────────────────────
   const updateJournalEntry = useMutation({
     mutationFn: async ({
@@ -543,6 +555,7 @@ export function useAccountingData() {
     useJournalEntries,
     importStatement,
     categorize,
+    ignoreTransaction,
     updateJournalEntry,
     settleDirectorDrawings,
     closeDirectorSalary,
