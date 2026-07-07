@@ -36,6 +36,7 @@ import { QuickDial } from "@/components/Contact/QuickDial";
 import { CallbackReminderAlert } from "@/components/Contact/CallbackReminderAlert";
 import { OfflineBanner } from "@/components/Offline/OfflineBanner";
 import { SyncStatus } from "@/components/Offline/SyncStatus";
+import { QuietHoursBanner } from "@/components/Layout/QuietHoursBanner";
 import { useAuth } from "@/contexts/AuthProvider";
 import { useQuery } from "@tanstack/react-query";
  import { FloatingChatWidget } from "@/components/chat/FloatingChatWidget";
@@ -425,6 +426,7 @@ function DashboardLayout({ children }: DashboardLayoutProps) {
             <NotificationBell />
           </div>
           <OfflineBanner />
+          <QuietHoursBanner />
           <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4 lg:p-6">
             {children}
           </div>

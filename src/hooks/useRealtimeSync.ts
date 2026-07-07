@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { RealtimeChannel } from "@supabase/supabase-js";
 import { db } from "@/lib/db";
+import { useBusinessHours } from "@/hooks/useBusinessHours";
 import type Dexie from "dexie";
 
 export interface RealtimeSyncOptions {
@@ -40,6 +41,11 @@ export function useRealtimeSync({
   enabled = true,
   dexieTable,
 }: RealtimeSyncOptions) {
+  // Dashboard-style feeds only stay live 9:30 AM - 8:00 PM IST (same window
+  // and override mechanism as the RMPL project); outside that, this hook
+  // just doesn't open a channel and callers fall back to on-demand fetches.
+  const { liveUpdatesActive } = useBusinessHours();
+
   // Use refs to store callbacks to prevent subscription churn
   const onInsertRef = useRef(onInsert);
   const onUpdateRef = useRef(onUpdate);
@@ -108,9 +114,9 @@ export function useRealtimeSync({
   }, [table]);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || !liveUpdatesActive) return;
 
-    const channelName = filter 
+    const channelName = filter
       ? `${table}-changes-${filter}` 
       : `${table}-changes`;
 
@@ -136,5 +142,5 @@ export function useRealtimeSync({
       console.log(`[Realtime] Unsubscribing from ${table} changes`);
       supabase.removeChannel(channel);
     };
-  }, [table, filter, enabled, handleChange]);
+  }, [table, filter, enabled, liveUpdatesActive, handleChange]);
 }
