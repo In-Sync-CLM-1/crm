@@ -8,6 +8,7 @@ import { useAccountingData } from "@/hooks/useAccountingData";
 import { useOrgContext } from "@/hooks/useOrgContext";
 import { supabase } from "@/integrations/supabase/client";
 import { JournalEntryEditDialog } from "./JournalEntryEditDialog";
+import { isProsyncIssuedDoc } from "@/utils/billingUtils";
 import type { LedgerRow, ChartOfAccount, JournalEntry } from "@/types/accounting";
 import { format, startOfYear, endOfYear } from "date-fns";
 
@@ -109,16 +110,19 @@ export function AccountingLedger({ defaultAccountCode }: { defaultAccountCode?: 
     if (defaultAccountCode) { setMode("account"); setSelectedCode(defaultAccountCode); }
   }, [defaultAccountCode]);
 
-  // Load distinct party (customer) names once
+  // Load distinct party (customer) names once — Prosync-issued documents only,
+  // since this Accounting module represents Prosync's books, not ECR's.
   useEffect(() => {
     if (!effectiveOrgId) return;
     supabase
       .from("billing_documents")
-      .select("client_name")
+      .select("client_name, seller_snapshot")
       .eq("org_id", effectiveOrgId)
       .in("doc_type", ["invoice", "credit_note"])
       .then(({ data }) => {
-        const names = [...new Set((data ?? []).map((r: { client_name: string }) => r.client_name))].sort();
+        const names = [...new Set(
+          (data ?? []).filter(isProsyncIssuedDoc).map((r: { client_name: string }) => r.client_name)
+        )].sort();
         setParties(names);
       });
   }, [effectiveOrgId]);
@@ -129,7 +133,7 @@ export function AccountingLedger({ defaultAccountCode }: { defaultAccountCode?: 
     setPartyLoading(true);
     supabase
       .from("billing_documents")
-      .select("id, doc_number, doc_type, doc_date, client_name, total_amount, subtotal, balance_due, amount_paid, status")
+      .select("id, doc_number, doc_type, doc_date, client_name, total_amount, subtotal, balance_due, amount_paid, status, seller_snapshot")
       .eq("org_id", effectiveOrgId)
       .eq("client_name", selectedParty)
       .in("doc_type", ["invoice", "credit_note"])
@@ -137,7 +141,7 @@ export function AccountingLedger({ defaultAccountCode }: { defaultAccountCode?: 
       .lte("doc_date", toDate)
       .order("doc_date")
       .then(({ data: docsData }) => {
-        const docList = (docsData ?? []) as BillingDoc[];
+        const docList = ((docsData ?? []) as BillingDoc[]).filter(isProsyncIssuedDoc);
         setPartyDocs(docList);
         if (docList.length === 0) { setPartyPayments([]); setPartyLoading(false); return; }
         const docIds = docList.map(d => d.id);

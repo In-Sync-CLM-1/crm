@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useOrgContext } from "@/hooks/useOrgContext";
 import { useAuth } from "@/contexts/AuthProvider";
+import { isProsyncIssuedDoc } from "@/utils/billingUtils";
 import type {
   ChartOfAccount, BankStatement, BankTransaction,
   JournalEntry, NewJournalEntry, ParsedBankRow,
@@ -185,13 +186,16 @@ export function useAccountingData() {
         return { imported: toInsert.length, skipped: rowsToProcess.length - toInsert.length, statementId: stmt.id };
       }
 
-      // 2. Company bank: Fetch outstanding invoices for amount matching
-      const { data: invoices } = await supabase
+      // 2. Company bank: Fetch outstanding invoices for amount matching.
+      // Accounting only represents Prosync's own books — older ECR-issued
+      // invoices must not be auto-matched against Prosync's bank statement.
+      const { data: invoicesRaw } = await supabase
         .from("billing_documents")
-        .select("id, doc_number, client_name, total_amount, balance_due")
+        .select("id, doc_number, client_name, total_amount, balance_due, seller_snapshot")
         .eq("org_id", effectiveOrgId)
         .in("status", ["issued", "sent", "partially_paid", "overdue"])
         .gt("balance_due", 0);
+      const invoices = (invoicesRaw ?? []).filter(isProsyncIssuedDoc);
 
       const bankAccountId     = accounts.find(a => a.code === "1111")?.id;
       const loanAccountId     = accounts.find(a => a.code === "2110")?.id;

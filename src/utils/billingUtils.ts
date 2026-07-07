@@ -27,6 +27,15 @@ export function resolveIssuer(seller: BillingSellerSnapshot | undefined, setting
   return seller || sellerFromSettings(settings);
 }
 
+// The Accounting module represents Prosync AI Solutions' own books only.
+// Older documents carry a frozen ECR Technical Innovations seller_snapshot
+// (pre-rebrand) and must stay out of Prosync's ledgers/reports even though
+// they live in the same billing_documents table.
+export function isProsyncIssuedDoc(doc: { seller_snapshot?: unknown }): boolean {
+  const snapshot = doc.seller_snapshot as { company_name?: string | null } | null | undefined;
+  return !!snapshot?.company_name?.toUpperCase().includes("PROSYNC");
+}
+
 export function formatINR(n: number): string {
   return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(n);
 }

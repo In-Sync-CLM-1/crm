@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Download, AlertTriangle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useOrgContext } from "@/hooks/useOrgContext";
+import { isProsyncIssuedDoc } from "@/utils/billingUtils";
 import { format, differenceInDays } from "date-fns";
 
 interface OutstandingDoc {
@@ -83,13 +84,13 @@ export function AccountingOutstanding() {
     setLoading(true);
     supabase
       .from("billing_documents")
-      .select("id, doc_number, doc_date, due_date, client_name, total_amount, amount_paid, balance_due, status")
+      .select("id, doc_number, doc_date, due_date, client_name, total_amount, amount_paid, balance_due, status, seller_snapshot")
       .eq("org_id", effectiveOrgId)
       .eq("doc_type", "invoice")
       .gt("balance_due", 0)
       .order("doc_date")
       .then(({ data }) => {
-        setDocs((data ?? []) as OutstandingDoc[]);
+        setDocs(((data ?? []) as OutstandingDoc[]).filter(isProsyncIssuedDoc));
         setLoading(false);
       });
   }, [effectiveOrgId]);
