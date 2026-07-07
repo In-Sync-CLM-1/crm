@@ -1,7 +1,7 @@
 import { useState } from "react";
 import DashboardLayout from "@/components/Layout/DashboardLayout";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Upload, ClipboardList, BookOpen, Scale, TrendingUp, BarChart3, Receipt, FolderOpen, PenLine, Users, AlertCircle, ArrowLeftRight } from "lucide-react";
+import { Upload, ClipboardList, BookOpen, Scale, TrendingUp, BarChart3, Receipt, FolderOpen, PenLine, AlertCircle, ArrowLeftRight } from "lucide-react";
 import { AccountingImport } from "@/components/Accounting/AccountingImport";
 import { AccountingReviewQueue } from "@/components/Accounting/AccountingReviewQueue";
 import { AccountingManualEntry } from "@/components/Accounting/AccountingManualEntry";
@@ -11,7 +11,6 @@ import { AccountingTrialBalance } from "@/components/Accounting/AccountingTrialB
 import { AccountingPnL } from "@/components/Accounting/AccountingPnL";
 import { AccountingBalanceSheet } from "@/components/Accounting/AccountingBalanceSheet";
 import { AccountingDocuments } from "@/components/Accounting/AccountingDocuments";
-import { AccountingPartyLedger } from "@/components/Accounting/AccountingPartyLedger";
 import { AccountingOutstanding } from "@/components/Accounting/AccountingOutstanding";
 import { AccountingReceiptPayment } from "@/components/Accounting/AccountingReceiptPayment";
 import { useAccountingData } from "@/hooks/useAccountingData";
@@ -106,9 +105,6 @@ export default function Accounting() {
             <TabsTrigger value="bs" className="flex items-center gap-1.5 text-xs">
               <BarChart3 className="h-3.5 w-3.5" />Balance Sheet
             </TabsTrigger>
-            <TabsTrigger value="party" className="flex items-center gap-1.5 text-xs">
-              <Users className="h-3.5 w-3.5" />Party Ledger
-            </TabsTrigger>
             <TabsTrigger value="outstanding" className="flex items-center gap-1.5 text-xs">
               <AlertCircle className="h-3.5 w-3.5" />Outstanding
             </TabsTrigger>
@@ -165,10 +161,6 @@ export default function Accounting() {
                 show="asof"
               />
               <AccountingBalanceSheet asOf={asOf} onAccountClick={handleAccountClick} />
-            </TabsContent>
-
-            <TabsContent value="party">
-              <AccountingPartyLedger />
             </TabsContent>
 
             <TabsContent value="outstanding">
