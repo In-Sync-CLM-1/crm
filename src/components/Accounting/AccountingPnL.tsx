@@ -11,34 +11,29 @@ function fmt(n: number, showSign = false) {
   return `₹${abs}`;
 }
 
-function Section({ title, items, total, totalLabel }: {
-  title: string;
-  items: Array<{ label: string; amount: number }>;
-  total: number;
-  totalLabel: string;
-}) {
-  return (
-    <div className="space-y-1">
-      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground pt-2">{title}</p>
-      {items.map(item => (
-        <div key={item.label} className="flex justify-between text-sm py-0.5 pl-4">
-          <span>{item.label}</span>
-          <span>{fmt(item.amount)}</span>
-        </div>
-      ))}
-      <div className="flex justify-between text-sm font-semibold border-t pt-1">
-        <span>{totalLabel}</span>
-        <span>{fmt(total, true)}</span>
-      </div>
-    </div>
-  );
-}
-
 function Subtotal({ label, amount, highlight = false }: { label: string; amount: number; highlight?: boolean }) {
   return (
     <div className={`flex justify-between font-semibold py-2 px-2 rounded-md ${highlight ? "bg-muted" : "border-t border-b"} text-sm`}>
       <span>{label}</span>
       <span className={amount >= 0 ? "text-green-700" : "text-red-600"}>{fmt(amount, true)}</span>
+    </div>
+  );
+}
+
+function PLRow({ label, amount, bold = false }: { label: string; amount: number; bold?: boolean }) {
+  return (
+    <div className={`flex justify-between py-0.5 pl-4 text-sm ${bold ? "font-semibold" : ""}`}>
+      <span>{label}</span>
+      <span>{fmt(amount)}</span>
+    </div>
+  );
+}
+
+function PLGroupTotal({ label, amount }: { label: string; amount: number }) {
+  return (
+    <div className="flex justify-between text-xs text-muted-foreground pl-4 border-t border-dashed pt-0.5">
+      <span>{label}</span>
+      <span>{fmt(amount)}</span>
     </div>
   );
 }
@@ -171,106 +166,86 @@ export function AccountingPnL({ fromDate, toDate }: { fromDate: string; toDate: 
                 </p>
               </div>
 
-              <Section
-                title="I. Revenue from Operations"
-                items={sections.revenueItems}
-                total={sections.revenueTotal}
-                totalLabel="Total Revenue from Operations"
-              />
-              <Section
-                title="II. Other Income"
-                items={sections.otherIncomeItems}
-                total={sections.otherIncomeTotal}
-                totalLabel="Total Other Income"
-              />
-              <Subtotal label="III. Total Revenue (I + II)" amount={sections.totalRevenue} />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-0 md:divide-x">
+                {/* ── EXPENDITURE (Dr, left) ── */}
+                <div className="space-y-1 md:pr-6">
+                  <p className="font-bold text-sm uppercase tracking-wide border-b pb-1">Expenditure</p>
 
-              <div className="space-y-1">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground pt-2">IV. Expenses</p>
+                  {sections.employeeItems.length > 0 && (
+                    <>
+                      <p className="text-xs font-semibold text-muted-foreground uppercase mt-2">Employee Benefits Expense</p>
+                      {sections.employeeItems.map(item => <PLRow key={item.label} label={item.label} amount={item.amount} />)}
+                      <PLGroupTotal label="Total Employee Benefits" amount={sections.totalEmployeeCost} />
+                    </>
+                  )}
 
-                {sections.employeeItems.length > 0 && (
-                  <>
-                    <p className="text-xs text-muted-foreground pl-4 mt-1">(a) Employee Benefits Expense</p>
-                    {sections.employeeItems.map(item => (
-                      <div key={item.label} className="flex justify-between text-sm py-0.5 pl-8">
-                        <span>{item.label}</span>
-                        <span>{fmt(item.amount)}</span>
-                      </div>
-                    ))}
-                    <div className="flex justify-between text-xs text-muted-foreground pl-4 border-t border-dashed pt-0.5">
-                      <span>Total Employee Benefits</span>
-                      <span>{fmt(sections.totalEmployeeCost)}</span>
-                    </div>
-                  </>
-                )}
+                  {sections.financeItems.length > 0 && (
+                    <>
+                      <p className="text-xs font-semibold text-muted-foreground uppercase mt-2">Finance Costs</p>
+                      {sections.financeItems.map(item => <PLRow key={item.label} label={item.label} amount={item.amount} />)}
+                      <PLGroupTotal label="Total Finance Costs" amount={sections.totalFinanceCost} />
+                    </>
+                  )}
 
-                {sections.financeItems.length > 0 && (
-                  <>
-                    <p className="text-xs text-muted-foreground pl-4 mt-2">(b) Finance Costs</p>
-                    {sections.financeItems.map(item => (
-                      <div key={item.label} className="flex justify-between text-sm py-0.5 pl-8">
-                        <span>{item.label}</span>
-                        <span>{fmt(item.amount)}</span>
-                      </div>
-                    ))}
-                    <div className="flex justify-between text-xs text-muted-foreground pl-4 border-t border-dashed pt-0.5">
-                      <span>Total Finance Costs</span>
-                      <span>{fmt(sections.totalFinanceCost)}</span>
-                    </div>
-                  </>
-                )}
+                  {sections.depreciationItems.length > 0 && (
+                    <>
+                      <p className="text-xs font-semibold text-muted-foreground uppercase mt-2">Depreciation &amp; Amortisation</p>
+                      {sections.depreciationItems.map(item => <PLRow key={item.label} label={item.label} amount={item.amount} />)}
+                      <PLGroupTotal label="Total Depreciation" amount={sections.totalDepreciation} />
+                    </>
+                  )}
 
-                {sections.depreciationItems.length > 0 && (
-                  <>
-                    <p className="text-xs text-muted-foreground pl-4 mt-2">(c) Depreciation &amp; Amortisation</p>
-                    {sections.depreciationItems.map(item => (
-                      <div key={item.label} className="flex justify-between text-sm py-0.5 pl-8">
-                        <span>{item.label}</span>
-                        <span>{fmt(item.amount)}</span>
-                      </div>
-                    ))}
-                    <div className="flex justify-between text-xs text-muted-foreground pl-4 border-t border-dashed pt-0.5">
-                      <span>Total Depreciation</span>
-                      <span>{fmt(sections.totalDepreciation)}</span>
-                    </div>
-                  </>
-                )}
+                  {sections.otherExpenseItems.length > 0 && (
+                    <>
+                      <p className="text-xs font-semibold text-muted-foreground uppercase mt-2">Other Expenses</p>
+                      {sections.otherExpenseItems.map(item => <PLRow key={item.label} label={item.label} amount={item.amount} />)}
+                      <PLGroupTotal label="Total Other Expenses" amount={sections.totalOtherExpenses} />
+                    </>
+                  )}
 
-                {sections.otherExpenseItems.length > 0 && (
-                  <>
-                    <p className="text-xs text-muted-foreground pl-4 mt-2">{sections.employeeItems.length || sections.financeItems.length || sections.depreciationItems.length ? "(d) Other Expenses" : "(a) Other Expenses"}</p>
-                    {sections.otherExpenseItems.map(item => (
-                      <div key={item.label} className="flex justify-between text-sm py-0.5 pl-8">
-                        <span>{item.label}</span>
-                        <span>{fmt(item.amount)}</span>
-                      </div>
-                    ))}
-                    <div className="flex justify-between text-xs text-muted-foreground pl-4 border-t border-dashed pt-0.5">
-                      <span>Total Other Expenses</span>
-                      <span>{fmt(sections.totalOtherExpenses)}</span>
-                    </div>
-                  </>
-                )}
+                  {sections.totalExpenses === 0 && (
+                    <p className="pl-4 text-xs text-muted-foreground mt-2">None</p>
+                  )}
 
-                <div className="flex justify-between text-sm font-semibold border-t pt-1 mt-2">
-                  <span>V. Total Expenses</span>
-                  <span>{fmt(sections.totalExpenses)}</span>
+                  {sections.pbt > 0 && (
+                    <PLRow label="Net Profit transferred to Capital Account" amount={sections.pbt} bold />
+                  )}
+
+                  <div className="border-t-2 border-border mt-2 pt-2">
+                    <PLRow label="Total" amount={sections.totalExpenses + Math.max(sections.pbt, 0)} bold />
+                  </div>
+                </div>
+
+                {/* ── INCOME (Cr, right) ── */}
+                <div className="space-y-1 md:pl-6">
+                  <p className="font-bold text-sm uppercase tracking-wide border-b pb-1">Income</p>
+
+                  <p className="text-xs font-semibold text-muted-foreground uppercase mt-2">Revenue from Operations</p>
+                  {sections.revenueItems.length === 0 && (
+                    <p className="pl-4 text-xs text-muted-foreground">None</p>
+                  )}
+                  {sections.revenueItems.map(item => <PLRow key={item.label} label={item.label} amount={item.amount} />)}
+                  <PLGroupTotal label="Total Revenue from Operations" amount={sections.revenueTotal} />
+
+                  <p className="text-xs font-semibold text-muted-foreground uppercase mt-3">Other Income</p>
+                  {sections.otherIncomeItems.length === 0 && (
+                    <p className="pl-4 text-xs text-muted-foreground">None</p>
+                  )}
+                  {sections.otherIncomeItems.map(item => <PLRow key={item.label} label={item.label} amount={item.amount} />)}
+                  <PLGroupTotal label="Total Other Income" amount={sections.otherIncomeTotal} />
+
+                  {sections.pbt < 0 && (
+                    <PLRow label="Net Loss transferred to Capital Account" amount={-sections.pbt} bold />
+                  )}
+
+                  <div className="border-t-2 border-border mt-2 pt-2">
+                    <PLRow label="Total" amount={sections.totalRevenue + Math.max(-sections.pbt, 0)} bold />
+                  </div>
                 </div>
               </div>
 
               <Subtotal
-                label="VI. Profit / (Loss) Before Tax"
-                amount={sections.pbt}
-                highlight
-              />
-
-              <div className="flex justify-between text-sm pl-4 py-0.5 text-muted-foreground">
-                <span>VII. Tax Expense</span>
-                <span>—</span>
-              </div>
-
-              <Subtotal
-                label="VIII. Profit / (Loss) for the Period"
+                label="Profit / (Loss) for the Period"
                 amount={sections.pbt}
                 highlight
               />
