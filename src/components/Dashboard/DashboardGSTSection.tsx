@@ -81,7 +81,7 @@ export function DashboardGSTSection({ dateRange }: DashboardGSTSectionProps) {
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [selectedMonthForPayment, setSelectedMonthForPayment] = useState<GSTMonthData | null>(null);
   const [cardDetailDialogOpen, setCardDetailDialogOpen] = useState(false);
-  const [selectedCardType, setSelectedCardType] = useState<"collected" | "pending_dept" | "paid_dept" | "due_dept" | null>(null);
+  const [selectedCardType, setSelectedCardType] = useState<"collected" | "pending_dept" | "paid_dept" | null>(null);
   
   // Payment form state
   const [paymentStatus, setPaymentStatus] = useState<"pending" | "paid" | "partial">("pending");
@@ -515,7 +515,7 @@ export function DashboardGSTSection({ dateRange }: DashboardGSTSectionProps) {
     setDialogOpen(true);
   };
 
-  const handleCardClick = (cardType: "collected" | "pending_dept" | "paid_dept" | "due_dept") => {
+  const handleCardClick = (cardType: "collected" | "pending_dept" | "paid_dept") => {
     // Close Month Detail Dialog if open (prevent conflicts)
     setDialogOpen(false);
     setSelectedMonth(null);
@@ -574,7 +574,6 @@ export function DashboardGSTSection({ dateRange }: DashboardGSTSectionProps) {
       case "collected": return "GST Collected - Invoice Details";
       case "pending_dept": return "GST Pending to Department - Unpaid Months";
       case "paid_dept": return "GST Paid to Department - Payment History";
-      case "due_dept": return "GST Due to Department - Unpaid Months";
       default: return "Details";
     }
   };
@@ -791,7 +790,7 @@ export function DashboardGSTSection({ dateRange }: DashboardGSTSectionProps) {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Card 
           className="cursor-pointer hover:bg-muted/50 transition-colors"
           onClick={() => handleCardClick("collected")}
@@ -831,20 +830,6 @@ export function DashboardGSTSection({ dateRange }: DashboardGSTSectionProps) {
           <CardContent>
             <div className="text-xl font-bold text-green-700">{formatCurrency(summaryMetrics.paidToDept)}</div>
             <p className="text-xs text-muted-foreground">Remitted to GST Dept</p>
-          </CardContent>
-        </Card>
-
-        <Card 
-          className="border-orange-200 bg-orange-50/50 dark:bg-orange-950/20 cursor-pointer hover:bg-orange-100/50 dark:hover:bg-orange-900/30 transition-colors"
-          onClick={() => handleCardClick("due_dept")}
-        >
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs font-medium">Due to Dept</CardTitle>
-            <IndianRupee className="h-4 w-4 text-orange-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl font-bold text-orange-700">{formatCurrency(summaryMetrics.pendingToDept)}</div>
-            <p className="text-xs text-muted-foreground">Yet to remit</p>
           </CardContent>
         </Card>
       </div>
@@ -1019,7 +1004,7 @@ export function DashboardGSTSection({ dateRange }: DashboardGSTSectionProps) {
           <DialogHeader>
             <DialogTitle>{getCardTitle()}</DialogTitle>
           </DialogHeader>
-          {(selectedCardType === "pending_dept" || selectedCardType === "due_dept") ? (
+          {selectedCardType === "pending_dept" ? (
             // Show unpaid months for pending/due to dept
             unpaidMonthsData.length === 0 ? (
               <div className="text-center text-muted-foreground py-8">

@@ -85,7 +85,7 @@ export const DashboardRevenueCards = memo(function DashboardRevenueCards({ reven
           <Scissors className="h-4 w-4 sm:h-5 sm:w-5 text-purple-500" />
         </div>
         <div className="text-lg sm:text-2xl font-bold text-purple-600 mt-1 sm:mt-2 truncate">{formatCurrency(revenueStats.totalTDS)}</div>
-        <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 sm:mt-1 hidden sm:block">Total TDS deducted</p>
+        <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 sm:mt-1 hidden sm:block">Prosync, this period</p>
       </Card>
 
       <Card
@@ -99,7 +99,7 @@ export const DashboardRevenueCards = memo(function DashboardRevenueCards({ reven
           </div>
         </div>
         <div className="text-lg sm:text-2xl font-bold text-orange-700 mt-1 sm:mt-2 truncate">{formatCurrency(revenueStats.gstDueToDept)}</div>
-        <p className="text-[10px] sm:text-xs text-orange-500 mt-0.5 sm:mt-1 hidden sm:block">All-time unpaid</p>
+        <p className="text-[10px] sm:text-xs text-orange-500 mt-0.5 sm:mt-1 hidden sm:block">Prosync, this period</p>
       </Card>
     </div>
   );

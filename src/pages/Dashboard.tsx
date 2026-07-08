@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { dropSupersededProformas } from "@/lib/billing";
+import { isProsyncIssuedDoc } from "@/utils/billingUtils";
 import DashboardLayout from "@/components/Layout/DashboardLayout";
 import { useOrgContext } from "@/hooks/useOrgContext";
 import { LoadingState } from "@/components/common/LoadingState";
@@ -331,7 +332,7 @@ export default function Dashboard() {
       if (!effectiveOrgId) throw new Error("No organization context");
       const { data, error } = await supabase
         .from("billing_payments")
-        .select("id, amount, tds_amount, payment_date, document:billing_documents(doc_number, client_name, total_tax)")
+        .select("id, amount, tds_amount, payment_date, document:billing_documents(doc_number, client_name, total_tax, seller_snapshot)")
         .eq("org_id", effectiveOrgId)
         .gte("payment_date", format(dateRange.from, "yyyy-MM-dd"))
         .lte("payment_date", format(dateRange.to, "yyyy-MM-dd"));
@@ -341,35 +342,31 @@ export default function Dashboard() {
     enabled: !!effectiveOrgId,
   });
 
-  // All-time GST liability minus what's already been remitted to the dept.
-  // Ignores the date filter — it's a cumulative "you still owe this much" number.
+  // GST liability for the selected period (Prosync-issued documents only)
+  // minus what's already been remitted to the dept for the months it covers.
+  // client_invoices predates the Prosync entity, so it never contributes here.
   const { data: gstDueSummary } = useQuery({
-    queryKey: ["gst-due-summary", effectiveOrgId],
+    queryKey: ["gst-due-summary", effectiveOrgId, format(dateRange.from, "yyyy-MM-dd"), format(dateRange.to, "yyyy-MM-dd")],
     queryFn: async () => {
       if (!effectiveOrgId) throw new Error("No organization context");
-      const [invoicesResult, billingDocsResult, trackingResult] = await Promise.all([
-        supabase
-          .from("client_invoices")
-          .select("tax_amount")
-          .eq("org_id", effectiveOrgId)
-          .neq("document_type", "quotation"),
+      const [billingDocsResult, trackingResult] = await Promise.all([
         supabase
           .from("billing_documents")
-          .select("id, doc_type, total_tax, converted_from_id")
+          .select("id, doc_type, total_tax, converted_from_id, seller_snapshot")
           .eq("org_id", effectiveOrgId)
           .in("doc_type", ["invoice", "proforma"])
-          .not("status", "in", "(draft,cancelled)"),
+          .not("status", "in", "(draft,cancelled)")
+          .gte("doc_date", format(dateRange.from, "yyyy-MM-dd"))
+          .lte("doc_date", format(dateRange.to, "yyyy-MM-dd")),
         supabase
           .from("gst_payment_tracking")
-          .select("amount_paid, payment_status")
+          .select("amount_paid, payment_status, month, year")
           .eq("org_id", effectiveOrgId),
       ]);
-      if (invoicesResult.error) throw invoicesResult.error;
       if (billingDocsResult.error) throw billingDocsResult.error;
       if (trackingResult.error) throw trackingResult.error;
       return {
-        invoiceGst: invoicesResult.data || [],
-        billingDocGst: dropSupersededProformas(billingDocsResult.data || []),
+        billingDocGst: dropSupersededProformas(billingDocsResult.data || []).filter(isProsyncIssuedDoc),
         remittance: trackingResult.data || [],
       };
     },
@@ -559,19 +556,30 @@ export default function Dashboard() {
       }));
   }, [emailCampaigns, whatsappCampaigns, smsCampaigns, callLogs, dateRange]);
 
-  // All-time unpaid GST to department (liability minus remittance)
+  // Unpaid GST to department for the selected period (Prosync-only liability minus remittance)
   const gstDueToDept = useMemo(() => {
     const totalLiability =
-      (gstDueSummary?.invoiceGst?.reduce((sum: number, r: any) => sum + (r.tax_amount || 0), 0) || 0) +
-      (gstDueSummary?.billingDocGst?.reduce((sum: number, r: any) => sum + (r.total_tax || 0), 0) || 0);
+      gstDueSummary?.billingDocGst?.reduce((sum: number, r: any) => sum + (r.total_tax || 0), 0) || 0;
+
+    // Only count remittance logged against a month the selected range actually covers
+    const monthsInRange = new Set<string>();
+    const cursor = new Date(dateRange.from.getFullYear(), dateRange.from.getMonth(), 1);
+    const lastMonth = new Date(dateRange.to.getFullYear(), dateRange.to.getMonth(), 1);
+    while (cursor <= lastMonth) {
+      monthsInRange.add(`${cursor.getFullYear()}-${cursor.getMonth() + 1}`);
+      cursor.setMonth(cursor.getMonth() + 1);
+    }
+
     const totalRemitted = gstDueSummary?.remittance?.reduce((sum: number, r: any) => {
-      if (r.payment_status === "paid" || r.payment_status === "partial") {
+      const isRemitted = r.payment_status === "paid" || r.payment_status === "partial";
+      if (isRemitted && monthsInRange.has(`${r.year}-${r.month}`)) {
         return sum + (r.amount_paid || 0);
       }
       return sum;
     }, 0) || 0;
+
     return Math.max(0, totalLiability - totalRemitted);
-  }, [gstDueSummary]);
+  }, [gstDueSummary, dateRange]);
 
   // Process revenue stats - invoiced/pending from invoice_date, payments from payment_received_date
   // Includes both client_invoices and billing_documents
@@ -617,7 +625,8 @@ export default function Dashboard() {
       const tdsAmount = invoice.tds_amount || 0;
 
       totalGST += taxAmount;
-      totalTDS += tdsAmount;
+      // TDS is tracked Prosync-only; client_invoices predates the Prosync
+      // entity, so it never contributes to totalTDS.
 
       // Use actual payment received if set, otherwise calculate
       const amount = invoice.amount || 0;
@@ -634,12 +643,15 @@ export default function Dashboard() {
       totalGST += doc.total_tax || 0;
     });
 
-    // Received (cash) + TDS are keyed off billing_payments.payment_date, so a
+    // Received (cash) is keyed off billing_payments.payment_date, so a
     // March invoice paid in April lands in April's Received total.
+    // TDS only counts payments against a Prosync-issued document.
     const billingPayments = billingPaymentsData || [];
     billingPayments.forEach((p: any) => {
       totalReceived += p.amount || 0;
-      totalTDS += p.tds_amount || 0;
+      if (isProsyncIssuedDoc({ seller_snapshot: p.document?.seller_snapshot })) {
+        totalTDS += p.tds_amount || 0;
+      }
     });
 
     return { totalInvoiced, totalReceived, totalPending, totalGST, totalTDS, gstDueToDept };
@@ -1123,10 +1135,10 @@ export default function Dashboard() {
           ...billingDocsPaid.filter((d: any) => (d.total_tax || 0) > 0).map(mapBillingDoc),
         ];
       case "tds":
-        return [
-          ...(paymentsData || []).filter((inv: any) => (inv.tds_amount || 0) > 0).map(mapInvoice),
-          ...billingPayments.filter((p: any) => (p.tds_amount || 0) > 0).map(mapBillingPayment),
-        ];
+        // Prosync-only: client_invoices predates the Prosync entity.
+        return billingPayments
+          .filter((p: any) => (p.tds_amount || 0) > 0 && isProsyncIssuedDoc({ seller_snapshot: p.document?.seller_snapshot }))
+          .map(mapBillingPayment);
       default:
         return [];
     }
@@ -1296,10 +1308,11 @@ export default function Dashboard() {
               dateRangeLabel={`${format(dateRange.from, "MMM d, yyyy")} - ${format(dateRange.to, "MMM d, yyyy")}`}
             />
 
-            {/* GST Due to Dept (all-time) breakdown */}
+            {/* GST Due to Dept (Prosync, selected period) breakdown */}
             <DueToDeptDialog
               open={dueToDeptDialogOpen}
               onClose={() => setDueToDeptDialogOpen(false)}
+              dateRange={dateRange}
             />
 
             {/* Progression Chart - Full Page Animated */}
@@ -1360,10 +1373,11 @@ export default function Dashboard() {
               dateRangeLabel={`${format(dateRange.from, "MMM d, yyyy")} - ${format(dateRange.to, "MMM d, yyyy")}`}
             />
 
-            {/* GST Due to Dept (all-time) breakdown */}
+            {/* GST Due to Dept (Prosync, selected period) breakdown */}
             <DueToDeptDialog
               open={dueToDeptDialogOpen}
               onClose={() => setDueToDeptDialogOpen(false)}
+              dateRange={dateRange}
             />
 
             {/* Monthly Revenue by Client Chart */}

@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { dropSupersededProformas } from "@/lib/billing";
+import { isProsyncIssuedDoc } from "@/utils/billingUtils";
 import { useOrgContext } from "@/hooks/useOrgContext";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -19,6 +20,7 @@ import { toast } from "sonner";
 interface DueToDeptDialogProps {
   open: boolean;
   onClose: () => void;
+  dateRange: { from: Date; to: Date };
 }
 
 interface GSTPaymentTracking {
@@ -44,10 +46,10 @@ interface MonthBreakdown {
   status: "pending" | "paid" | "partial";
 }
 
-export function DueToDeptDialog({ open, onClose }: DueToDeptDialogProps) {
+export function DueToDeptDialog({ open, onClose, dateRange }: DueToDeptDialogProps) {
   const { effectiveOrgId } = useOrgContext();
   const queryClient = useQueryClient();
-  
+
   // Payment dialog state
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState<MonthBreakdown | null>(null);
@@ -57,33 +59,32 @@ export function DueToDeptDialog({ open, onClose }: DueToDeptDialogProps) {
   const [paymentReference, setPaymentReference] = useState("");
   const [paymentNotes, setPaymentNotes] = useState("");
 
-  // Fetch all invoices with GST — both client_invoices and billing_documents,
-  // regardless of client-payment status (GST liability accrues on invoice date).
+  const fromKey = format(dateRange.from, "yyyy-MM-dd");
+  const toKey = format(dateRange.to, "yyyy-MM-dd");
+
+  // Fetch Prosync-issued billing_documents in the selected period, regardless
+  // of client-payment status (GST liability accrues on invoice date).
+  // client_invoices predates the Prosync entity, so it's excluded here.
   const { data: paidInvoices, isLoading: invoicesLoading } = useQuery({
-    queryKey: ["due-to-dept-invoices", effectiveOrgId],
+    queryKey: ["due-to-dept-invoices", effectiveOrgId, fromKey, toKey],
     queryFn: async () => {
       if (!effectiveOrgId) return [];
-      const [clientInv, billingDocs] = await Promise.all([
-        supabase
-          .from("client_invoices")
-          .select("tax_amount, payment_received_date, invoice_date")
-          .eq("org_id", effectiveOrgId)
-          .neq("document_type", "quotation"),
-        supabase
-          .from("billing_documents")
-          .select("id, doc_type, total_tax, doc_date, status, converted_from_id")
-          .eq("org_id", effectiveOrgId)
-          .in("doc_type", ["invoice", "proforma"])
-          .not("status", "in", "(draft,cancelled)"),
-      ]);
-      if (clientInv.error) throw clientInv.error;
-      if (billingDocs.error) throw billingDocs.error;
-      const mappedBilling = dropSupersededProformas(billingDocs.data || []).map((d: any) => ({
-        tax_amount: d.total_tax || 0,
-        payment_received_date: null,
-        invoice_date: d.doc_date,
-      }));
-      return [...(clientInv.data || []), ...mappedBilling];
+      const { data, error } = await supabase
+        .from("billing_documents")
+        .select("id, doc_type, total_tax, doc_date, status, converted_from_id, seller_snapshot")
+        .eq("org_id", effectiveOrgId)
+        .in("doc_type", ["invoice", "proforma"])
+        .not("status", "in", "(draft,cancelled)")
+        .gte("doc_date", fromKey)
+        .lte("doc_date", toKey);
+      if (error) throw error;
+      return dropSupersededProformas(data || [])
+        .filter(isProsyncIssuedDoc)
+        .map((d: any) => ({
+          tax_amount: d.total_tax || 0,
+          payment_received_date: null,
+          invoice_date: d.doc_date,
+        }));
     },
     enabled: open && !!effectiveOrgId,
   });
@@ -290,7 +291,7 @@ export function DueToDeptDialog({ open, onClose }: DueToDeptDialogProps) {
               <div className="p-1.5 bg-orange-100 rounded-md">
                 <IndianRupee className="h-5 w-5 text-orange-600" />
               </div>
-              GST Due to Department - Unpaid Months
+              GST Due to Department (Prosync) - {format(dateRange.from, "MMM yyyy")}
             </DialogTitle>
           </DialogHeader>
 
