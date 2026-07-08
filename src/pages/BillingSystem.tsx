@@ -38,7 +38,7 @@ export default function BillingSystem() {
   const {
     documents, payments, settings, loading: billingLoading, busy: billingBusy,
     addDocument, updateDocument, deleteDocument, convertDocument,
-    recordPayment, updateSettings, getDocumentPayments, getNextDocNumber,
+    recordPayment, updatePayment, updateSettings, getDocumentPayments, getNextDocNumber,
   } = useBillingData();
 
   const queryClient = useQueryClient();
@@ -227,6 +227,7 @@ export default function BillingSystem() {
           settings={settings}
           onBack={handleBack}
           onRecordPayment={handleRecordPayment}
+          onUpdatePayment={updatePayment}
           onEdit={handleEditDoc}
           onDelete={handleDeleteDoc}
           onIssueCreditNote={handleIssueCreditNote}
@@ -328,7 +329,7 @@ export default function BillingSystem() {
           />
         );
       case "payments":
-        return <BillingPaymentsList payments={payments} documents={documents} />;
+        return <BillingPaymentsList payments={payments} documents={documents} onUpdatePayment={updatePayment} />;
       case "settings":
         return <BillingSettingsPanel settings={settings} onSave={updateSettings} />;
       default:

@@ -656,6 +656,48 @@ export function useBillingData() {
     return newPayment;
   }, [effectiveOrgId, documents, updateDocument]);
 
+  // Payments are otherwise write-once — this only lets TDS and transaction
+  // details (mode/reference/notes) be corrected after the fact. Amount and
+  // date stay fixed since they drive the document's paid/balance totals.
+  const updatePayment = useCallback(async (paymentId: string, updates: { tds_amount?: number; payment_mode?: string; reference_number?: string; notes?: string }) => {
+    const existing = payments.find(p => p.id === paymentId);
+    if (!existing) return;
+
+    const newTds = updates.tds_amount !== undefined ? updates.tds_amount : (existing.tds_amount || 0);
+    const tdsDiff = newTds - (existing.tds_amount || 0);
+
+    const row = {
+      tds_amount: newTds,
+      payment_mode: updates.payment_mode ?? existing.payment_mode ?? null,
+      reference_number: updates.reference_number ?? existing.reference_number ?? null,
+      notes: updates.notes ?? existing.notes ?? null,
+    };
+
+    const { data, error } = await supabase.from("billing_payments").update(row).eq("id", paymentId).select().single();
+    if (error) { console.error("Error updating payment:", error); toast.error("Failed to update payment"); return; }
+
+    const updatedPayment: BillingPayment = {
+      ...existing,
+      tds_amount: Number(data.tds_amount || 0),
+      payment_mode: data.payment_mode as any,
+      reference_number: data.reference_number || undefined,
+      notes: data.notes || undefined,
+    };
+    setPayments(prev => prev.map(p => p.id === paymentId ? updatedPayment : p));
+
+    // A changed TDS amount changes total settled, so the document's paid/balance/status need to follow.
+    if (tdsDiff !== 0) {
+      const doc = documents.find(d => d.id === existing.document_id);
+      if (doc) {
+        const newPaid = doc.amount_paid + tdsDiff;
+        const newBalance = doc.total_amount - newPaid;
+        const newStatus: BillingDocumentStatus = newBalance <= 0 ? "paid" : (newPaid > 0 ? "partially_paid" : doc.status);
+        await updateDocument(doc.id, { amount_paid: newPaid, balance_due: Math.max(0, newBalance), status: newStatus });
+      }
+    }
+    return updatedPayment;
+  }, [payments, documents, updateDocument]);
+
   const getDocumentPayments = useCallback((docId: string) => {
     return payments.filter(p => p.document_id === docId);
   }, [payments]);
@@ -738,6 +780,7 @@ export function useBillingData() {
     deleteDocument,
     convertDocument,
     recordPayment,
+    updatePayment,
     updateSettings,
     getDocumentPayments,
     getNextDocNumber,

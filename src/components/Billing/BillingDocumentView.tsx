@@ -8,6 +8,7 @@ import { formatCurrencyINR, numberToWords, statusLabel, formatFinancialYear, res
 import { DOC_TYPE_LABELS, STATUS_COLORS } from "@/types/billing";
 import type { BillingDocument, BillingPayment, BillingSettings } from "@/types/billing";
 import { RecordPaymentDialog } from "./RecordPaymentDialog";
+import { EditPaymentDialog } from "./EditPaymentDialog";
 import { SendInvoiceEmailDialog } from "./SendInvoiceEmailDialog";
 
 interface BillingDocumentViewProps {
@@ -16,6 +17,7 @@ interface BillingDocumentViewProps {
   settings: BillingSettings;
   onBack: () => void;
   onRecordPayment: (payment: { document_id: string; amount: number; tds_amount?: number; payment_date: string; payment_mode: string; reference_number: string; notes: string; org_id: string }) => void;
+  onUpdatePayment?: (paymentId: string, updates: { tds_amount?: number; payment_mode?: string; reference_number?: string; notes?: string }) => void;
   onEdit?: (doc: BillingDocument) => void;
   onDelete?: (id: string) => void;
   onIssueCreditNote?: (doc: BillingDocument) => void;
@@ -28,11 +30,12 @@ interface BillingDocumentViewProps {
   busy?: boolean;
 }
 
-export function BillingDocumentView({ doc, payments, settings, onBack, onRecordPayment, onEdit, onDelete, onIssueCreditNote, onConvertToInvoice, onStatusUpdate, convertedInvoice, relatedCreditNotes, onOpenDoc, busy }: BillingDocumentViewProps) {
+export function BillingDocumentView({ doc, payments, settings, onBack, onRecordPayment, onUpdatePayment, onEdit, onDelete, onIssueCreditNote, onConvertToInvoice, onStatusUpdate, convertedInvoice, relatedCreditNotes, onOpenDoc, busy }: BillingDocumentViewProps) {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [editingPayment, setEditingPayment] = useState<BillingPayment | null>(null);
   const invoiceRef = useRef<HTMLDivElement>(null);
 
   // The issuing company frozen on this document (falls back to current settings
@@ -399,6 +402,7 @@ export function BillingDocumentView({ doc, payments, settings, onBack, onRecordP
                   <TableHead>Mode</TableHead>
                   <TableHead>Reference</TableHead>
                   <TableHead>Notes</TableHead>
+                  {onUpdatePayment && <TableHead></TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -410,6 +414,13 @@ export function BillingDocumentView({ doc, payments, settings, onBack, onRecordP
                     <TableCell className="capitalize">{p.payment_mode?.replace(/_/g, " ")}</TableCell>
                     <TableCell className="font-mono text-muted-foreground">{p.reference_number || "—"}</TableCell>
                     <TableCell className="text-muted-foreground">{p.notes || "—"}</TableCell>
+                    {onUpdatePayment && (
+                      <TableCell>
+                        <Button variant="ghost" size="sm" className="h-auto p-1" onClick={() => setEditingPayment(p)}>
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>
@@ -427,6 +438,16 @@ export function BillingDocumentView({ doc, payments, settings, onBack, onRecordP
         doc={doc}
         onRecordPayment={onRecordPayment}
       />
+
+      {/* Edit Payment Dialog */}
+      {onUpdatePayment && (
+        <EditPaymentDialog
+          open={!!editingPayment}
+          onClose={() => setEditingPayment(null)}
+          payment={editingPayment}
+          onSave={onUpdatePayment}
+        />
+      )}
 
       {/* Delete Confirmation */}
       {showDeleteConfirm && (
