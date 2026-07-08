@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { dropSupersededProformas } from "@/lib/billing";
+import { isProsyncIssuedDoc } from "@/utils/billingUtils";
 import { useOrgContext } from "@/hooks/useOrgContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -90,37 +91,15 @@ export function DashboardGSTSection({ dateRange }: DashboardGSTSectionProps) {
   const [paymentReference, setPaymentReference] = useState("");
   const [paymentNotes, setPaymentNotes] = useState("");
 
-  // Fetch client invoices
-  const { data: clientInvoices, isLoading: clientInvLoading } = useQuery({
-    queryKey: ["gst-invoices", effectiveOrgId, format(dateRange.from, "yyyy-MM-dd"), format(dateRange.to, "yyyy-MM-dd")],
-    queryFn: async () => {
-      if (!effectiveOrgId) return [];
-      const { data, error } = await supabase
-        .from("client_invoices")
-        .select(`
-          *,
-          client:clients(first_name, last_name, company)
-        `)
-        .eq("org_id", effectiveOrgId)
-        .neq("document_type", "quotation")
-        .gte("invoice_date", format(dateRange.from, "yyyy-MM-dd"))
-        .lte("invoice_date", format(dateRange.to, "yyyy-MM-dd"))
-        .order("invoice_date", { ascending: false });
-
-      if (error) throw error;
-      return data || [];
-    },
-    enabled: !!effectiveOrgId,
-  });
-
-  // Fetch billing_documents (proforma + tax invoices) for the date range
-  const { data: billingDocs, isLoading: billingDocsLoading } = useQuery({
+  // Fetch billing_documents (proforma + tax invoices) for the date range.
+  // Prosync-only: client_invoices predates the Prosync entity and is excluded.
+  const { data: billingDocsRaw, isLoading: billingDocsLoading } = useQuery({
     queryKey: ["gst-billing-docs", effectiveOrgId, format(dateRange.from, "yyyy-MM-dd"), format(dateRange.to, "yyyy-MM-dd")],
     queryFn: async () => {
       if (!effectiveOrgId) return [];
       const { data, error } = await supabase
         .from("billing_documents")
-        .select("id, doc_number, doc_type, doc_date, client_name, total_amount, total_tax, subtotal, amount_paid, balance_due, status, converted_from_id")
+        .select("id, doc_number, doc_type, doc_date, client_name, total_amount, total_tax, subtotal, amount_paid, balance_due, status, converted_from_id, seller_snapshot")
         .eq("org_id", effectiveOrgId)
         .in("doc_type", ["invoice", "proforma"])
         .not("status", "in", "(draft,cancelled)")
@@ -129,50 +108,23 @@ export function DashboardGSTSection({ dateRange }: DashboardGSTSectionProps) {
         .order("doc_date", { ascending: false });
 
       if (error) throw error;
-      return dropSupersededProformas(data || []);
+      return dropSupersededProformas(data || []).filter(isProsyncIssuedDoc);
     },
     enabled: !!effectiveOrgId,
   });
 
-  const isLoading = clientInvLoading || billingDocsLoading;
-
-  // Merge client_invoices and billing_documents into a unified format
-  const invoices = useMemo(() => {
-    const mapped = (billingDocs || []).map((d: any) => ({
-      id: d.id,
-      invoice_number: d.doc_number,
-      invoice_date: d.doc_date,
-      amount: d.subtotal || 0,
-      tax_amount: d.total_tax || 0,
-      tds_amount: 0,
-      status: d.status,
-      payment_received_date: d.status === "paid" ? d.doc_date : null,
-      actual_payment_received: d.status === "paid" ? d.total_amount : null,
-      net_received_amount: null,
-      due_date: null,
-      document_type: d.doc_type === "proforma" ? "proforma" : "invoice",
-      client: { first_name: d.client_name, last_name: "", company: d.client_name },
-      _source: "billing",
-    }));
-    return [...(clientInvoices || []), ...mapped];
-  }, [clientInvoices, billingDocs]);
-
-  // Fetch ALL invoices for GST Pending to Dept (ignores date range).
-  // Indian GST liability accrues on invoice date regardless of client payment,
-  // so we include unpaid invoices too — drafts/quotations/cancelled are excluded.
-  const { data: allClientInvoices } = useQuery({
-    queryKey: ["all-gst-invoices", effectiveOrgId],
+  // Fetch billing_payments (date range) so TDS deducted on Prosync documents
+  // shows up against the invoice it was collected against.
+  const { data: billingPayments, isLoading: billingPaymentsLoading } = useQuery({
+    queryKey: ["gst-billing-payments", effectiveOrgId, format(dateRange.from, "yyyy-MM-dd"), format(dateRange.to, "yyyy-MM-dd")],
     queryFn: async () => {
       if (!effectiveOrgId) return [];
       const { data, error } = await supabase
-        .from("client_invoices")
-        .select(`
-          *,
-          client:clients(first_name, last_name, company)
-        `)
+        .from("billing_payments")
+        .select("document_id, tds_amount")
         .eq("org_id", effectiveOrgId)
-        .neq("document_type", "quotation")
-        .order("invoice_date", { ascending: false });
+        .gte("payment_date", format(dateRange.from, "yyyy-MM-dd"))
+        .lte("payment_date", format(dateRange.to, "yyyy-MM-dd"));
 
       if (error) throw error;
       return data || [];
@@ -180,28 +132,60 @@ export function DashboardGSTSection({ dateRange }: DashboardGSTSectionProps) {
     enabled: !!effectiveOrgId,
   });
 
-  // Fetch ALL billing_documents for GST Pending to Dept (ignores date range)
-  const { data: allBillingDocs } = useQuery({
+  const isLoading = billingDocsLoading || billingPaymentsLoading;
+
+  // billing_documents don't carry TDS directly — it's recorded per billing_payment.
+  const billingDocs = useMemo(() => {
+    const tdsByDoc = new Map<string, number>();
+    (billingPayments || []).forEach((p: any) => {
+      tdsByDoc.set(p.document_id, (tdsByDoc.get(p.document_id) || 0) + (p.tds_amount || 0));
+    });
+    return (billingDocsRaw || []).map((d: any) => ({ ...d, tds_amount: tdsByDoc.get(d.id) || 0 }));
+  }, [billingDocsRaw, billingPayments]);
+
+  // Normalize billing_documents into the same shape client_invoices used to provide
+  const invoices = useMemo(() => {
+    return (billingDocs || []).map((d: any) => ({
+      id: d.id,
+      invoice_number: d.doc_number,
+      invoice_date: d.doc_date,
+      amount: d.subtotal || 0,
+      tax_amount: d.total_tax || 0,
+      tds_amount: d.tds_amount || 0,
+      status: d.status,
+      payment_received_date: d.status === "paid" ? d.doc_date : null,
+      actual_payment_received: d.status === "paid" ? d.total_amount : null,
+      net_received_amount: null,
+      due_date: null,
+      document_type: d.doc_type === "proforma" ? "proforma" : "invoice",
+      client: { first_name: d.client_name, last_name: "", company: d.client_name },
+      _source: "billing",
+    }));
+  }, [billingDocs]);
+
+  // Fetch ALL Prosync billing_documents for GST Pending to Dept (ignores date range).
+  // Indian GST liability accrues on invoice date regardless of client payment,
+  // so we include unpaid invoices too — drafts/quotations/cancelled are excluded.
+  const { data: allBillingDocsRaw } = useQuery({
     queryKey: ["all-gst-billing-docs", effectiveOrgId],
     queryFn: async () => {
       if (!effectiveOrgId) return [];
       const { data, error } = await supabase
         .from("billing_documents")
-        .select("id, doc_number, doc_type, doc_date, client_name, total_amount, total_tax, subtotal, amount_paid, balance_due, status, converted_from_id")
+        .select("id, doc_number, doc_type, doc_date, client_name, total_amount, total_tax, subtotal, amount_paid, balance_due, status, converted_from_id, seller_snapshot")
         .eq("org_id", effectiveOrgId)
         .in("doc_type", ["invoice", "proforma"])
         .not("status", "in", "(draft,cancelled)")
         .order("doc_date", { ascending: false });
 
       if (error) throw error;
-      return dropSupersededProformas(data || []);
+      return dropSupersededProformas(data || []).filter(isProsyncIssuedDoc);
     },
     enabled: !!effectiveOrgId,
   });
 
-  // Merge all invoices from both sources (paid + unpaid) for GST liability tracking
   const allInvoices = useMemo(() => {
-    const mapped = (allBillingDocs || []).map((d: any) => ({
+    return (allBillingDocsRaw || []).map((d: any) => ({
       id: d.id,
       invoice_number: d.doc_number,
       invoice_date: d.doc_date,
@@ -217,8 +201,7 @@ export function DashboardGSTSection({ dateRange }: DashboardGSTSectionProps) {
       client: { first_name: d.client_name, last_name: "", company: d.client_name },
       _source: "billing",
     }));
-    return [...(allClientInvoices || []), ...mapped];
-  }, [allClientInvoices, allBillingDocs]);
+  }, [allBillingDocsRaw]);
 
   // Fetch GST payment tracking records
   const { data: gstPayments } = useQuery({
