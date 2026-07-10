@@ -12,6 +12,14 @@
 //
 // Secrets it needs on the crm project:
 //   MGMT_TOKEN      — org-wide Supabase Management API access token (sbp_...)
+//   MGMT_TOKEN_ECHO — Management API token for the echocommunicator@gmail.com
+//                     account (vendorverification, ticket). Supabase Management
+//                     API auth is per-ACCOUNT, not per-org — a project that
+//                     lives under a different account is 100% invisible to
+//                     MGMT_TOKEN no matter what org/permissions it has. Add
+//                     another SECONDARY_TOKENS entry + secret the next time a
+//                     project moves to yet another account (optional secret —
+//                     Sentinel runs fine without it, just blind to that account).
 //   RESEND_API_KEY  — for sending the report email
 // Everything else (per-project refs, keys, config) is discovered at runtime via
 // the Management API, so coverage stays comprehensive as projects come and go.
@@ -33,7 +41,8 @@ const META: Record<string, { name: string; dialer?: boolean; marketing?: boolean
   ejzjrvazegaxrhqizgaa: { name: "globalcrm", dialer: true, web: "https://globalcrm.in-sync.co.in" },
   gwfofzqrfpwojejjodgz: { name: "event", web: "https://event.in-sync.co.in" },
   htdwkhtfdifwajdkkpul: { name: "ats", web: "https://ats-6t2.pages.dev" },
-  fibpamjksquymscdlfal: { name: "vendorverification", web: "https://vendorverification.in-sync.co.in" },
+  oygyrpjjwtwvrdvxjzbg: { name: "vendorverification", web: "https://vendorverification.in-sync.co.in" },
+  sbplwrtlsbhwcvfvuxel: { name: "ticket", web: "https://ci.in-sync.co.in" },
   wdamzbyvsbergvxhefkl: { name: "smbconnect", feedCheck: true, web: "https://smbconnect.in" },
   ufwvyybrctjpwipbveqe: { name: "RMPL", web: "https://rmpl-sync.pages.dev" },
   upnhhrhobvdmpfnldvgb: { name: "website", web: "https://in-sync.co.in" },
@@ -63,10 +72,41 @@ const PARKED: { name: string; ref: string; web: string; parkedOn: string }[] = [
 type Status = "ok" | "fail" | "warn";
 interface Check { label: string; status: Status; detail: string }
 
-const token = () => Deno.env.get("MGMT_TOKEN") ?? "";
+const primaryToken = () => Deno.env.get("MGMT_TOKEN") ?? "";
 
-async function mgmtGet(path: string): Promise<{ s: number; j: any }> {
-  const r = await fetch(MGMT + path, { headers: { Authorization: `Bearer ${token()}` } });
+// Cross-account tokens, tried during discovery in addition to the primary.
+// Keep this list to real, currently-in-use secondary accounts only.
+const SECONDARY_TOKENS: { label: string; token: string }[] = [
+  { label: "echocommunicator", token: Deno.env.get("MGMT_TOKEN_ECHO") ?? "" },
+].filter((t) => t.token);
+
+// Populated by discoverProjects(): which token owns each discovered ref, so
+// every later Management API call for that ref (sql, mgmtGet) uses the right
+// account automatically instead of failing 403/"removed" against the primary.
+const REF_TOKEN: Record<string, string> = {};
+const tokenFor = (ref: string) => REF_TOKEN[ref] || primaryToken();
+
+async function discoverProjects(): Promise<string[]> {
+  const refs: string[] = [];
+  for (const tk of [primaryToken(), ...SECONDARY_TOKENS.map((t) => t.token)]) {
+    if (!tk) continue;
+    try {
+      const r = await fetch(`${MGMT}/v1/projects`, { headers: { Authorization: `Bearer ${tk}` } });
+      if (r.status !== 200) continue;
+      const j = await r.json();
+      if (!Array.isArray(j)) continue;
+      for (const p of j) {
+        if (p.status === "INACTIVE") continue;
+        REF_TOKEN[p.id] = tk;
+        refs.push(p.id);
+      }
+    } catch (_) { /* one account's discovery failing must not blind the rest */ }
+  }
+  return refs;
+}
+
+async function mgmtGet(path: string, ref?: string): Promise<{ s: number; j: any }> {
+  const r = await fetch(MGMT + path, { headers: { Authorization: `Bearer ${ref ? tokenFor(ref) : primaryToken()}` } });
   let j: any = null;
   try { j = await r.json(); } catch { /* non-json */ }
   return { s: r.status, j };
@@ -75,7 +115,7 @@ async function mgmtGet(path: string): Promise<{ s: number; j: any }> {
 async function sql(ref: string, query: string): Promise<any[]> {
   const r = await fetch(`${MGMT}/v1/projects/${ref}/database/query`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
+    headers: { Authorization: `Bearer ${tokenFor(ref)}`, "Content-Type": "application/json" },
     body: JSON.stringify({ query }),
   });
   const j = await r.json();
@@ -96,7 +136,7 @@ async function checkDb(ref: string): Promise<Check> {
 
 async function checkRegistration(ref: string): Promise<Check> {
   try {
-    const { s, j } = await mgmtGet(`/v1/projects/${ref}/config/auth`);
+    const { s, j } = await mgmtGet(`/v1/projects/${ref}/config/auth`, ref);
     if (s !== 200) return { label: "Registration email", status: "warn", detail: `config unreadable (${s})` };
     const onResend = /resend/i.test(j.smtp_host || "");
     const rate = Number(j.rate_limit_email_sent || 0);
@@ -383,7 +423,7 @@ const MODULE_MAP: Record<string, ModSpec[]> = {
     ["Engagement scores", "engagement_scores"], ["Billing accounts", "billing_accounts"], ["Users", "profiles"], ["Roles", "user_roles"],
   ]),
   // (expense module map removed 2026-07-10 — PARKED, see the PARKED registry above.)
-  fibpamjksquymscdlfal: tbl([ // vendorverification (vendor empanelment)
+  oygyrpjjwtwvrdvxjzbg: tbl([ // vendorverification (vendor empanelment)
     ["Vendors", "vendors"], ["Vendor documents", "vendor_documents"], ["Verifications", "vendor_verifications"],
     ["Vendor users", "vendor_users"], ["Vendor invitations", "vendor_invitations"], ["Categories", "vendor_categories"],
     ["Category documents", "category_documents"], ["Document types", "document_types"], ["Document analyses", "document_analyses"],
@@ -653,7 +693,7 @@ const AUTO_FIXERS: Record<string, (ref: string) => Promise<{ fixed: boolean; not
       smtp_max_frequency: 1, rate_limit_email_sent: 100,
     };
     const r = await fetch(`${MGMT}/v1/projects/${ref}/config/auth`, {
-      method: "PATCH", headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" }, body: JSON.stringify(body),
+      method: "PATCH", headers: { Authorization: `Bearer ${tokenFor(ref)}`, "Content-Type": "application/json" }, body: JSON.stringify(body),
     });
     return { fixed: r.status === 200, note: r.status === 200 ? "re-pointed signup email to Resend @100/hr" : `patch failed (${r.status})` };
   },
@@ -777,14 +817,15 @@ Deno.serve(async (req) => {
         { headers: { "Content-Type": "application/json" } },
       );
     }
-    if (!token()) return new Response(JSON.stringify({ error: "MGMT_TOKEN not set" }), { status: 500 });
+    if (!primaryToken()) return new Response(JSON.stringify({ error: "MGMT_TOKEN not set" }), { status: 500 });
 
-    // Discover the live project list (so new projects are covered automatically).
-    const { s, j } = await mgmtGet("/v1/projects");
-    if (s !== 200 || !Array.isArray(j)) {
-      return new Response(JSON.stringify({ error: `project list failed (${s})` }), { status: 502 });
+    // Discover the live project list across every configured account (so a new
+    // project — or one that moved to a different account — is covered
+    // automatically). See SECONDARY_TOKENS above.
+    const refs = await discoverProjects();
+    if (refs.length === 0) {
+      return new Response(JSON.stringify({ error: "project discovery failed for every configured account" }), { status: 502 });
     }
-    const refs: string[] = j.filter((p: any) => p.status !== "INACTIVE").map((p: any) => p.id);
 
     const results = [];
     for (const ref of refs) results.push(await runProject(ref));
