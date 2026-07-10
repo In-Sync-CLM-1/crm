@@ -55,7 +55,7 @@ const META: Record<string, { name: string; dialer?: boolean; marketing?: boolean
 const PARKED: { name: string; ref: string; web: string; parkedOn: string }[] = [
   { name: "work-sync", ref: "rdhvkluvkieajtmpljyz", web: "https://work.in-sync.co.in", parkedOn: "2026-07-10" },
   { name: "fieldsync", ref: "jmxpudhpdltktuupfbxs", web: "https://field.in-sync.co.in", parkedOn: "2026-07-10" },
-  { name: "expense", ref: "hmqwmmlqfrrktfsiowdh", web: "https://expense.in-sync.co.in", parkedOn: "2026-07-10" },
+  { name: "expense", ref: "hmqwmmlqfrrktfsiowdh", web: "https://expense.in-sync.co.in", parkedOn: "2026-06-28" },
   { name: "wa", ref: "unmdhcjrplwntqjiciiz", web: "https://wa.in-sync.co.in", parkedOn: "2026-07-10" },
   { name: "email", ref: "xpndsoozxjrvcwhauunh", web: "https://email.in-sync.co.in", parkedOn: "2026-07-10" },
 ];
