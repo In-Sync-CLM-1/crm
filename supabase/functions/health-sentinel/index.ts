@@ -39,7 +39,7 @@ const META: Record<string, { name: string; dialer?: boolean; marketing?: boolean
   fibpamjksquymscdlfal: { name: "vendorverification", web: "https://vendorverification.in-sync.co.in" },
   unmdhcjrplwntqjiciiz: { name: "wa", web: "https://wa.in-sync.co.in" },
   xpndsoozxjrvcwhauunh: { name: "email", web: "https://email.in-sync.co.in" },
-  zcmfxpknsybponbudyqb: { name: "smbconnect", feedCheck: true, web: "https://smbconnect.in" },
+  wdamzbyvsbergvxhefkl: { name: "smbconnect", feedCheck: true, web: "https://smbconnect.in" },
   ufwvyybrctjpwipbveqe: { name: "RMPL", web: "https://rmpl-sync.pages.dev" },
   upnhhrhobvdmpfnldvgb: { name: "website", web: "https://in-sync.co.in" },
 };
@@ -196,7 +196,7 @@ async function checkSmbFeed(ref: string): Promise<Check> {
   // Regression test for post_context filter syntax issue where posts stop appearing.
   // Creates a test post, verifies it's returned by the feed query, then cleans up.
   const testUserId = "00000000-0000-0000-0000-000000000001"; // sentinel test user
-  const testPostId = `test-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  const testPostId = crypto.randomUUID();
   try {
     // 1. Insert test post with post_context='member' (the default for member feeds)
     const insertRes = await sql(
@@ -395,7 +395,7 @@ const MODULE_MAP: Record<string, ModSpec[]> = {
     ["Webhooks", "webhook_endpoints"], ["Workflows", "workflow_assignments"], ["Tenants", "tenants"],
     ["Users", "profiles"], ["Roles", "user_roles"],
   ]),
-  zcmfxpknsybponbudyqb: tbl([ // smbconnect
+  wdamzbyvsbergvxhefkl: tbl([ // smbconnect
     ["Companies", "companies"], ["Members", "members"], ["Associations", "associations"],
     ["Association managers", "association_managers"], ["Connections", "connections"], ["Posts", "posts"],
     ["Post comments", "post_comments"], ["Events", "events"], ["Event registrations", "event_registrations"],
