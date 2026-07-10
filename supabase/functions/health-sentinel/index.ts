@@ -31,18 +31,34 @@ const FROM = "In-Sync Health Sentinel <notifications@in-sync.co.in>";
 const META: Record<string, { name: string; dialer?: boolean; marketing?: boolean; feedCheck?: boolean; web?: string | null }> = {
   mlvgqudcwlkolsbighnn: { name: "crm (core)", marketing: true, web: "https://crm.in-sync.co.in" },
   ejzjrvazegaxrhqizgaa: { name: "globalcrm", dialer: true, web: "https://globalcrm.in-sync.co.in" },
-  rdhvkluvkieajtmpljyz: { name: "work", web: "https://work.in-sync.co.in" },
-  jmxpudhpdltktuupfbxs: { name: "fieldsync", web: "https://field.in-sync.co.in" },
   gwfofzqrfpwojejjodgz: { name: "event", web: "https://event.in-sync.co.in" },
   htdwkhtfdifwajdkkpul: { name: "ats", web: "https://ats-6t2.pages.dev" },
-  hmqwmmlqfrrktfsiowdh: { name: "expense", web: "https://expense.in-sync.co.in" },
   fibpamjksquymscdlfal: { name: "vendorverification", web: "https://vendorverification.in-sync.co.in" },
-  unmdhcjrplwntqjiciiz: { name: "wa", web: "https://wa.in-sync.co.in" },
-  xpndsoozxjrvcwhauunh: { name: "email", web: "https://email.in-sync.co.in" },
   wdamzbyvsbergvxhefkl: { name: "smbconnect", feedCheck: true, web: "https://smbconnect.in" },
   ufwvyybrctjpwipbveqe: { name: "RMPL", web: "https://rmpl-sync.pages.dev" },
   upnhhrhobvdmpfnldvgb: { name: "website", web: "https://in-sync.co.in" },
 };
+
+// PARKED products — backend deliberately deleted (2026-07-10, business decision):
+// cost of keeping these running wasn't justified while idle. Schemas + a full
+// walkthrough/demo were preserved beforehand so each can be re-provisioned on
+// demand the moment a client needs it. These refs will NEVER appear in the
+// auto-discovered project list again (the project is genuinely gone from
+// Supabase), so without this list they'd just silently vanish from coverage —
+// exactly the kind of silent gap this Sentinel exists to prevent. Listed here
+// so the digest says "parked on purpose" instead of staying quiet about it.
+// The marketing/demo pages at `web` are intentionally still live and still
+// take real visitor traffic even though the backend is gone — do NOT flag
+// that as a frontend outage; it's not covered by the render probe.
+// Remove an entry once its project is re-provisioned for a client (give it a
+// fresh META entry with the NEW ref at that point, refs are not reused).
+const PARKED: { name: string; ref: string; web: string; parkedOn: string }[] = [
+  { name: "work-sync", ref: "rdhvkluvkieajtmpljyz", web: "https://work.in-sync.co.in", parkedOn: "2026-07-10" },
+  { name: "fieldsync", ref: "jmxpudhpdltktuupfbxs", web: "https://field.in-sync.co.in", parkedOn: "2026-07-10" },
+  { name: "expense", ref: "hmqwmmlqfrrktfsiowdh", web: "https://expense.in-sync.co.in", parkedOn: "2026-07-10" },
+  { name: "wa", ref: "unmdhcjrplwntqjiciiz", web: "https://wa.in-sync.co.in", parkedOn: "2026-07-10" },
+  { name: "email", ref: "xpndsoozxjrvcwhauunh", web: "https://email.in-sync.co.in", parkedOn: "2026-07-10" },
+];
 
 type Status = "ok" | "fail" | "warn";
 interface Check { label: string; status: Status; detail: string }
@@ -355,23 +371,8 @@ const MODULE_MAP: Record<string, ModSpec[]> = {
   // The other products are NOT sales CRMs — each has its own modules. Maps below
   // are built from each project's REAL table inventory (existence-probed; exact
   // names, so no false reds — a red here means a table genuinely vanished).
-  rdhvkluvkieajtmpljyz: tbl([ // work (Work-Sync — task mgmt)
-    ["Tasks", "tasks"], ["Task milestones", "task_milestones"], ["Task comments", "task_comments"],
-    ["Task attachments", "task_attachments"], ["Task watchers", "task_watchers"], ["Support tickets", "support_tickets"],
-    ["Payments", "payments"], ["Teams", "teams"], ["Team members", "team_members"], ["Designations", "designations"],
-    ["Feature permissions", "feature_permissions"], ["Reporting hierarchy", "reporting_hierarchy"],
-    ["Notifications", "notifications"], ["Users", "profiles"], ["Roles", "user_roles"],
-  ]),
-  jmxpudhpdltktuupfbxs: tbl([ // fieldsync (field service)
-    ["Leads", "leads"], ["Lead activities", "lead_activities"], ["Customers", "customers"], ["Visits", "visits"],
-    ["Visit photos", "visit_photos"], ["Daily plans", "daily_plans"], ["Plan enrollments", "plan_enrollments"],
-    ["Order collections", "order_collections"], ["Invoices", "invoices"], ["Payments", "payment_transactions"],
-    ["Dispositions", "dispositions"], ["Sub-dispositions", "sub_dispositions"], ["Branches", "branches"],
-    ["Agent locations", "agent_locations"], ["Travel reimbursements", "travel_reimbursements"],
-    ["Incentive targets", "monthly_incentive_targets"], ["Attendance", "attendance"], ["Subscription plans", "subscription_plans"],
-    ["Form templates", "form_templates"], ["Visit checklists", "visit_checklist_templates"], ["Routes", "route_deviations"],
-    ["Users", "profiles"], ["Roles", "user_roles"],
-  ]),
+  // (work-sync + fieldsync module maps removed 2026-07-10 — both PARKED, see
+  // the PARKED registry above; recover from git history if re-provisioned.)
   gwfofzqrfpwojejjodgz: tbl([ // event (event mgmt)
     ["Events", "events"], ["Sessions", "sessions"], ["Session speakers", "session_speakers"], ["Speakers", "speakers"],
     ["Registrations", "registrations"], ["Attendee schedules", "attendee_schedules"], ["Check-ins", "check_ins"],
@@ -381,10 +382,7 @@ const MODULE_MAP: Record<string, ModSpec[]> = {
     ["Sponsors", "sponsors"], ["Content library", "content_library"], ["Landing pages", "landing_pages"],
     ["Engagement scores", "engagement_scores"], ["Billing accounts", "billing_accounts"], ["Users", "profiles"], ["Roles", "user_roles"],
   ]),
-  hmqwmmlqfrrktfsiowdh: tbl([ // expense
-    ["Expense claims", "travel_expense_claims"], ["Expense items", "travel_expense_items"], ["Teams", "teams"],
-    ["Team members", "team_members"], ["Org memberships", "org_memberships"], ["Users", "profiles"], ["Roles", "user_roles"],
-  ]),
+  // (expense module map removed 2026-07-10 — PARKED, see the PARKED registry above.)
   fibpamjksquymscdlfal: tbl([ // vendorverification (vendor empanelment)
     ["Vendors", "vendors"], ["Vendor documents", "vendor_documents"], ["Verifications", "vendor_verifications"],
     ["Vendor users", "vendor_users"], ["Vendor invitations", "vendor_invitations"], ["Categories", "vendor_categories"],
@@ -592,6 +590,10 @@ function buildEmail(results: { ref: string; name: string; checks: Check[] }[], i
     html += `</ul>`;
   }
   if (allGreen) html += `<p style="color:#15803d;font-weight:600">✅ Every check passed on every project.</p>`;
+
+  html += `<h3 style="color:#555">📦 Parked (business decision) — not monitored on purpose</h3><ul>`;
+  for (const p of PARKED) html += `<li><b>${esc(p.name)}</b> — backend deleted ${esc(p.parkedOn)}, schema + walkthrough preserved, re-provision on demand. Marketing page (${esc(p.web)}) intentionally still live.</li>`;
+  html += `</ul>`;
 
   html += `<h3 style="margin-top:20px">Full checklist</h3><table style="border-collapse:collapse;width:100%">`;
   for (const r of results) {
@@ -843,6 +845,7 @@ Deno.serve(async (req) => {
     const body: any = {
       ok: true, mode: digest ? "daily-digest" : dryRun ? "dry" : "hourly-watch", email: emailStatus,
       loop: { auto_fixed: loop.autoMsgs.length, restored: loop.restored.length, escalated_open: loop.openMsgs.length }, summary,
+      parked: PARKED.map((p) => ({ project: p.name, note: `PARKED ${p.parkedOn} (business decision) — backend deleted, marketing page still live, re-provision on demand` })),
     };
     if (dryRun || verbose) {
       const want = verbose && verbose !== "1" ? verbose : null;
