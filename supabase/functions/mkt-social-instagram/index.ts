@@ -5,8 +5,8 @@
  * Uses the two-step Meta container publish flow for both image posts and Reels.
  * Gracefully skips if image_url / video_url is not set on the blog post.
  *
- * Required env vars: IG_USER_ID, FB_PAGE_ACCESS_TOKEN
- * Shared Meta app with Facebook — no separate credentials needed.
+ * IG user ID + Page access token come from mkt_social_config, populated by
+ * mkt-facebook-oauth-callback — shared Meta app with Facebook, same token.
  */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/corsHeaders.ts';
@@ -118,18 +118,24 @@ async function publishReel(
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
-  const igUserId = Deno.env.get('IG_USER_ID');
-  const token = Deno.env.get('FB_PAGE_ACCESS_TOKEN');
-  if (!igUserId || !token) {
-    return ok({ skip: 'IG_USER_ID or FB_PAGE_ACCESS_TOKEN not configured' });
-  }
-
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
 
   try {
+    const { data: socialConfig } = await supabase
+      .from('mkt_social_config')
+      .select('ig_user_id, fb_page_access_token')
+      .eq('active', true)
+      .maybeSingle();
+
+    const igUserId = socialConfig?.ig_user_id;
+    const token = socialConfig?.fb_page_access_token;
+    if (!igUserId || !token) {
+      return ok({ skip: 'Instagram not connected — no ig_user_id/fb_page_access_token on mkt_social_config' });
+    }
+
     const body = await req.json().catch(() => ({}));
     const { blog_post_id } = body;
     if (!blog_post_id) return err(400, 'blog_post_id required');

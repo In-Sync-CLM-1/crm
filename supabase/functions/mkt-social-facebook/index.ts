@@ -5,7 +5,8 @@
  * Posts blog title + excerpt as the message with the blog URL as the link.
  * Facebook auto-generates the OG link preview.
  *
- * Required env vars: FB_PAGE_ID, FB_PAGE_ACCESS_TOKEN
+ * Page ID + Page access token come from mkt_social_config, populated by
+ * mkt-facebook-oauth-callback (Meta connect flow).
  */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/corsHeaders.ts';
@@ -60,18 +61,24 @@ async function postToFacebook(
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
-  const pageId = Deno.env.get('FB_PAGE_ID');
-  const token = Deno.env.get('FB_PAGE_ACCESS_TOKEN');
-  if (!pageId || !token) {
-    return ok({ skip: 'FB_PAGE_ID or FB_PAGE_ACCESS_TOKEN not configured' });
-  }
-
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
 
   try {
+    const { data: socialConfig } = await supabase
+      .from('mkt_social_config')
+      .select('fb_page_id, fb_page_access_token')
+      .eq('active', true)
+      .maybeSingle();
+
+    const pageId = socialConfig?.fb_page_id;
+    const token = socialConfig?.fb_page_access_token;
+    if (!pageId || !token) {
+      return ok({ skip: 'Facebook not connected — no fb_page_id/fb_page_access_token on mkt_social_config' });
+    }
+
     const body = await req.json().catch(() => ({}));
     const { blog_post_id } = body;
     if (!blog_post_id) return err(400, 'blog_post_id required');
