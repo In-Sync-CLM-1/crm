@@ -1,8 +1,9 @@
 /**
  * mkt-blog-poster — Arohan's LinkedIn publishing step.
  *
- * Called by 9 separate pg_cron jobs (one per time slot). Each fires daily at its
- * designated IST time. Only one will match today's designated slot and actually post.
+ * Called by 9 separate cron triggers (one per time slot). Each fires daily at its
+ * designated IST time. Only one will match today's designated slot and post the
+ * day's real draft.
  *
  * Flow:
  *  1. Load today's pending draft from blog_posts
