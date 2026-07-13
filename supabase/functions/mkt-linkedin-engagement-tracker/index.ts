@@ -3,8 +3,6 @@ import { callLLM } from '../_shared/llmClient.ts';
 import { corsHeaders } from '../_shared/corsHeaders.ts';
 
 const LINKEDIN_VERSION = '202503';
-const LINKEDIN_ORG_ID = Deno.env.get('LINKEDIN_ORG_ID') || '35932282';
-const LINKEDIN_ORG_URN = `urn:li:organization:${LINKEDIN_ORG_ID}`;
 
 // ── Engagement fetch ───────────────────────────────────────────────────────────
 
@@ -16,44 +14,13 @@ interface Engagement {
   clicks: number;
 }
 
-async function fetchEngagement(postUrn: string): Promise<Engagement> {
-  const token = Deno.env.get('LINKEDIN_ACCESS_TOKEN') || '';
-
-  // Extract numeric share ID from URN (e.g. "urn:li:share:7123456" → "7123456")
-  const shareId = postUrn.split(':').pop() || '';
-  const shareUrn = postUrn.startsWith('urn:li:share:') ? postUrn : `urn:li:share:${shareId}`;
-
-  // Org entity share statistics — impressions, clicks, likes, comments, shares
-  const statsUrl = new URL('https://api.linkedin.com/rest/organizationalEntityShareStatistics');
-  statsUrl.searchParams.set('q', 'organizationalEntity');
-  statsUrl.searchParams.set('organizationalEntity', LINKEDIN_ORG_URN);
-  statsUrl.searchParams.set('shares', `List(${encodeURIComponent(shareUrn)})`);
-
-  const res = await fetch(statsUrl.toString(), {
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'LinkedIn-Version': LINKEDIN_VERSION,
-      'X-Restli-Protocol-Version': '2.0.0',
-    },
-    signal: AbortSignal.timeout(15_000),
-  });
-
-  if (!res.ok) {
-    console.warn(`[engagement-tracker] stats API ${res.status} for ${postUrn}`);
-    // Fall back to socialActions for like + comment counts
-    return fetchEngagementFallback(postUrn, token);
-  }
-
-  const data = await res.json();
-  const stats = data?.elements?.[0]?.totalShareStatistics ?? {};
-
-  return {
-    impressions: stats.impressionCount ?? 0,
-    likes: stats.likeCount ?? 0,
-    comments: stats.commentCount ?? 0,
-    reposts: stats.shareCount ?? 0,
-    clicks: stats.clickCount ?? 0,
-  };
+async function fetchEngagement(postUrn: string, token: string): Promise<Engagement> {
+  // organizationalEntityShareStatistics requires organization-page access, which
+  // this LinkedIn app doesn't have (posting happens as a member, not a company
+  // page). socialActions gives like/comment counts for any post regardless of
+  // author type, so that's the only source available here — impressions and
+  // reposts aren't exposed to member-level access.
+  return fetchEngagementFallback(postUrn, token);
 }
 
 async function fetchEngagementFallback(postUrn: string, token: string): Promise<Engagement> {
@@ -123,6 +90,7 @@ async function postReply(
   postUrn: string,
   replyText: string,
   token: string,
+  actorUrn: string,
 ): Promise<boolean> {
   const encoded = encodeURIComponent(postUrn);
   const res = await fetch(
@@ -136,7 +104,7 @@ async function postReply(
         'X-Restli-Protocol-Version': '2.0.0',
       },
       body: JSON.stringify({
-        actor: LINKEDIN_ORG_URN,
+        actor: actorUrn,
         message: { text: replyText },
       }),
       signal: AbortSignal.timeout(15_000),
@@ -185,6 +153,7 @@ async function handleCommentReplies(
   posts: Array<{ id: string; linkedin_post_urn: string; blog_title: string; product_key: string | null }>,
   orgId: string,
   token: string,
+  memberUrn: string,
   supabase: ReturnType<typeof createClient>,
 ): Promise<number> {
   let repliesPosted = 0;
@@ -195,14 +164,14 @@ async function handleCommentReplies(
     const comments = await fetchComments(post.linkedin_post_urn, token);
     if (!comments.length) continue;
 
-    // Find substantive comments NOT from our org (> 10 words)
+    // Find substantive comments NOT from us (> 10 words)
     const theirComments = comments.filter(
-      (c) => !c.authorUrn.includes(LINKEDIN_ORG_ID) && c.text.split(' ').length > 10,
+      (c) => c.authorUrn !== memberUrn && c.text.split(' ').length > 10,
     );
 
     // Track our existing reply timestamps to detect already-replied comments
     const ourReplyTimestamps = comments
-      .filter((c) => c.authorUrn.includes(LINKEDIN_ORG_ID))
+      .filter((c) => c.authorUrn === memberUrn)
       .map((c) => c.createdAt);
 
     // Load LATEST ICP for this post's product (evolving ICP = always current)
@@ -247,7 +216,7 @@ async function handleCommentReplies(
         productUrl,
       );
 
-      const ok = await postReply(post.linkedin_post_urn, reply, token);
+      const ok = await postReply(post.linkedin_post_urn, reply, token, memberUrn);
       if (ok) {
         repliesPosted++;
         console.log(`[engagement-tracker] replied to comment on post ${post.id}`);
@@ -331,8 +300,12 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (!config) return ok({ skip: 'no active config' });
+    if (!config.member_access_token || !config.member_urn) {
+      return ok({ skip: 'linkedin not connected — no member_access_token/member_urn on config' });
+    }
 
-    const token = Deno.env.get('LINKEDIN_ACCESS_TOKEN') || '';
+    const token = config.member_access_token as string;
+    const memberUrn = config.member_urn as string;
 
     // 2. Find posts with LinkedIn URNs (last 7 days) for comment replies
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -348,7 +321,7 @@ Deno.serve(async (req) => {
     // 3. Reply to substantive comments using latest ICP
     let repliesPosted = 0;
     if (recentPosts?.length) {
-      repliesPosted = await handleCommentReplies(recentPosts, config.org_id, token, supabase);
+      repliesPosted = await handleCommentReplies(recentPosts, config.org_id, token, memberUrn, supabase);
     }
 
     // 4. Find posts that need engagement metrics fetched (wait 24h after posting)
@@ -370,7 +343,7 @@ Deno.serve(async (req) => {
       for (const post of pendingPosts) {
         if (!post.linkedin_post_urn) continue;
 
-        const eng = await fetchEngagement(post.linkedin_post_urn);
+        const eng = await fetchEngagement(post.linkedin_post_urn, token);
         const score = eng.likes * 1 + eng.comments * 3 + eng.reposts * 5;
 
         await supabase

@@ -31,6 +31,9 @@ verify_jwt = false
 [functions.mkt-email-webhook]
 verify_jwt = false
 
+[functions.mkt-linkedin-oauth-callback]
+verify_jwt = false
+
 [functions.mkt-bolna-webhook]
 verify_jwt = false
 

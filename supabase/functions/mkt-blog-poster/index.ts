@@ -16,8 +16,6 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/corsHeaders.ts';
 
 const LINKEDIN_VERSION = '202503';
-const LINKEDIN_ORG_ID = Deno.env.get('LINKEDIN_ORG_ID') || '35932282';
-const LINKEDIN_ORG_URN = `urn:li:organization:${LINKEDIN_ORG_ID}`;
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 
 // ── Time helpers ──────────────────────────────────────────────────────────────
@@ -46,9 +44,7 @@ function daysSince(startDate: string, referenceDate: string): number {
 
 // ── LinkedIn post ─────────────────────────────────────────────────────────────
 
-async function postToLinkedIn(text: string): Promise<{ postUrn: string; postUrl: string }> {
-  const token = Deno.env.get('LINKEDIN_ACCESS_TOKEN') || '';
-
+async function postToLinkedIn(text: string, token: string, authorUrn: string): Promise<{ postUrn: string; postUrl: string }> {
   const res = await fetch('https://api.linkedin.com/rest/posts', {
     method: 'POST',
     headers: {
@@ -58,7 +54,7 @@ async function postToLinkedIn(text: string): Promise<{ postUrn: string; postUrl:
       'X-Restli-Protocol-Version': '2.0.0',
     },
     body: JSON.stringify({
-      author: LINKEDIN_ORG_URN,
+      author: authorUrn,
       commentary: text,
       visibility: 'PUBLIC',
       distribution: {
@@ -89,7 +85,7 @@ async function postToLinkedIn(text: string): Promise<{ postUrn: string; postUrl:
 
   const postUrl = postUrn
     ? `https://www.linkedin.com/feed/update/${encodeURIComponent(postUrn)}/`
-    : `https://www.linkedin.com/company/${LINKEDIN_ORG_ID}/posts/`;
+    : `https://www.linkedin.com/in/me/recent-activity/all/`;
 
   return { postUrn, postUrl };
 }
@@ -130,6 +126,12 @@ Deno.serve(async (req) => {
 
     if (configErr) return err(500, `Config load error: ${configErr.message}`);
     if (!config) return ok({ skip: 'no active linkedin config' });
+    if (!config.member_access_token || !config.member_urn) {
+      return err(500, 'LinkedIn not connected — no member_access_token/member_urn on mkt_linkedin_config');
+    }
+    if (config.member_token_expires_at && new Date(config.member_token_expires_at) < new Date()) {
+      return err(500, `LinkedIn token expired at ${config.member_token_expires_at} — reconnect via mkt-linkedin-oauth-callback`);
+    }
 
     const ist = getIST();
 
@@ -179,7 +181,7 @@ Deno.serve(async (req) => {
     console.log(`[blog-poster] posting draft for ${ist.date} slot=${targetSlot} product=${draft.product_key}`);
 
     // 6. Post to LinkedIn
-    const { postUrn, postUrl } = await postToLinkedIn(draft.linkedin_draft_text);
+    const { postUrn, postUrl } = await postToLinkedIn(draft.linkedin_draft_text, config.member_access_token, config.member_urn);
     console.log(`[blog-poster] posted: ${postUrn}`);
 
     // 7. Update blog_post — replace placeholder URL with real LinkedIn URL
