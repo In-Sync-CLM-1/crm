@@ -14,6 +14,8 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { callLLMJson } from '../_shared/llmClient.ts';
 import { corsHeaders } from '../_shared/corsHeaders.ts';
+import { renderSlideImage } from '../_shared/slideImage.ts';
+import { uploadToMarketingR2 } from '../_shared/r2Marketing.ts';
 
 const LINKEDIN_ORG_ID = Deno.env.get('LINKEDIN_ORG_ID') || '35932282';
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000; // UTC+5:30
@@ -205,66 +207,6 @@ async function generateShotstackVideo(imageUrl: string, title: string): Promise<
   }
 
   throw new Error('Shotstack render timed out after 2 minutes');
-}
-
-/**
- * Renders a single branded still image — same dark-background, minimal-text
- * style as the video titles above, just a JPG still instead of an MP4. Used
- * for carousel slides.
- */
-async function generateShotstackImage(imageUrl: string, slideText: string): Promise<string | null> {
-  const apiKey = Deno.env.get('SHOTSTACK_API_KEY');
-  if (!apiKey) return null;
-
-  const displayText = slideText.length > 100 ? slideText.slice(0, 97) + '...' : slideText;
-
-  const payload = {
-    timeline: {
-      background: '#000000',
-      tracks: [
-        { clips: [{ asset: { type: 'image', src: imageUrl }, start: 0, length: 2, fit: 'cover' }] },
-        {
-          clips: [{
-            asset: { type: 'title', text: displayText, style: 'minimal', color: '#ffffff', size: 'large' },
-            start: 0,
-            length: 2,
-            position: 'center',
-          }],
-        },
-      ],
-    },
-    // Still-image renders need an explicit range — without it the captured
-    // frame lands before the title style's built-in fade-in is visible,
-    // producing a blank background with no text (every slide identical).
-    // Capturing at t=1s (mid-clip) guarantees the title is fully faded in.
-    output: { format: 'jpg', size: { width: 1080, height: 1080 }, range: { start: 1, length: 1 } },
-  };
-
-  const submitRes = await fetch('https://api.shotstack.io/edit/v1/render', {
-    method: 'POST',
-    headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!submitRes.ok) throw new Error(`Shotstack image submit ${submitRes.status}: ${await submitRes.text()}`);
-  const submitData = await submitRes.json();
-  const renderId = submitData?.response?.id;
-  if (!renderId) throw new Error('Shotstack returned no render ID for image');
-
-  for (let i = 0; i < 12; i++) {
-    await new Promise((r) => setTimeout(r, 3_000));
-    const pollRes = await fetch(`https://api.shotstack.io/edit/v1/render/${renderId}`, {
-      headers: { 'x-api-key': apiKey },
-      signal: AbortSignal.timeout(10_000),
-    });
-    const pollData = await pollRes.json();
-    const status: string = pollData?.response?.status || '';
-    const url: string = pollData?.response?.url || '';
-    if (status === 'done' && url) return url;
-    if (status === 'failed') throw new Error(`Shotstack image render failed: ${JSON.stringify(pollData?.response?.error)}`);
-  }
-
-  throw new Error(`Shotstack image render ${renderId} timed out after 36s`);
 }
 
 // ── Blog generation ───────────────────────────────────────────────────────────
@@ -646,20 +588,26 @@ Deno.serve(async (req) => {
       const bgImageUrl = await fetchPexelsImage(draft.image_keywords || []).catch(() => null);
 
       let slideUrls: (string | null)[] = draft.slides.map(() => null);
+      const slideErrors: (string | null)[] = draft.slides.map(() => null);
       if (bgImageUrl) {
         console.log(`[blog-writer] rendering ${draft.slides.length} carousel slides`);
         slideUrls = await Promise.all(
-          draft.slides.map((text) =>
-            generateShotstackImage(bgImageUrl, text).catch((e) => {
-              console.warn('[blog-writer] carousel slide render failed:', e instanceof Error ? e.message : e);
+          draft.slides.map(async (text, i) => {
+            try {
+              const jpgBytes = await renderSlideImage(bgImageUrl, text);
+              const key = `carousel/${targetDate}/${product.product_key}/slide-${i + 1}.jpg`;
+              return await uploadToMarketingR2(key, jpgBytes, 'image/jpeg');
+            } catch (e) {
+              slideErrors[i] = e instanceof Error ? e.message : String(e);
+              console.warn('[blog-writer] carousel slide render failed:', slideErrors[i]);
               return null;
-            }),
-          ),
+            }
+          }),
         );
       }
 
       if (slideUrls.some((u) => !u)) {
-        return err(500, `Carousel slide rendering failed — ${slideUrls.filter((u) => !u).length}/${slideUrls.length} slides missing`);
+        return err(500, `Carousel slide rendering failed — ${JSON.stringify(slideErrors)}`);
       }
 
       row = {
