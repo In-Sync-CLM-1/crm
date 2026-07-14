@@ -222,18 +222,22 @@ async function generateShotstackImage(imageUrl: string, slideText: string): Prom
     timeline: {
       background: '#000000',
       tracks: [
-        { clips: [{ asset: { type: 'image', src: imageUrl }, start: 0, length: 1, fit: 'cover' }] },
+        { clips: [{ asset: { type: 'image', src: imageUrl }, start: 0, length: 2, fit: 'cover' }] },
         {
           clips: [{
             asset: { type: 'title', text: displayText, style: 'minimal', color: '#ffffff', size: 'large' },
             start: 0,
-            length: 1,
+            length: 2,
             position: 'center',
           }],
         },
       ],
     },
-    output: { format: 'jpg', size: { width: 1080, height: 1080 } },
+    // Still-image renders need an explicit range — without it the captured
+    // frame lands before the title style's built-in fade-in is visible,
+    // producing a blank background with no text (every slide identical).
+    // Capturing at t=1s (mid-clip) guarantees the title is fully faded in.
+    output: { format: 'jpg', size: { width: 1080, height: 1080 }, range: { start: 1, length: 1 } },
   };
 
   const submitRes = await fetch('https://api.shotstack.io/edit/v1/render', {
