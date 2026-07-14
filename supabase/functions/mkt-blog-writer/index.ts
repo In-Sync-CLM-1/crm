@@ -18,6 +18,14 @@ import { corsHeaders } from '../_shared/corsHeaders.ts';
 const LINKEDIN_ORG_ID = Deno.env.get('LINKEDIN_ORG_ID') || '35932282';
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000; // UTC+5:30
 
+// Format rotation — 1 text : 2 image : 3 carousel : 2 video across 8 days.
+// Every night's post used to be a single long text block; this spreads the
+// existing nightly image/video generation across LinkedIn post types instead
+// of letting it go unused (only Instagram/YouTube ever saw it).
+const FORMAT_CYCLE = ['text', 'image', 'carousel', 'video', 'image', 'carousel', 'video', 'carousel'] as const;
+type PostFormat = typeof FORMAT_CYCLE[number];
+const CAROUSEL_SLIDE_COUNT = 8;
+
 // ── Time helpers ──────────────────────────────────────────────────────────────
 
 function getIST(offsetDays = 0) {
@@ -199,6 +207,62 @@ async function generateShotstackVideo(imageUrl: string, title: string): Promise<
   throw new Error('Shotstack render timed out after 2 minutes');
 }
 
+/**
+ * Renders a single branded still image — same dark-background, minimal-text
+ * style as the video titles above, just a JPG still instead of an MP4. Used
+ * for carousel slides.
+ */
+async function generateShotstackImage(imageUrl: string, slideText: string): Promise<string | null> {
+  const apiKey = Deno.env.get('SHOTSTACK_API_KEY');
+  if (!apiKey) return null;
+
+  const displayText = slideText.length > 100 ? slideText.slice(0, 97) + '...' : slideText;
+
+  const payload = {
+    timeline: {
+      background: '#000000',
+      tracks: [
+        { clips: [{ asset: { type: 'image', src: imageUrl }, start: 0, length: 1, fit: 'cover' }] },
+        {
+          clips: [{
+            asset: { type: 'title', text: displayText, style: 'minimal', color: '#ffffff', size: 'large' },
+            start: 0,
+            length: 1,
+            position: 'center',
+          }],
+        },
+      ],
+    },
+    output: { format: 'jpg', size: { width: 1080, height: 1080 } },
+  };
+
+  const submitRes = await fetch('https://api.shotstack.io/edit/v1/render', {
+    method: 'POST',
+    headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!submitRes.ok) throw new Error(`Shotstack image submit ${submitRes.status}: ${await submitRes.text()}`);
+  const submitData = await submitRes.json();
+  const renderId = submitData?.response?.id;
+  if (!renderId) throw new Error('Shotstack returned no render ID for image');
+
+  for (let i = 0; i < 12; i++) {
+    await new Promise((r) => setTimeout(r, 3_000));
+    const pollRes = await fetch(`https://api.shotstack.io/edit/v1/render/${renderId}`, {
+      headers: { 'x-api-key': apiKey },
+      signal: AbortSignal.timeout(10_000),
+    });
+    const pollData = await pollRes.json();
+    const status: string = pollData?.response?.status || '';
+    const url: string = pollData?.response?.url || '';
+    if (status === 'done' && url) return url;
+    if (status === 'failed') throw new Error(`Shotstack image render failed: ${JSON.stringify(pollData?.response?.error)}`);
+  }
+
+  throw new Error(`Shotstack image render ${renderId} timed out after 36s`);
+}
+
 // ── Blog generation ───────────────────────────────────────────────────────────
 
 interface BlogDraft {
@@ -293,6 +357,113 @@ Return JSON only:
   return data;
 }
 
+// ── Short-form content (image / video posts) ───────────────────────────────────
+
+interface ShortCaption {
+  title: string;         // internal tracking title
+  caption: string;       // full LinkedIn post text, ≤600 chars
+  image_keywords: string[];
+}
+
+async function generateShortCaption(
+  product: { product_name: string; product_url: string },
+  icp: Record<string, unknown> | null,
+  dayIndex: number,
+  mediaKind: 'image' | 'video',
+): Promise<ShortCaption> {
+  const industries = Array.isArray(icp?.industries) ? (icp.industries as string[]).slice(0, 3).join(', ') : 'B2B';
+  const designations = Array.isArray(icp?.designations) ? (icp.designations as string[]).slice(0, 3).join(', ') : 'decision makers';
+  const painPoints = Array.isArray(icp?.pain_points) ? (icp.pain_points as string[]).slice(0, 3).join('; ') : '';
+
+  const prompt = `You are Arohan, the autonomous marketing AI for In-Sync, a B2B SaaS company.
+
+PRODUCT: ${product.product_name}
+ICP ROLES: ${designations} in ${industries}
+PAIN POINTS: ${painPoints}
+
+Write a SHORT LinkedIn caption to accompany a ${mediaKind === 'video' ? 'short vertical video' : 'photo'} post. The visual carries the message — this caption should NOT try to be a full essay.
+
+RULES:
+- 2-4 short lines, 250-450 characters total
+- Open with a hook line, one supporting line, then a soft CTA line (no raw URL — say something like "link in comments")
+- End with 3-4 relevant hashtags on their own line
+- No markdown, no bullet points
+
+image_keywords: 4 specific visual search terms for a compelling B2B photo relevant to ${product.product_name} and ${industries}.
+
+Return JSON only:
+{
+  "title": "internal tracking title, max 120 chars",
+  "caption": "the full short caption as described above",
+  "image_keywords": ["keyword1", "keyword2", "keyword3", "keyword4"]
+}`;
+
+  const { data } = await callLLMJson<ShortCaption>(prompt, {
+    model: 'sonnet',
+    max_tokens: 600,
+    temperature: 0.8,
+  });
+
+  return data;
+}
+
+// ── Carousel content (8-slide swipe deck) ──────────────────────────────────────
+
+interface CarouselContent {
+  title: string;
+  caption: string;         // short LinkedIn intro text accompanying the carousel
+  slides: string[];        // exactly CAROUSEL_SLIDE_COUNT short slide lines
+  image_keywords: string[];
+}
+
+async function generateCarouselContent(
+  product: { product_name: string; product_url: string },
+  icp: Record<string, unknown> | null,
+  dayIndex: number,
+): Promise<CarouselContent> {
+  const industries = Array.isArray(icp?.industries) ? (icp.industries as string[]).slice(0, 3).join(', ') : 'B2B';
+  const designations = Array.isArray(icp?.designations) ? (icp.designations as string[]).slice(0, 3).join(', ') : 'decision makers';
+  const painPoints = Array.isArray(icp?.pain_points) ? (icp.pain_points as string[]).slice(0, 3).join('; ') : '';
+
+  const prompt = `You are Arohan, the autonomous marketing AI for In-Sync, a B2B SaaS company.
+
+PRODUCT: ${product.product_name}
+ICP ROLES: ${designations} in ${industries}
+PAIN POINTS: ${painPoints}
+
+Write an ${CAROUSEL_SLIDE_COUNT}-slide LinkedIn carousel (swipeable slide deck) for the In-Sync page.
+
+STRUCTURE (exactly ${CAROUSEL_SLIDE_COUNT} slides):
+- Slide 1: hook — a bold statement or question that stops the scroll
+- Slides 2-7: one idea per slide, building the argument (a stat, a pain point, a contrast, a mechanism, an outcome) — ${product.product_name} should appear naturally by slide 5 or 6 as the resolution
+- Slide 8: direct CTA — invite the reader to comment or check the link in comments
+
+RULES PER SLIDE:
+- Max 100 characters per slide — these render as large title text on a slide image, not paragraphs
+- No slide numbers, no markdown
+- Punchy, declarative, one idea only
+
+caption: a short LinkedIn intro (150-300 characters) that accompanies the carousel post — a hook line plus 3-4 hashtags, no need to repeat the slide content.
+
+image_keywords: 4 visual search terms for the background imagery style of this carousel (professional B2B, relevant to ${industries}).
+
+Return JSON only:
+{
+  "title": "internal tracking title, max 120 chars",
+  "caption": "short intro text as described above",
+  "slides": ["slide 1 text", "slide 2 text", "...exactly ${CAROUSEL_SLIDE_COUNT} entries..."],
+  "image_keywords": ["keyword1", "keyword2", "keyword3", "keyword4"]
+}`;
+
+  const { data } = await callLLMJson<CarouselContent>(prompt, {
+    model: 'sonnet',
+    max_tokens: 1200,
+    temperature: 0.8,
+  });
+
+  return data;
+}
+
 // ── Response helpers ──────────────────────────────────────────────────────────
 
 function ok(data: unknown) {
@@ -321,11 +492,13 @@ Deno.serve(async (req) => {
 
   try {
     let forceProductKey: string | null = null;
+    let forceFormat: PostFormat | null = null;
     let forceMode = false;
     try {
       const body = await req.json().catch(() => ({}));
       forceMode = body?.force === true;
       forceProductKey = body?.product_key ?? null;
+      forceFormat = (body?.format as PostFormat) ?? null;
     } catch { /* no body */ }
 
     // 1. Load active config
@@ -375,6 +548,7 @@ Deno.serve(async (req) => {
 
     const slotIndex = daysForTarget % 9;
     const cycle = Math.floor(daysForTarget / 9) + 1;
+    const postFormat: PostFormat = forceFormat ?? FORMAT_CYCLE[daysForTarget % FORMAT_CYCLE.length];
 
     // 5. Load latest ICP
     const { data: icp } = await supabase
@@ -386,65 +560,131 @@ Deno.serve(async (req) => {
       .limit(1)
       .maybeSingle();
 
-    // 6. Generate blog content (Claude Sonnet)
-    console.log(`[blog-writer] writing for ${targetDate} product=${product.product_key} slot=${slotIndex} cycle=${cycle}`);
-    const draft = await generateBlogPost(product, icp, daysForTarget);
+    console.log(`[blog-writer] writing for ${targetDate} product=${product.product_key} slot=${slotIndex} cycle=${cycle} format=${postFormat}`);
 
-    // 7. Fetch image from Pexels, then generate branded video via Shotstack
-    console.log(`[blog-writer] fetching media for keywords: ${draft.image_keywords?.join(', ')}`);
-    const imageUrl = await fetchPexelsImage(draft.image_keywords || []).catch(() => null);
-
-    let videoUrl: string | null = null;
-    if (imageUrl) {
-      // Shotstack: compose branded 20s vertical Short using the Pexels image + title
-      videoUrl = await generateShotstackVideo(imageUrl, draft.title).catch((e) => {
-        console.warn('[blog-writer] Shotstack failed, falling back to Pexels video:', e.message);
-        return null;
-      });
-    }
-    // Fallback: raw Pexels portrait video clip (if Shotstack not configured or failed)
-    if (!videoUrl) {
-      videoUrl = await fetchPexelsVideo(draft.image_keywords || []).catch(() => null);
-    }
-    console.log(`[blog-writer] image=${imageUrl ? 'found' : 'none'} video=${videoUrl ? 'found' : 'none'}`);
-
-    // 8. Save draft
     const placeholderUrl = `draft://${LINKEDIN_ORG_ID}/${targetDate}/${product.product_key}`;
+    const baseRow = {
+      org_id: config.org_id,
+      blog_url: placeholderUrl,
+      product_key: product.product_key,
+      publish_date: targetDate,
+      status: 'pending',
+      social_posted: false,
+      posted_timestamp: new Date().toISOString(),
+      linkedin_slot_index: slotIndex,
+      linkedin_cycle: cycle,
+      post_format: postFormat,
+    };
 
-    const { error: insertErr } = await supabase
-      .from('blog_posts')
-      .insert({
-        org_id: config.org_id,
-        blog_url: placeholderUrl,
+    let row: Record<string, unknown>;
+
+    if (postFormat === 'text') {
+      // 6a. Long-form text post — unchanged from the original design.
+      const draft = await generateBlogPost(product, icp, daysForTarget);
+      console.log(`[blog-writer] fetching media for keywords: ${draft.image_keywords?.join(', ')}`);
+      const imageUrl = await fetchPexelsImage(draft.image_keywords || []).catch(() => null);
+      let videoUrl: string | null = null;
+      if (imageUrl) {
+        videoUrl = await generateShotstackVideo(imageUrl, draft.title).catch((e) => {
+          console.warn('[blog-writer] Shotstack failed, falling back to Pexels video:', e.message);
+          return null;
+        });
+      }
+      if (!videoUrl) videoUrl = await fetchPexelsVideo(draft.image_keywords || []).catch(() => null);
+
+      row = {
+        ...baseRow,
         blog_title: draft.title,
         blog_excerpt: draft.teaser,
         linkedin_draft_text: draft.full_post,
-        product_key: product.product_key,
-        publish_date: targetDate,
-        status: 'pending',
-        social_posted: false,
-        posted_timestamp: new Date().toISOString(),
-        linkedin_slot_index: slotIndex,
-        linkedin_cycle: cycle,
         image_url: imageUrl || null,
         video_url: videoUrl || null,
-      });
+      };
+
+    } else if (postFormat === 'image') {
+      // 6b. Image post — short caption, reuse the nightly Pexels image.
+      const draft = await generateShortCaption(product, icp, daysForTarget, 'image');
+      const imageUrl = await fetchPexelsImage(draft.image_keywords || []).catch(() => null);
+
+      row = {
+        ...baseRow,
+        blog_title: draft.title,
+        blog_excerpt: draft.caption,
+        linkedin_short_caption: draft.caption,
+        image_url: imageUrl || null,
+      };
+
+    } else if (postFormat === 'video') {
+      // 6c. Video post — short caption, reuse the nightly Shotstack video.
+      const draft = await generateShortCaption(product, icp, daysForTarget, 'video');
+      const imageUrl = await fetchPexelsImage(draft.image_keywords || []).catch(() => null);
+      let videoUrl: string | null = null;
+      if (imageUrl) {
+        videoUrl = await generateShotstackVideo(imageUrl, draft.title).catch((e) => {
+          console.warn('[blog-writer] Shotstack failed, falling back to Pexels video:', e.message);
+          return null;
+        });
+      }
+      if (!videoUrl) videoUrl = await fetchPexelsVideo(draft.image_keywords || []).catch(() => null);
+
+      row = {
+        ...baseRow,
+        blog_title: draft.title,
+        blog_excerpt: draft.caption,
+        linkedin_short_caption: draft.caption,
+        image_url: imageUrl || null,
+        video_url: videoUrl || null,
+      };
+
+    } else {
+      // 6d. Carousel — 8 short slides rendered as branded still images.
+      const draft = await generateCarouselContent(product, icp, daysForTarget);
+      const bgImageUrl = await fetchPexelsImage(draft.image_keywords || []).catch(() => null);
+
+      let slideUrls: (string | null)[] = draft.slides.map(() => null);
+      if (bgImageUrl) {
+        console.log(`[blog-writer] rendering ${draft.slides.length} carousel slides`);
+        slideUrls = await Promise.all(
+          draft.slides.map((text) =>
+            generateShotstackImage(bgImageUrl, text).catch((e) => {
+              console.warn('[blog-writer] carousel slide render failed:', e instanceof Error ? e.message : e);
+              return null;
+            }),
+          ),
+        );
+      }
+
+      if (slideUrls.some((u) => !u)) {
+        return err(500, `Carousel slide rendering failed — ${slideUrls.filter((u) => !u).length}/${slideUrls.length} slides missing`);
+      }
+
+      row = {
+        ...baseRow,
+        blog_title: draft.title,
+        blog_excerpt: draft.caption,
+        linkedin_short_caption: draft.caption,
+        carousel_slide_texts: draft.slides,
+        carousel_slide_urls: slideUrls,
+        image_url: slideUrls[0] || null,
+      };
+    }
+
+    // 7. Save draft
+    const { error: insertErr } = await supabase.from('blog_posts').insert(row);
 
     if (insertErr) {
       console.error(`[blog-writer] insert error:`, insertErr.message);
       return err(500, insertErr.message);
     }
 
-    console.log(`[blog-writer] draft saved for ${targetDate}`);
+    console.log(`[blog-writer] draft saved for ${targetDate} (${postFormat})`);
     return ok({
       success: true,
       product: product.product_key,
       publish_date: targetDate,
       slot_index: slotIndex,
       cycle,
-      char_count: draft.full_post.length,
-      image_url: imageUrl,
-      video_url: videoUrl,
+      format: postFormat,
     });
 
   } catch (e) {

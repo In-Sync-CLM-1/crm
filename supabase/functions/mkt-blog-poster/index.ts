@@ -15,6 +15,8 @@
  */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/corsHeaders.ts';
+import { uploadImageToLinkedIn, uploadVideoToLinkedIn, uploadDocumentToLinkedIn } from '../_shared/linkedinMedia.ts';
+import { buildCarouselPdf } from '../_shared/carouselPdf.ts';
 
 const LINKEDIN_VERSION = '202503';
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
@@ -45,7 +47,17 @@ function daysSince(startDate: string, referenceDate: string): number {
 
 // ── LinkedIn post ─────────────────────────────────────────────────────────────
 
-async function postToLinkedIn(text: string, token: string, authorUrn: string): Promise<{ postUrn: string; postUrl: string }> {
+interface LinkedInMedia {
+  id: string;             // asset URN (image/video/document)
+  title?: string;         // shown under the media for document (carousel) posts
+}
+
+async function postToLinkedIn(
+  text: string,
+  token: string,
+  authorUrn: string,
+  media?: LinkedInMedia,
+): Promise<{ postUrn: string; postUrl: string }> {
   const res = await fetch('https://api.linkedin.com/rest/posts', {
     method: 'POST',
     headers: {
@@ -65,6 +77,7 @@ async function postToLinkedIn(text: string, token: string, authorUrn: string): P
       },
       lifecycleState: 'PUBLISHED',
       isReshareDisabledByAuthor: false,
+      ...(media ? { content: { media: { id: media.id, ...(media.title ? { title: media.title } : {}) } } } : {}),
     }),
     signal: AbortSignal.timeout(30_000),
   });
@@ -166,24 +179,41 @@ Deno.serve(async (req) => {
       return ok({ skip: 'already posted today', date: ist.date });
     }
 
-    // 5. Find today's pending draft
+    // 5. Find today's pending draft (any format — text has linkedin_draft_text,
+    // image/video/carousel have linkedin_short_caption instead)
     const { data: draft, error: draftErr } = await supabase
       .from('blog_posts')
-      .select('id, blog_title, linkedin_draft_text, product_key, linkedin_slot_index, linkedin_cycle')
+      .select('id, blog_title, linkedin_draft_text, linkedin_short_caption, post_format, image_url, video_url, carousel_slide_urls, product_key, linkedin_slot_index, linkedin_cycle')
       .eq('org_id', config.org_id)
       .eq('publish_date', ist.date)
       .eq('status', 'pending')
-      .not('linkedin_draft_text', 'is', null)
+      .or('linkedin_draft_text.not.is.null,linkedin_short_caption.not.is.null')
       .maybeSingle();
 
     if (draftErr) return err(500, `Draft load error: ${draftErr.message}`);
     if (!draft) return ok({ skip: `no pending draft for today (${ist.date})` });
 
-    console.log(`[blog-poster] posting draft for ${ist.date} slot=${targetSlot} product=${draft.product_key}`);
+    const format = (draft.post_format as string) || 'text';
+    console.log(`[blog-poster] posting draft for ${ist.date} slot=${targetSlot} product=${draft.product_key} format=${format}`);
 
-    // 6. Post to LinkedIn
-    const { postUrn, postUrl } = await postToLinkedIn(draft.linkedin_draft_text, config.member_access_token, config.member_urn);
-    console.log(`[blog-poster] posted: ${postUrn}`);
+    // 6. Upload media (if any) and post to LinkedIn
+    const commentary = format === 'text' ? draft.linkedin_draft_text : draft.linkedin_short_caption;
+    let media: LinkedInMedia | undefined;
+
+    if (format === 'image' && draft.image_url) {
+      const id = await uploadImageToLinkedIn(config.member_access_token, config.member_urn, draft.image_url as string);
+      media = { id };
+    } else if (format === 'video' && draft.video_url) {
+      const id = await uploadVideoToLinkedIn(config.member_access_token, config.member_urn, draft.video_url as string);
+      media = { id };
+    } else if (format === 'carousel' && Array.isArray(draft.carousel_slide_urls) && draft.carousel_slide_urls.length) {
+      const pdfBytes = await buildCarouselPdf(draft.carousel_slide_urls as string[]);
+      const id = await uploadDocumentToLinkedIn(config.member_access_token, config.member_urn, pdfBytes);
+      media = { id, title: draft.blog_title as string };
+    }
+
+    const { postUrn, postUrl } = await postToLinkedIn(commentary, config.member_access_token, config.member_urn, media);
+    console.log(`[blog-poster] posted: ${postUrn} (format=${format})`);
 
     // 7. Update blog_post — replace placeholder URL with real LinkedIn URL
     await supabase

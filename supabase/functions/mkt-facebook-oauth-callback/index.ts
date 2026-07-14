@@ -67,10 +67,23 @@ Deno.serve(async (req) => {
     const pagesData = await pagesRes.json();
     const pages: Array<{ id: string; name: string; access_token: string }> = pagesData.data || [];
 
-    if (!pages.length) return html(`<h2>No Facebook Pages found for this account</h2><p>Make sure you're an admin of the In-Sync Page and approved it on the consent screen.</p>`, 400);
-
-    // Prefer a page whose name mentions "in-sync"; otherwise take the first.
-    const page = pages.find((p) => p.name.toLowerCase().includes('in-sync')) || pages[0];
+    let page: { id: string; name: string; access_token: string };
+    if (pages.length) {
+      // Prefer a page whose name mentions "in-sync"; otherwise take the first.
+      page = pages.find((p) => p.name.toLowerCase().includes('in-sync')) || pages[0];
+    } else {
+      // This Configuration granted only page-scoped permissions with a single
+      // Page asset selected, so Facebook Login for Business handed back a
+      // token whose "me" identity IS the Page itself rather than a personal
+      // user with a /me/accounts list. Use that identity directly.
+      const meRes = await fetch(
+        `https://graph.facebook.com/${FB_API_VERSION}/me?fields=id,name&access_token=${encodeURIComponent(userToken)}`,
+        { signal: AbortSignal.timeout(15_000) },
+      );
+      const meData = meRes.ok ? await meRes.json() : {};
+      if (!meData.id) return html(`<h2>Could not resolve a Page or user identity from this token</h2>`, 400);
+      page = { id: meData.id, name: meData.name ?? '', access_token: userToken };
+    }
 
     // 4. Resolve the linked Instagram Business account, if any
     const igRes = await fetch(
