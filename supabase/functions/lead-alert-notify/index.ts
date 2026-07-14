@@ -1,9 +1,14 @@
-// Instant new-lead alert to the business owner — email + WhatsApp + phone call,
-// fired in parallel the moment a lead lands anywhere in the fleet (currently:
-// globalcrm's web-lead-intake). This is the "brain": it owns the decision to
-// alert and how; the caller (globalcrm) only relays the raw event.
+// Instant new-lead alert to the business owner — email, then WhatsApp, then a
+// phone call, always one action at a time (never in parallel) the moment a lead
+// lands anywhere in the fleet (currently: globalcrm's web-lead-intake). This is
+// the "brain": it owns the decision to alert and how; the caller (globalcrm)
+// only relays the raw event.
+//
+// The call gets a retry-until-answered policy (max 3 attempts, ~60s apart, stops
+// the instant one is picked up) enforced by lead-alert-call-webhook — see there.
 import { sendViaResend } from '../_shared/resendEmailClient.ts';
 import { sendViaExotel, buildExotelPayload, formatPhoneE164 } from '../_shared/exotelWhatsApp.ts';
+import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -96,6 +101,16 @@ async function alertCall(lead: LeadPayload) {
         },
       }),
     });
+    const j = await r.json().catch(() => ({}));
+    // Seed attempt 1 of the retry state machine — lead-alert-call-webhook takes
+    // it from here (retry on no-answer/busy, stop the instant one is attended).
+    const supabase = getSupabaseClient();
+    await supabase.from('lead_alert_calls').insert({
+      lead,
+      attempt_number: 1,
+      bolna_execution_id: j.execution_id ?? null,
+      status: 'placed',
+    });
     return `call ${r.status}`;
   } catch (e) {
     return `call err ${e}`;
@@ -114,7 +129,10 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: 'lead payload missing name/phone/email' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const [email, wa, call] = await Promise.all([alertEmail(lead), alertWhatsApp(lead), alertCall(lead)]);
+    // Sequential, one action at a time — never fire channels concurrently.
+    const email = await alertEmail(lead);
+    const wa = await alertWhatsApp(lead);
+    const call = await alertCall(lead);
 
     console.log(`[lead-alert-notify] ${lead.name || 'unknown'}: ${email} | ${wa} | ${call}`);
 
