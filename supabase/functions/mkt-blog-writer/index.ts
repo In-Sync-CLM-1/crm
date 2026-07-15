@@ -462,6 +462,7 @@ interface CarouselContent {
   caption: string;         // short LinkedIn intro text accompanying the carousel
   slides: string[];        // exactly CAROUSEL_SLIDE_COUNT short slide lines
   image_keywords: string[];
+  slide_scenes: string[];  // one short visual scene per slide — each slide gets its OWN background image
   strategy_note: string;   // 2-3 sentences: why this angle, what data/logic anchors it
   sources?: SourceRef[];   // links to the reports/surveys quoted on the slides
 }
@@ -505,6 +506,8 @@ caption: a short LinkedIn intro (150-300 characters) that accompanies the carous
 
 image_keywords: 4 visual search terms for the background imagery style of this carousel (professional B2B, dramatising today's theme in an Indian business context).
 
+slide_scenes: exactly ${CAROUSEL_SLIDE_COUNT} entries, one per slide — a 3-6 word visual scene matching that slide's idea (e.g. "cluttered desk, many sticky notes", "team aligned around one dashboard"). Each slide gets its own background photo, so vary the scenes for visual rhythm while staying in one coherent visual family (same office world, same mood). Scenes must be purely visual descriptions of a single moment — never comparison words like "before/after" or "vs" (they trigger split layouts and text captions in the generated photo).
+
 strategy_note: 2-3 sentences for a human reviewer (not part of the post itself) explaining WHY this carousel was built this way — the angle used, and what data point/logic anchors the argument.
 
 Return JSON only:
@@ -513,6 +516,7 @@ Return JSON only:
   "caption": "short intro text as described above",
   "slides": ["slide 1 text", "slide 2 text", "...exactly ${CAROUSEL_SLIDE_COUNT} entries..."],
   "image_keywords": ["keyword1", "keyword2", "keyword3", "keyword4"],
+  "slide_scenes": ["scene for slide 1", "...exactly ${CAROUSEL_SLIDE_COUNT} entries..."],
   "strategy_note": "explanation as described above",
   ${SOURCE_JSON_FIELD}
 }`;
@@ -743,24 +747,40 @@ Deno.serve(async (req) => {
       };
 
     } else {
-      // 6d. Carousel — 8 short slides rendered as branded still images over an
-      // AI-generated background. The photo must read at full brightness: the
+      // 6d. Carousel — 8 short slides rendered as branded still images, each
+      // over its OWN AI-generated background (visual break between slides —
+      // user feedback 2026-07-15). The photo must read at full brightness: the
       // slide renderer only darkens the lower band where the text sits.
       const draft = await generateCarouselContent(product, icp, postSeq);
-      const bgImageUrl = await getPostImage(
-        draft.image_keywords,
-        '1:1',
-        'Bright, airy composition with generous negative space and a calm, uncluttered lower third — white display text will be overlaid near the bottom.',
+      const carouselExtra =
+        'Bright, natural composition with a calm, uncluttered lower third — white display text will be overlaid near the bottom. The image must contain zero text, zero lettering, zero labels, and must be a single continuous scene (never a split/side-by-side comparison layout).';
+      const scenes = Array.isArray(draft.slide_scenes) && draft.slide_scenes.length === draft.slides.length
+        ? draft.slide_scenes
+        : draft.slides.map(() => (draft.image_keywords || []).slice(0, 3).join(', '));
+
+      // One background per slide, generated concurrently. A failed generation
+      // falls back to the deck's first successful background (visual repeat
+      // beats failing the whole deck), then to a Pexels photo.
+      const bgUrls = await Promise.all(
+        scenes.map((scene, i) =>
+          generateGeminiImage(
+            buildImagePrompt([scene, ...(draft.image_keywords || []).slice(0, 2)], icpIndustries, carouselExtra),
+            '1:1',
+            `${r2Prefix}-slide${i + 1}`,
+          ),
+        ),
       );
+      const fallbackBg = bgUrls.find((u) => u) ||
+        await fetchPexelsImage(draft.image_keywords || []).catch(() => null);
 
       let slideUrls: (string | null)[] = draft.slides.map(() => null);
       const slideErrors: (string | null)[] = draft.slides.map(() => null);
-      if (bgImageUrl) {
-        console.log(`[blog-writer] rendering ${draft.slides.length} carousel slides`);
+      if (fallbackBg) {
+        console.log(`[blog-writer] rendering ${draft.slides.length} carousel slides (${bgUrls.filter(Boolean).length} unique backgrounds)`);
         slideUrls = await Promise.all(
           draft.slides.map(async (text, i) => {
             try {
-              const jpgBytes = await renderSlideImage(bgImageUrl, text, i + 1, draft.slides.length);
+              const jpgBytes = await renderSlideImage(bgUrls[i] || fallbackBg, text, i + 1, draft.slides.length);
               const key = `carousel/${targetDate}/${product.product_key}-${daySeq ?? 'force'}/slide-${i + 1}.jpg`;
               return await uploadToMarketingR2(key, jpgBytes, 'image/jpeg');
             } catch (e) {

@@ -22,7 +22,7 @@ export function buildImagePrompt(keywords: string[], industries: string, extra =
     `Professional editorial photograph for a B2B SaaS brand: ${scene}.`,
     `Indian workplace context — Indian professionals in a modern Indian office (${industries || 'business'} setting).`,
     'Natural light, shallow depth of field, photorealistic, high detail, muted corporate palette.',
-    'Absolutely no text, no words, no logos, no watermarks anywhere in the image.',
+    'The photograph must contain ZERO text of any kind — no words, lettering, numbers, labels, signage, logos, or watermarks — even if the scene concept implies a comparison or message. One single continuous scene, never a split/side-by-side layout.',
     extra,
   ].filter(Boolean).join(' ');
 }
