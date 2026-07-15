@@ -36,9 +36,9 @@ const FROM = "In-Sync Health Sentinel <notifications@in-sync.co.in>";
 //        never silent — this is the lesson from the fieldsync blank-screen
 //        outage). Set web:null to intentionally opt a backend-only project out.
 //   feedCheck: probe feed query visibility (catches silent feed filter failures)
-const META: Record<string, { name: string; dialer?: boolean; marketing?: boolean; feedCheck?: boolean; web?: string | null }> = {
+const META: Record<string, { name: string; dialer?: boolean; marketing?: boolean; demoConfirm?: boolean; feedCheck?: boolean; web?: string | null }> = {
   mlvgqudcwlkolsbighnn: { name: "crm (core)", marketing: true, web: "https://crm.in-sync.co.in" },
-  ejzjrvazegaxrhqizgaa: { name: "globalcrm", dialer: true, web: "https://globalcrm.in-sync.co.in" },
+  ejzjrvazegaxrhqizgaa: { name: "globalcrm", dialer: true, demoConfirm: true, web: "https://globalcrm.in-sync.co.in" },
   gwfofzqrfpwojejjodgz: { name: "event", web: "https://event.in-sync.co.in" },
   htdwkhtfdifwajdkkpul: { name: "ats", web: "https://ats-6t2.pages.dev" },
   oygyrpjjwtwvrdvxjzbg: { name: "vendorverification", web: "https://vendorverification.in-sync.co.in" },
@@ -229,9 +229,49 @@ async function checkDialer(ref: string): Promise<Check[]> {
   return out;
 }
 
+// Demo-side confirmation is an ACTION that lives in globalcrm (qualify call →
+// confirmation email/WA → reminders), not logic crm owns — but crm still
+// verifies it's actually happening. Catches exactly the class of bug found
+// 2026-07-14: 4 real demo requests sat unresolved for a month because a failed
+// qualify call had no fallback, and nothing noticed. A lead stuck in "Demo
+// Requested" for a full day (well past any calling-window delay) means
+// SOMETHING in that chain silently broke.
+async function checkDemoConfirmation(ref: string): Promise<Check> {
+  const ORG = "61f7f96d-e80c-4d9b-a765-8eb32bd3c70d"; // In-Sync Demo / WorkSync
+  try {
+    const stuck = await sql(
+      ref,
+      `select c.first_name, c.last_name, c.created_at
+       from contacts c join pipeline_stages ps on ps.id = c.pipeline_stage_id
+       where ps.name = 'Demo Requested' and c.org_id = '${ORG}'
+         and c.created_at < now() - interval '24 hours'
+       order by c.created_at asc limit 10`,
+    );
+    if (stuck.length === 0) {
+      return { label: "Demo confirmation not stuck", status: "ok", detail: "no Demo Requested lead older than 24h" };
+    }
+    const names = stuck.map((r) => `${r.first_name} ${r.last_name || ''}`.trim()).join(", ");
+    return {
+      label: "Demo confirmation not stuck",
+      status: "fail",
+      detail: `${stuck.length} lead(s) stuck in Demo Requested >24h — never got a follow-up call, confirmation, or resolution: ${names}`,
+    };
+  } catch (e) {
+    return { label: "Demo confirmation not stuck", status: "warn", detail: String(e) };
+  }
+}
+
 async function checkMarketing(ref: string): Promise<Check> {
   // crm marketing engine heartbeat: a 401'd / paused cron suite goes silent.
   try {
+    // The B2B outreach/lead-gen engine was intentionally stopped 2026-07-14
+    // (dead lead sourcing had it polling for nothing, burning DB compute — see
+    // project_crm_marketing_engine_paused memory). Zero active campaigns means
+    // silence is EXPECTED, not a fault — report paused, skip the liveness check.
+    const active = await sql(ref, "select count(*) n from mkt_campaigns where status='active'");
+    if (Number(active[0]?.n || 0) === 0) {
+      return { label: "Marketing engine live", status: "ok", detail: "PAUSED — 0 active campaigns (intentionally stopped; not a fault)" };
+    }
     const rows = await sql(
       ref,
       "select count(*) n from mkt_sequence_actions where coalesce(sent_at, created_at) > now() - interval '24 hours'",
@@ -593,6 +633,7 @@ async function runProject(ref: string): Promise<{ ref: string; name: string; che
     checks.push(await checkRegistration(ref));
     checks.push(await checkRlsExposure(ref));
     if (m.dialer) checks.push(...(await checkDialer(ref)));
+    if (m.demoConfirm) checks.push(await checkDemoConfirmation(ref));
     if (m.marketing) checks.push(await checkMarketing(ref));
     if (m.feedCheck) checks.push(await checkSmbFeed(ref));
     checks.push(...(await checkModules(ref)));
