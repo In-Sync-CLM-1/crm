@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/Layout/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,9 +12,121 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { LoadingState } from "@/components/common/LoadingState";
+import { useOrgContext } from "@/hooks/useOrgContext";
+import { useNotification } from "@/hooks/useNotification";
 import {
-  RefreshCw, MousePointerClick, Eye, FileText, BadgeCheck, Trophy, IndianRupee,
+  RefreshCw, MousePointerClick, Eye, FileText, BadgeCheck, Trophy, IndianRupee, Pause, Play,
 } from "lucide-react";
+
+interface GoogleAdsCampaign {
+  id: string;
+  google_campaign_id: string;
+  name: string;
+  status: string;
+  campaign_type: string | null;
+  budget_amount: number | null;
+  budget_currency: string | null;
+  cost: number | null;
+  clicks: number | null;
+  impressions: number | null;
+  conversions: number | null;
+  last_synced_at: string | null;
+}
+
+function CampaignControls() {
+  const { effectiveOrgId } = useOrgContext();
+  const notify = useNotification();
+  const queryClient = useQueryClient();
+
+  const { data: campaigns, isLoading } = useQuery({
+    queryKey: ["mkt-google-ads-campaigns", effectiveOrgId],
+    queryFn: async (): Promise<GoogleAdsCampaign[]> => {
+      if (!effectiveOrgId) return [];
+      const { data, error } = await supabase
+        .from("mkt_google_ads_campaigns")
+        .select("*")
+        .eq("org_id", effectiveOrgId)
+        .order("name");
+      if (error) throw error;
+      return data as GoogleAdsCampaign[];
+    },
+    enabled: !!effectiveOrgId,
+  });
+
+  const toggle = useMutation({
+    mutationFn: async ({ id, action }: { id: string; action: "pause" | "enable" }) => {
+      const { data, error } = await supabase.functions.invoke("mkt-google-ads-campaign-control", {
+        body: { campaign_row_id: id, action },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      notify.success(data.status === "PAUSED" ? "Campaign paused" : "Campaign resumed", data.campaign);
+      queryClient.invalidateQueries({ queryKey: ["mkt-google-ads-campaigns"] });
+    },
+    onError: (e: Error) => notify.error("Couldn't update campaign", e.message),
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Campaigns</CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Runs autonomously — pause anything here if you want to step in.
+        </p>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <LoadingState message="Loading campaigns..." />
+        ) : !campaigns?.length ? (
+          <p className="text-sm text-muted-foreground py-6 text-center">No Google Ads campaigns synced yet.</p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Campaign</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Daily Budget</TableHead>
+                <TableHead className="text-right">Spend</TableHead>
+                <TableHead className="text-right">Clicks</TableHead>
+                <TableHead className="text-right">Conversions</TableHead>
+                <TableHead className="text-right">Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {campaigns.map((c) => {
+                const isPaused = c.status === "PAUSED";
+                return (
+                  <TableRow key={c.id}>
+                    <TableCell className="font-medium">{c.name}</TableCell>
+                    <TableCell>
+                      <Badge variant={isPaused ? "secondary" : "default"}>{c.status}</Badge>
+                    </TableCell>
+                    <TableCell className="text-right">{inr(c.budget_amount)}</TableCell>
+                    <TableCell className="text-right">{inr(c.cost)}</TableCell>
+                    <TableCell className="text-right">{num(c.clicks)}</TableCell>
+                    <TableCell className="text-right">{num(c.conversions)}</TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={toggle.isPending}
+                        onClick={() => toggle.mutate({ id: c.id, action: isPaused ? "enable" : "pause" })}
+                      >
+                        {isPaused ? <><Play className="h-3.5 w-3.5 mr-1" /> Resume</> : <><Pause className="h-3.5 w-3.5 mr-1" /> Pause</>}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 const inr = (n: number | null | undefined) =>
   n == null ? "—" : `₹${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
@@ -86,6 +198,8 @@ export default function MarketingAdAnalytics() {
             </Button>
           </div>
         </div>
+
+        <CampaignControls />
 
         {isLoading ? (
           <LoadingState message="Loading ad analytics..." />
