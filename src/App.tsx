@@ -55,6 +55,7 @@ const ArohanChat = lazy(() => import("./pages/ArohanChat"));
 const EngineConfig = lazy(() => import("./pages/EngineConfig"));
 const ProductManagement = lazy(() => import("./pages/ProductManagement"));
 const ProductICP = lazy(() => import("./pages/ProductICP"));
+const ContentCalendar = lazy(() => import("./pages/ContentCalendar"));
 
 // Lazy loaded pages - Admin
 const ApprovalMatrix = lazy(() => import("./pages/ApprovalMatrix"));
@@ -250,6 +251,12 @@ const App = () => (
           <Route path="/marketing/arohan" element={
             <ProtectedRoute>
               <ArohanChat />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/marketing/content-calendar" element={
+            <ProtectedRoute>
+              <ContentCalendar />
             </ProtectedRoute>
           } />
 

@@ -216,6 +216,24 @@ interface BlogDraft {
   full_post: string;    // complete LinkedIn post text ≤2800 chars
   teaser: string;       // hook lines only, for blog_excerpt
   image_keywords: string[];
+  strategy_note: string; // 2-3 sentences: why this angle, what data/logic anchors it
+}
+
+// Rotating content angle, shared across every format so a reviewer can see the
+// same "why" regardless of whether that day's post is text/image/video/carousel.
+const CONTENT_ANGLES = [
+  'problem-focused: expose a costly, specific operational pain the ICP lives with daily',
+  'transformation-focused: show a before/after contrast with a concrete outcome metric',
+  'insight-focused: share a counterintuitive industry data point that reframes the problem',
+  'story-focused: walk through a real scenario (anonymised) the ICP will recognise',
+  'myth-busting: challenge a common assumption the ICP holds about this problem',
+  'cost-of-inaction: quantify what doing nothing costs — time, money, reputation',
+  'trend-focused: connect the product to a macro shift happening in the industry right now',
+  'question-led: open with a question the ICP has asked themselves but never resolved',
+  'social-proof-focused: describe the kind of outcomes peers in their industry are seeing',
+];
+function angleFor(dayIndex: number): string {
+  return CONTENT_ANGLES[dayIndex % CONTENT_ANGLES.length];
 }
 
 async function generateBlogPost(
@@ -228,18 +246,7 @@ async function generateBlogPost(
   const painPoints = Array.isArray(icp?.pain_points) ? (icp.pain_points as string[]).slice(0, 3).join('; ') : '';
   const ahaEvent = typeof icp?.aha_event === 'string' ? icp.aha_event : '';
 
-  const angles = [
-    'problem-focused: expose a costly, specific operational pain the ICP lives with daily',
-    'transformation-focused: show a before/after contrast with a concrete outcome metric',
-    'insight-focused: share a counterintuitive industry data point that reframes the problem',
-    'story-focused: walk through a real scenario (anonymised) the ICP will recognise',
-    'myth-busting: challenge a common assumption the ICP holds about this problem',
-    'cost-of-inaction: quantify what doing nothing costs — time, money, reputation',
-    'trend-focused: connect the product to a macro shift happening in the industry right now',
-    'question-led: open with a question the ICP has asked themselves but never resolved',
-    'social-proof-focused: describe the kind of outcomes peers in their industry are seeing',
-  ];
-  const angleHint = angles[dayIndex % angles.length];
+  const angleHint = angleFor(dayIndex);
 
   const prompt = `You are Arohan, the autonomous marketing AI for In-Sync, a B2B SaaS company.
 
@@ -286,12 +293,15 @@ FORMAT RULES:
 
 image_keywords: 4 specific visual search terms that would find a compelling, professional B2B image for this post — think workplace scenarios, industry contexts, technology concepts. Avoid generic terms like "business" or "office".
 
+strategy_note: 2-3 sentences for a human reviewer (not part of the post itself) explaining WHY this post was built this way — name the angle you used and why it fits today, and name the specific data point(s)/source(s) you anchored it on and why they're credible for this audience.
+
 Return JSON only:
 {
   "title": "internal tracking title for this post, max 120 chars",
   "teaser": "the hook section only (first 3-4 lines)",
   "full_post": "complete post: hook + divider + body + cta_line + divider + hashtags, ≤2800 chars",
-  "image_keywords": ["keyword1", "keyword2", "keyword3", "keyword4"]
+  "image_keywords": ["keyword1", "keyword2", "keyword3", "keyword4"],
+  "strategy_note": "explanation as described above"
 }`;
 
   const { data } = await callLLMJson<BlogDraft>(prompt, {
@@ -309,6 +319,7 @@ interface ShortCaption {
   title: string;         // internal tracking title
   caption: string;       // full LinkedIn post text, ≤600 chars
   image_keywords: string[];
+  strategy_note: string; // 2-3 sentences: why this angle, what data/logic anchors it
 }
 
 async function generateShortCaption(
@@ -320,12 +331,14 @@ async function generateShortCaption(
   const industries = Array.isArray(icp?.industries) ? (icp.industries as string[]).slice(0, 3).join(', ') : 'B2B';
   const designations = Array.isArray(icp?.designations) ? (icp.designations as string[]).slice(0, 3).join(', ') : 'decision makers';
   const painPoints = Array.isArray(icp?.pain_points) ? (icp.pain_points as string[]).slice(0, 3).join('; ') : '';
+  const angleHint = angleFor(dayIndex);
 
   const prompt = `You are Arohan, the autonomous marketing AI for In-Sync, a B2B SaaS company.
 
 PRODUCT: ${product.product_name}
 ICP ROLES: ${designations} in ${industries}
 PAIN POINTS: ${painPoints}
+ANGLE FOR TODAY: ${angleHint}
 
 Write a SHORT LinkedIn caption to accompany a ${mediaKind === 'video' ? 'short vertical video' : 'photo'} post. The visual carries the message — this caption should NOT try to be a full essay.
 
@@ -334,14 +347,18 @@ RULES:
 - Open with a hook line, one supporting line, then a soft CTA line (no raw URL — say something like "link in comments")
 - End with 3-4 relevant hashtags on their own line
 - No markdown, no bullet points
+- Reflect today's angle even in this short form
 
 image_keywords: 4 specific visual search terms for a compelling B2B photo relevant to ${product.product_name} and ${industries}.
+
+strategy_note: 1-2 sentences for a human reviewer (not part of the post itself) explaining WHY this caption was framed this way given today's angle and the pain point it targets.
 
 Return JSON only:
 {
   "title": "internal tracking title, max 120 chars",
   "caption": "the full short caption as described above",
-  "image_keywords": ["keyword1", "keyword2", "keyword3", "keyword4"]
+  "image_keywords": ["keyword1", "keyword2", "keyword3", "keyword4"],
+  "strategy_note": "explanation as described above"
 }`;
 
   const { data } = await callLLMJson<ShortCaption>(prompt, {
@@ -360,6 +377,7 @@ interface CarouselContent {
   caption: string;         // short LinkedIn intro text accompanying the carousel
   slides: string[];        // exactly CAROUSEL_SLIDE_COUNT short slide lines
   image_keywords: string[];
+  strategy_note: string;   // 2-3 sentences: why this angle, what data/logic anchors it
 }
 
 async function generateCarouselContent(
@@ -370,12 +388,14 @@ async function generateCarouselContent(
   const industries = Array.isArray(icp?.industries) ? (icp.industries as string[]).slice(0, 3).join(', ') : 'B2B';
   const designations = Array.isArray(icp?.designations) ? (icp.designations as string[]).slice(0, 3).join(', ') : 'decision makers';
   const painPoints = Array.isArray(icp?.pain_points) ? (icp.pain_points as string[]).slice(0, 3).join('; ') : '';
+  const angleHint = angleFor(dayIndex);
 
   const prompt = `You are Arohan, the autonomous marketing AI for In-Sync, a B2B SaaS company.
 
 PRODUCT: ${product.product_name}
 ICP ROLES: ${designations} in ${industries}
 PAIN POINTS: ${painPoints}
+ANGLE FOR TODAY: ${angleHint}
 
 Write an ${CAROUSEL_SLIDE_COUNT}-slide LinkedIn carousel (swipeable slide deck) for the In-Sync page.
 
@@ -383,6 +403,7 @@ STRUCTURE (exactly ${CAROUSEL_SLIDE_COUNT} slides):
 - Slide 1: hook — a bold statement or question that stops the scroll
 - Slides 2-7: one idea per slide, building the argument (a stat, a pain point, a contrast, a mechanism, an outcome) — ${product.product_name} should appear naturally by slide 5 or 6 as the resolution
 - Slide 8: direct CTA — invite the reader to comment or check the link in comments
+- Build the deck around today's angle
 
 RULES PER SLIDE:
 - Max 100 characters per slide — these render as large title text on a slide image, not paragraphs
@@ -393,12 +414,15 @@ caption: a short LinkedIn intro (150-300 characters) that accompanies the carous
 
 image_keywords: 4 visual search terms for the background imagery style of this carousel (professional B2B, relevant to ${industries}).
 
+strategy_note: 2-3 sentences for a human reviewer (not part of the post itself) explaining WHY this carousel was built this way — the angle used, and what data point/logic anchors the argument.
+
 Return JSON only:
 {
   "title": "internal tracking title, max 120 chars",
   "caption": "short intro text as described above",
   "slides": ["slide 1 text", "slide 2 text", "...exactly ${CAROUSEL_SLIDE_COUNT} entries..."],
-  "image_keywords": ["keyword1", "keyword2", "keyword3", "keyword4"]
+  "image_keywords": ["keyword1", "keyword2", "keyword3", "keyword4"],
+  "strategy_note": "explanation as described above"
 }`;
 
   const { data } = await callLLMJson<CarouselContent>(prompt, {
@@ -520,6 +544,8 @@ Deno.serve(async (req) => {
       linkedin_slot_index: slotIndex,
       linkedin_cycle: cycle,
       post_format: postFormat,
+      content_angle: angleFor(daysForTarget),
+      content_icp_snapshot: icp || null,
     };
 
     let row: Record<string, unknown>;
@@ -545,6 +571,7 @@ Deno.serve(async (req) => {
         linkedin_draft_text: draft.full_post,
         image_url: imageUrl || null,
         video_url: videoUrl || null,
+        content_strategy_note: draft.strategy_note || null,
       };
 
     } else if (postFormat === 'image') {
@@ -558,6 +585,7 @@ Deno.serve(async (req) => {
         blog_excerpt: draft.caption,
         linkedin_short_caption: draft.caption,
         image_url: imageUrl || null,
+        content_strategy_note: draft.strategy_note || null,
       };
 
     } else if (postFormat === 'video') {
@@ -580,6 +608,7 @@ Deno.serve(async (req) => {
         linkedin_short_caption: draft.caption,
         image_url: imageUrl || null,
         video_url: videoUrl || null,
+        content_strategy_note: draft.strategy_note || null,
       };
 
     } else {
@@ -618,6 +647,7 @@ Deno.serve(async (req) => {
         carousel_slide_texts: draft.slides,
         carousel_slide_urls: slideUrls,
         image_url: slideUrls[0] || null,
+        content_strategy_note: draft.strategy_note || null,
       };
     }
 
