@@ -20,15 +20,16 @@ export function ScheduledPreviewDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Scheduled for {format(date, "MMMM d, yyyy")}</DialogTitle>
+          <DialogTitle>Scheduled for {format(date, "MMMM d, yyyy")} · {plan.slot_time} IST</DialogTitle>
           <DialogDescription>
-            Not written yet — the AI generates this the night before. This is the plan it will follow.
+            Not written yet — the AI writes content up to a week in advance, so this will appear here for review well before its posting time. This is the plan it will follow.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3 text-sm">
           <div className="flex items-center gap-2">
             <Badge>{plan.product_name}</Badge>
             <Badge variant="secondary">{plan.format}</Badge>
+            <Badge variant="outline">{plan.slot_time} IST</Badge>
           </div>
           <div>
             <div className="text-xs font-medium text-muted-foreground mb-1">Content angle</div>

@@ -9,7 +9,9 @@
  * Quota: each videos.insert costs ~1,600 units from 10,000/day free quota.
  * (~6 uploads/day on free tier)
  *
- * Required env vars: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN
+ * Required env vars: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, YOUTUBE_REFRESH_TOKEN
+ * (YOUTUBE_REFRESH_TOKEN is the youtube.upload-scoped token; the generic
+ * GOOGLE_REFRESH_TOKEN name is accepted as a fallback for compatibility.)
  */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/corsHeaders.ts';
@@ -44,9 +46,9 @@ async function getAccessToken(): Promise<string> {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
-      client_id: Deno.env.get('GOOGLE_CLIENT_ID') || '',
-      client_secret: Deno.env.get('GOOGLE_CLIENT_SECRET') || '',
-      refresh_token: Deno.env.get('GOOGLE_REFRESH_TOKEN') || '',
+      client_id: Deno.env.get('YOUTUBE_CLIENT_ID') || Deno.env.get('GOOGLE_CLIENT_ID') || '',
+      client_secret: Deno.env.get('YOUTUBE_CLIENT_SECRET') || Deno.env.get('GOOGLE_CLIENT_SECRET') || '',
+      refresh_token: Deno.env.get('YOUTUBE_REFRESH_TOKEN') || Deno.env.get('GOOGLE_REFRESH_TOKEN') || '',
       grant_type: 'refresh_token',
     }),
     signal: AbortSignal.timeout(10_000),
@@ -150,10 +152,13 @@ async function pollProcessing(videoId: string, accessToken: string): Promise<voi
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
-  const clientId = Deno.env.get('GOOGLE_CLIENT_ID');
-  const refreshToken = Deno.env.get('GOOGLE_REFRESH_TOKEN');
+  const clientId = Deno.env.get('YOUTUBE_CLIENT_ID') || Deno.env.get('GOOGLE_CLIENT_ID');
+  const refreshToken = Deno.env.get('YOUTUBE_REFRESH_TOKEN') || Deno.env.get('GOOGLE_REFRESH_TOKEN');
   if (!clientId || !refreshToken) {
-    return ok({ skip: 'GOOGLE_CLIENT_ID or GOOGLE_REFRESH_TOKEN not configured' });
+    // NOTE: this skip is silent by design for unconfigured channels — but the
+    // credential IS expected here, so log loudly to make a regression visible.
+    console.error('[social-youtube] SKIPPING — GOOGLE_CLIENT_ID or YOUTUBE_REFRESH_TOKEN missing');
+    return ok({ skip: 'GOOGLE_CLIENT_ID or YOUTUBE_REFRESH_TOKEN not configured' });
   }
 
   const supabase = createClient(

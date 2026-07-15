@@ -1,17 +1,17 @@
 /**
  * mkt-blog-poster — Arohan's LinkedIn publishing step.
  *
- * Called by 9 separate cron triggers (one per time slot). Each fires daily at its
- * designated IST time. Only one will match today's designated slot and post the
- * day's real draft.
+ * Called by 9 separate cron triggers (one per time slot). Each fires daily at
+ * its IST time. Every draft row carries its own linkedin_slot_index, and 4
+ * posts go out per day (each at a different slot) — so each cron firing posts
+ * whichever pending draft is assigned to the slot matching the current time.
  *
  * Flow:
- *  1. Load today's pending draft from blog_posts
- *  2. Check if current IST time matches today's designated slot (±20 min window)
- *  3. If yes → POST to LinkedIn → update blog_post to 'posted'
+ *  1. Load today's pending drafts from blog_posts
+ *  2. Pick the one whose assigned slot matches the current IST time (±20 min)
+ *  3. POST to LinkedIn → update that row to 'posted' → fan out FB/IG/YouTube
  *
- * The 9 slots are tested across 3 × 9-day cycles to find peak engagement time.
- * After 27 days the engagement tracker picks the winner and locks it in.
+ * force=true bypasses the time window and posts the earliest pending draft.
  */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/corsHeaders.ts';
@@ -158,43 +158,48 @@ Deno.serve(async (req) => {
       } catch { /* no body */ }
     }
 
-    // 2. Determine today's designated slot
-    const days = daysSince(config.start_date, ist.date);
-    const todaySlotIdx = days % 9;
     const slots = config.experiment_slots as string[];
-    const targetSlot = (config.experiment_complete && config.winning_slot)
-      ? config.winning_slot
-      : slots[todaySlotIdx];
 
-    // 3. Is it time? ±20 min window (skipped when force=true)
-    if (!force) {
-      const diff = Math.abs(ist.totalMinutes - slotMinutes(targetSlot));
-      if (diff > 20) {
-        return ok({ skip: `not time yet`, now_ist: ist.hhmm, target: targetSlot });
-      }
-    }
-
-    // 4. Check we haven't already posted today
-    if (config.last_posted_date === ist.date) {
-      return ok({ skip: 'already posted today', date: ist.date });
-    }
-
-    // 5. Find today's pending draft (any format — text has linkedin_draft_text,
-    // image/video/carousel have linkedin_short_caption instead)
-    const { data: draft, error: draftErr } = await supabase
+    // 2. Load today's pending drafts (any format — text has linkedin_draft_text,
+    // image/video/carousel have linkedin_short_caption instead). Multiple posts
+    // go out per day, each row carrying its own slot.
+    const { data: drafts, error: draftErr } = await supabase
       .from('blog_posts')
-      .select('id, blog_title, linkedin_draft_text, linkedin_short_caption, post_format, image_url, video_url, carousel_slide_urls, product_key, linkedin_slot_index, linkedin_cycle')
+      .select('id, blog_title, linkedin_draft_text, linkedin_short_caption, post_format, image_url, video_url, carousel_slide_urls, product_key, linkedin_slot_index, linkedin_cycle, day_seq')
       .eq('org_id', config.org_id)
       .eq('publish_date', ist.date)
       .eq('status', 'pending')
-      .or('linkedin_draft_text.not.is.null,linkedin_short_caption.not.is.null')
-      .maybeSingle();
+      .not('linkedin_slot_index', 'is', null)
+      .or('linkedin_draft_text.not.is.null,linkedin_short_caption.not.is.null');
 
     if (draftErr) return err(500, `Draft load error: ${draftErr.message}`);
-    if (!draft) return ok({ skip: `no pending draft for today (${ist.date})` });
+    if (!drafts?.length) return ok({ skip: `no pending drafts for today (${ist.date})` });
+
+    // 3. Pick the draft whose assigned slot matches NOW (±20 min). Slot times
+    // are ≥60 min apart so at most one draft can match. force=true posts the
+    // earliest pending draft regardless of time.
+    const bySlotTime = [...drafts].sort((a, b) =>
+      slotMinutes(slots[a.linkedin_slot_index % slots.length]) - slotMinutes(slots[b.linkedin_slot_index % slots.length]));
+
+    const draft = force
+      ? bySlotTime[0]
+      : bySlotTime.find((d) =>
+          Math.abs(ist.totalMinutes - slotMinutes(slots[d.linkedin_slot_index % slots.length])) <= 20);
+
+    if (!draft) {
+      return ok({
+        skip: 'no draft scheduled for this time',
+        now_ist: ist.hhmm,
+        pending_slots: bySlotTime.map((d) => slots[d.linkedin_slot_index % slots.length]),
+      });
+    }
+
+    const targetSlot = slots[draft.linkedin_slot_index % slots.length];
+    const days = daysSince(config.start_date, ist.date);
+    const todaySlotIdx = draft.linkedin_slot_index % slots.length;
 
     const format = (draft.post_format as string) || 'text';
-    console.log(`[blog-poster] posting draft for ${ist.date} slot=${targetSlot} product=${draft.product_key} format=${format}`);
+    console.log(`[blog-poster] posting draft for ${ist.date} seq=${draft.day_seq} slot=${targetSlot} product=${draft.product_key} format=${format}`);
 
     // 6. Upload media (if any) and post to LinkedIn
     const commentary = format === 'text' ? draft.linkedin_draft_text : draft.linkedin_short_caption;

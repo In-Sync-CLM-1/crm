@@ -22,7 +22,7 @@ import { useOrgContext } from "@/hooks/useOrgContext";
 import { LoadingState } from "@/components/common/LoadingState";
 import { PostDetailDialog, CalendarPost } from "@/components/Marketing/PostDetailDialog";
 import { ScheduledPreviewDialog } from "@/components/Marketing/ScheduledPreviewDialog";
-import { getScheduledPlan, ScheduledPlan } from "@/lib/contentSchedule";
+import { getScheduledPlans, ScheduledPlan, POSTS_PER_DAY } from "@/lib/contentSchedule";
 import { Clock } from "lucide-react";
 
 const statusDot: Record<string, string> = {
@@ -77,14 +77,24 @@ export default function ContentCalendar() {
     queryFn: async () => {
       if (!effectiveOrgId) return null;
       const [{ data: config }, { data: products }] = await Promise.all([
-        supabase.from("mkt_linkedin_config").select("start_date").eq("org_id", effectiveOrgId).eq("active", true).maybeSingle(),
+        supabase.from("mkt_linkedin_config").select("start_date, experiment_slots").eq("org_id", effectiveOrgId).eq("active", true).maybeSingle(),
         supabase.from("mkt_products").select("product_key, product_name").eq("org_id", effectiveOrgId).eq("active", true).order("product_key"),
       ]);
       if (!config?.start_date || !products?.length) return null;
-      return { startDate: config.start_date as string, products };
+      return {
+        startDate: config.start_date as string,
+        products,
+        slots: (config.experiment_slots as string[]) || [],
+      };
     },
     enabled: !!effectiveOrgId,
   });
+
+  const slotTime = (idx: number | null) => {
+    const slots = schedule?.slots || [];
+    if (idx == null || !slots.length) return null;
+    return slots[idx % slots.length];
+  };
 
   const postsByDay = useMemo(() => {
     const map = new Map<string, CalendarPost[]>();
@@ -93,8 +103,19 @@ export default function ContentCalendar() {
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(p);
     }
+    // Order each day's posts by their posting time so the cell reads like a timeline.
+    const slots = schedule?.slots || [];
+    if (slots.length) {
+      for (const list of map.values()) {
+        list.sort((a, b) => {
+          const ta = a.linkedin_slot_index != null ? slots[a.linkedin_slot_index % slots.length] : "99:99";
+          const tb = b.linkedin_slot_index != null ? slots[b.linkedin_slot_index % slots.length] : "99:99";
+          return ta.localeCompare(tb);
+        });
+      }
+    }
     return map;
-  }, [posts]);
+  }, [posts, schedule]);
 
   const openPost = (p: CalendarPost) => {
     setSelectedPost(p);
@@ -109,8 +130,9 @@ export default function ContentCalendar() {
             <h1 className="text-2xl font-bold">Content Calendar</h1>
             <p className="text-sm text-muted-foreground">
               Everything the marketing engine has written, posted, or has queued — LinkedIn, Facebook, Instagram, YouTube.
+              Content is prewritten a week ahead, 4 posts a day, each at its own time — so you can review and intervene before anything goes live.
               Posts go out automatically at their scheduled time unless you edit or skip them here.
-              Dashed entries on future dates are the planned product/format — not written yet, shown so you can review the rotation ahead of time.
+              Dashed entries are planned slots the AI hasn't written yet.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -148,9 +170,11 @@ export default function ContentCalendar() {
                 const dayPosts = postsByDay.get(key) || [];
                 const inMonth = isSameMonth(day, month);
                 const isFuture = day > new Date() && !isToday(day);
-                const plan = isFuture && dayPosts.length === 0 && schedule
-                  ? getScheduledPlan(schedule.startDate, key, schedule.products)
-                  : null;
+                // Future slots not yet written by the AI show as dashed planned entries.
+                const plans = isFuture && dayPosts.length < POSTS_PER_DAY && schedule
+                  ? getScheduledPlans(schedule.startDate, key, schedule.products, schedule.slots)
+                      .filter((pl) => !dayPosts.some((p) => p.day_seq === pl.day_seq))
+                  : [];
                 return (
                   <div
                     key={key}
@@ -160,29 +184,33 @@ export default function ContentCalendar() {
                     <div className="space-y-0.5">
                       {dayPosts.map((p) => {
                         const Icon = formatIcon[p.post_format] || Type;
+                        const time = slotTime(p.linkedin_slot_index);
                         return (
                           <button
                             key={p.id}
                             onClick={() => openPost(p)}
                             className="w-full flex items-center gap-1 text-left px-1 py-0.5 rounded hover:bg-accent truncate"
-                            title={p.blog_title || ""}
+                            title={`${time ? time + " IST — " : ""}${p.blog_title || ""}`}
                           >
                             <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${statusDot[p.status] || "bg-gray-300"}`} />
                             <Icon className="h-3 w-3 shrink-0" />
+                            {time && <span className="shrink-0 tabular-nums text-[10px] text-muted-foreground">{time}</span>}
                             <span className="truncate">{p.blog_title || p.post_format}</span>
                           </button>
                         );
                       })}
-                      {plan && (
+                      {plans.map((plan) => (
                         <button
+                          key={`plan-${plan.day_seq}`}
                           onClick={() => { setScheduledPreview({ date: day, plan }); setPreviewOpen(true); }}
                           className="w-full flex items-center gap-1 text-left px-1 py-0.5 rounded hover:bg-accent truncate text-muted-foreground border border-dashed"
                           title="Scheduled — not written yet"
                         >
                           <Clock className="h-3 w-3 shrink-0" />
+                          <span className="shrink-0 tabular-nums text-[10px]">{plan.slot_time}</span>
                           <span className="truncate">{plan.product_name} · {plan.format}</span>
                         </button>
-                      )}
+                      ))}
                     </div>
                   </div>
                 );

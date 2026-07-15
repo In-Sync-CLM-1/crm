@@ -1,13 +1,22 @@
 /**
- * mkt-blog-writer — Arohan's LinkedIn content generation step.
+ * mkt-blog-writer — Arohan's content generation step.
  *
- * Runs nightly at 9:30 PM IST (cron: 0 16 * * * UTC).
- * Picks tomorrow's product, generates a full LinkedIn post via Claude Sonnet,
- * fetches a matching image + video from Pexels, and saves everything as a
- * DRAFT in blog_posts (status='pending').
+ * Maintains a PREWRITTEN BUFFER: 4 posts per day for every day in the next
+ * 7 days (28 drafts), so a human can review and intervene well before
+ * anything goes live. Runs every 30 minutes (cron: star-slash-30 UTC) and tops the
+ * buffer up by ONE draft per invocation (media generation is heavy — a video
+ * draft can take ~2 minutes), oldest gap first. When the buffer is full it
+ * exits immediately.
  *
- * A separate function (mkt-blog-poster) picks up the draft and publishes it
- * to LinkedIn (+ Facebook, Instagram, YouTube) at the correct slot time.
+ * Each draft carries its own day_seq (0-3, position within the day) and
+ * linkedin_slot_index (posting time). Product/format/angle rotate on the
+ * global post sequence (day_index*4 + day_seq).
+ *
+ * Images: Gemini AI generation is the PRIMARY source (Indian-context
+ * editorial photography); Pexels stock is the fallback only.
+ *
+ * A separate function (mkt-blog-poster) publishes each draft to LinkedIn
+ * (+ Facebook, Instagram, YouTube) at its slot time.
  *
  * Can also be triggered manually by Arohan chat (force=true, product_key optional).
  */
@@ -16,9 +25,14 @@ import { callLLMJson } from '../_shared/llmClient.ts';
 import { corsHeaders } from '../_shared/corsHeaders.ts';
 import { renderSlideImage } from '../_shared/slideImage.ts';
 import { uploadToMarketingR2 } from '../_shared/r2Marketing.ts';
+import { buildImagePrompt, generateGeminiImage, GeminiAspect } from '../_shared/geminiImage.ts';
 
 const LINKEDIN_ORG_ID = Deno.env.get('LINKEDIN_ORG_ID') || '35932282';
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000; // UTC+5:30
+
+const POSTS_PER_DAY = 4;   // minimum postings per day (user requirement)
+const BUFFER_DAYS = 7;     // content prewritten at least a week ahead
+const SLOT_COUNT = 9;      // mkt_linkedin_config.experiment_slots length
 
 // Format rotation — 1 text : 2 image : 3 carousel : 2 video across 8 days.
 // Every night's post used to be a single long text block; this spreads the
@@ -481,26 +495,7 @@ Deno.serve(async (req) => {
     if (configErr) return err(500, `Config load error: ${configErr.message}`);
     if (!config) return ok({ skip: 'no active linkedin config' });
 
-    // 2. Draft is written for TOMORROW
-    const tomorrowIST = getIST(1);
-    const targetDate = forceMode ? getIST(0).date : tomorrowIST.date;
-
-    // 3. Check if draft already exists
-    if (!forceMode) {
-      const { data: existingDraft } = await supabase
-        .from('blog_posts')
-        .select('id')
-        .eq('org_id', config.org_id)
-        .eq('publish_date', targetDate)
-        .eq('status', 'pending')
-        .maybeSingle();
-
-      if (existingDraft) {
-        return ok({ skip: `draft for ${targetDate} already written` });
-      }
-    }
-
-    // 4. Pick product (round-robin)
+    // 2. Load products (needed for rotation before picking the gap)
     const { data: products, error: prodErr } = await supabase
       .from('mkt_products')
       .select('product_key, product_name, product_url')
@@ -511,14 +506,56 @@ Deno.serve(async (req) => {
     if (prodErr) return err(500, `Products load error: ${prodErr.message}`);
     if (!products?.length) return ok({ skip: 'no active products' });
 
-    const daysForTarget = daysSince(config.start_date, targetDate);
-    const product = forceProductKey
-      ? (products.find((p) => p.product_key === forceProductKey) ?? products[daysForTarget % products.length])
-      : products[daysForTarget % products.length];
+    // 3. Pick the target: force mode writes an extra post for TODAY; normal
+    // mode finds the oldest unfilled (date, day_seq) gap in the 7-day buffer
+    // and writes exactly one draft per invocation.
+    let targetDate: string;
+    let daySeq: number | null = null;
+    let gapsRemaining = 0;
 
-    const slotIndex = daysForTarget % 9;
-    const cycle = Math.floor(daysForTarget / 9) + 1;
-    const postFormat: PostFormat = forceFormat ?? FORMAT_CYCLE[daysForTarget % FORMAT_CYCLE.length];
+    if (forceMode) {
+      targetDate = getIST(0).date;
+    } else {
+      const bufferDates = Array.from({ length: BUFFER_DAYS }, (_, i) => getIST(i + 1).date);
+      const { data: existing, error: existErr } = await supabase
+        .from('blog_posts')
+        .select('publish_date, day_seq')
+        .eq('org_id', config.org_id)
+        .gte('publish_date', bufferDates[0])
+        .lte('publish_date', bufferDates[BUFFER_DAYS - 1])
+        .not('day_seq', 'is', null);
+
+      if (existErr) return err(500, `Buffer scan error: ${existErr.message}`);
+      const filled = new Set((existing || []).map((r) => `${r.publish_date}#${r.day_seq}`));
+
+      const gaps: Array<{ date: string; seq: number }> = [];
+      for (const date of bufferDates) {
+        for (let j = 0; j < POSTS_PER_DAY; j++) {
+          if (!filled.has(`${date}#${j}`)) gaps.push({ date, seq: j });
+        }
+      }
+      if (!gaps.length) {
+        return ok({ skip: 'buffer full', buffer_days: BUFFER_DAYS, posts_per_day: POSTS_PER_DAY });
+      }
+      targetDate = gaps[0].date;
+      daySeq = gaps[0].seq;
+      gapsRemaining = gaps.length - 1;
+    }
+
+    // 4. Rotation is keyed on the global post sequence so product, format,
+    // angle, and posting slot all vary WITHIN a day, not just across days.
+    const daysForTarget = daysSince(config.start_date, targetDate);
+    const postSeq = forceMode
+      ? daysForTarget * POSTS_PER_DAY
+      : daysForTarget * POSTS_PER_DAY + (daySeq as number);
+
+    const product = forceProductKey
+      ? (products.find((p) => p.product_key === forceProductKey) ?? products[postSeq % products.length])
+      : products[postSeq % products.length];
+
+    const slotIndex = postSeq % SLOT_COUNT;
+    const cycle = Math.floor(postSeq / SLOT_COUNT) + 1;
+    const postFormat: PostFormat = forceFormat ?? FORMAT_CYCLE[postSeq % FORMAT_CYCLE.length];
 
     // 5. Load latest ICP
     const { data: icp } = await supabase
@@ -530,21 +567,33 @@ Deno.serve(async (req) => {
       .limit(1)
       .maybeSingle();
 
-    console.log(`[blog-writer] writing for ${targetDate} product=${product.product_key} slot=${slotIndex} cycle=${cycle} format=${postFormat}`);
+    const icpIndustries = Array.isArray(icp?.industries) ? (icp!.industries as string[]).slice(0, 3).join(', ') : 'B2B';
 
-    const placeholderUrl = `draft://${LINKEDIN_ORG_ID}/${targetDate}/${product.product_key}`;
+    // Gemini AI image (primary) with Pexels stock as fallback.
+    const r2Prefix = `ai/${targetDate}/${product.product_key}-${daySeq ?? 'force'}-${Date.now()}`;
+    async function getPostImage(keywords: string[], aspect: GeminiAspect, extra = ''): Promise<string | null> {
+      const aiUrl = await generateGeminiImage(buildImagePrompt(keywords || [], icpIndustries, extra), aspect, r2Prefix);
+      if (aiUrl) return aiUrl;
+      console.warn('[blog-writer] Gemini image unavailable — falling back to Pexels');
+      return await fetchPexelsImage(keywords || []).catch(() => null);
+    }
+
+    console.log(`[blog-writer] writing for ${targetDate} seq=${daySeq} product=${product.product_key} slot=${slotIndex} cycle=${cycle} format=${postFormat}`);
+
+    const placeholderUrl = `draft://${LINKEDIN_ORG_ID}/${targetDate}/${product.product_key}/${daySeq ?? 'force'}`;
     const baseRow = {
       org_id: config.org_id,
       blog_url: placeholderUrl,
       product_key: product.product_key,
       publish_date: targetDate,
+      day_seq: daySeq,
       status: 'pending',
       social_posted: false,
       posted_timestamp: new Date().toISOString(),
       linkedin_slot_index: slotIndex,
       linkedin_cycle: cycle,
       post_format: postFormat,
-      content_angle: angleFor(daysForTarget),
+      content_angle: angleFor(postSeq),
       content_icp_snapshot: icp || null,
     };
 
@@ -552,9 +601,9 @@ Deno.serve(async (req) => {
 
     if (postFormat === 'text') {
       // 6a. Long-form text post — unchanged from the original design.
-      const draft = await generateBlogPost(product, icp, daysForTarget);
-      console.log(`[blog-writer] fetching media for keywords: ${draft.image_keywords?.join(', ')}`);
-      const imageUrl = await fetchPexelsImage(draft.image_keywords || []).catch(() => null);
+      const draft = await generateBlogPost(product, icp, postSeq);
+      console.log(`[blog-writer] generating media for keywords: ${draft.image_keywords?.join(', ')}`);
+      const imageUrl = await getPostImage(draft.image_keywords, '4:5');
       let videoUrl: string | null = null;
       if (imageUrl) {
         videoUrl = await generateShotstackVideo(imageUrl, draft.title).catch((e) => {
@@ -575,9 +624,9 @@ Deno.serve(async (req) => {
       };
 
     } else if (postFormat === 'image') {
-      // 6b. Image post — short caption, reuse the nightly Pexels image.
-      const draft = await generateShortCaption(product, icp, daysForTarget, 'image');
-      const imageUrl = await fetchPexelsImage(draft.image_keywords || []).catch(() => null);
+      // 6b. Image post — short caption + AI-generated editorial photo.
+      const draft = await generateShortCaption(product, icp, postSeq, 'image');
+      const imageUrl = await getPostImage(draft.image_keywords, '4:5');
 
       row = {
         ...baseRow,
@@ -589,9 +638,9 @@ Deno.serve(async (req) => {
       };
 
     } else if (postFormat === 'video') {
-      // 6c. Video post — short caption, reuse the nightly Shotstack video.
-      const draft = await generateShortCaption(product, icp, daysForTarget, 'video');
-      const imageUrl = await fetchPexelsImage(draft.image_keywords || []).catch(() => null);
+      // 6c. Video post — short caption; AI image becomes the video background.
+      const draft = await generateShortCaption(product, icp, postSeq, 'video');
+      const imageUrl = await getPostImage(draft.image_keywords, '9:16');
       let videoUrl: string | null = null;
       if (imageUrl) {
         videoUrl = await generateShotstackVideo(imageUrl, draft.title).catch((e) => {
@@ -612,9 +661,14 @@ Deno.serve(async (req) => {
       };
 
     } else {
-      // 6d. Carousel — 8 short slides rendered as branded still images.
-      const draft = await generateCarouselContent(product, icp, daysForTarget);
-      const bgImageUrl = await fetchPexelsImage(draft.image_keywords || []).catch(() => null);
+      // 6d. Carousel — 8 short slides rendered as branded still images over an
+      // AI-generated background designed for white text overlay.
+      const draft = await generateCarouselContent(product, icp, postSeq);
+      const bgImageUrl = await getPostImage(
+        draft.image_keywords,
+        '1:1',
+        'Dark, moody, low-contrast composition with soft shadows and generous negative space — designed as a background for white display text.',
+      );
 
       let slideUrls: (string | null)[] = draft.slides.map(() => null);
       const slideErrors: (string | null)[] = draft.slides.map(() => null);
@@ -623,8 +677,8 @@ Deno.serve(async (req) => {
         slideUrls = await Promise.all(
           draft.slides.map(async (text, i) => {
             try {
-              const jpgBytes = await renderSlideImage(bgImageUrl, text);
-              const key = `carousel/${targetDate}/${product.product_key}/slide-${i + 1}.jpg`;
+              const jpgBytes = await renderSlideImage(bgImageUrl, text, i + 1, draft.slides.length);
+              const key = `carousel/${targetDate}/${product.product_key}-${daySeq ?? 'force'}/slide-${i + 1}.jpg`;
               return await uploadToMarketingR2(key, jpgBytes, 'image/jpeg');
             } catch (e) {
               slideErrors[i] = e instanceof Error ? e.message : String(e);
@@ -655,18 +709,24 @@ Deno.serve(async (req) => {
     const { error: insertErr } = await supabase.from('blog_posts').insert(row);
 
     if (insertErr) {
+      // 23505 = another writer run filled this gap concurrently — not a failure.
+      if (insertErr.code === '23505') {
+        return ok({ skip: `gap ${targetDate}#${daySeq} filled by concurrent run` });
+      }
       console.error(`[blog-writer] insert error:`, insertErr.message);
       return err(500, insertErr.message);
     }
 
-    console.log(`[blog-writer] draft saved for ${targetDate} (${postFormat})`);
+    console.log(`[blog-writer] draft saved for ${targetDate}#${daySeq} (${postFormat}), ${gapsRemaining} gaps left`);
     return ok({
       success: true,
       product: product.product_key,
       publish_date: targetDate,
+      day_seq: daySeq,
       slot_index: slotIndex,
       cycle,
       format: postFormat,
+      gaps_remaining: gapsRemaining,
     });
 
   } catch (e) {

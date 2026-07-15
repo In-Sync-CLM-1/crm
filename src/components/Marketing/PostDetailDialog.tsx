@@ -32,6 +32,7 @@ export interface CalendarPost {
   linkedin_reposts: number | null;
   error_message: string | null;
   linkedin_slot_index: number | null;
+  day_seq: number | null;
   content_angle: string | null;
   content_strategy_note: string | null;
   content_icp_snapshot: { industries?: string[]; designations?: string[]; pain_points?: string[]; aha_event?: string } | null;

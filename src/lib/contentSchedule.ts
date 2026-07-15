@@ -1,7 +1,11 @@
 // Mirrors the rotation logic in supabase/functions/mkt-blog-writer/index.ts so
 // the Content Calendar can preview what will be written on a future day BEFORE
-// the AI actually writes it (blog_posts only ever holds tomorrow's row at most).
+// the AI actually writes it (the writer keeps a ~7-day prewritten buffer; days
+// beyond that only exist as this deterministic plan).
 // Keep in sync with that file if the rotation logic changes there.
+
+export const POSTS_PER_DAY = 4;
+export const BUFFER_DAYS = 7;
 
 export const CONTENT_ANGLES = [
   "problem-focused: expose a costly, specific operational pain the ICP lives with daily",
@@ -24,24 +28,33 @@ export function daysSince(dateStr: string, referenceDate: string): number {
 }
 
 export interface ScheduledPlan {
+  day_seq: number;
   product_key: string;
   product_name: string;
   format: string;
   angle: string;
+  slot_time: string; // HH:MM IST
 }
 
-export function getScheduledPlan(
+/** The 4 posts planned for a future day, each with its own posting time. */
+export function getScheduledPlans(
   startDate: string,
   targetDate: string,
   products: { product_key: string; product_name: string }[],
-): ScheduledPlan | null {
-  if (!products.length) return null;
+  slots: string[],
+): ScheduledPlan[] {
+  if (!products.length || !slots.length) return [];
   const dayIndex = daysSince(startDate, targetDate);
-  const product = products[dayIndex % products.length];
-  return {
-    product_key: product.product_key,
-    product_name: product.product_name,
-    format: FORMAT_CYCLE[dayIndex % FORMAT_CYCLE.length],
-    angle: CONTENT_ANGLES[dayIndex % CONTENT_ANGLES.length],
-  };
+  return Array.from({ length: POSTS_PER_DAY }, (_, j) => {
+    const seq = dayIndex * POSTS_PER_DAY + j;
+    const product = products[seq % products.length];
+    return {
+      day_seq: j,
+      product_key: product.product_key,
+      product_name: product.product_name,
+      format: FORMAT_CYCLE[seq % FORMAT_CYCLE.length],
+      angle: CONTENT_ANGLES[seq % CONTENT_ANGLES.length],
+      slot_time: slots[seq % slots.length],
+    };
+  });
 }
