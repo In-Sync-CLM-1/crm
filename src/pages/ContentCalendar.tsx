@@ -21,6 +21,9 @@ import {
 import { useOrgContext } from "@/hooks/useOrgContext";
 import { LoadingState } from "@/components/common/LoadingState";
 import { PostDetailDialog, CalendarPost } from "@/components/Marketing/PostDetailDialog";
+import { ScheduledPreviewDialog } from "@/components/Marketing/ScheduledPreviewDialog";
+import { getScheduledPlan, ScheduledPlan } from "@/lib/contentSchedule";
+import { Clock } from "lucide-react";
 
 const statusDot: Record<string, string> = {
   pending: "bg-blue-500",
@@ -42,6 +45,8 @@ export default function ContentCalendar() {
   const [month, setMonth] = useState(new Date());
   const [selectedPost, setSelectedPost] = useState<CalendarPost | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [scheduledPreview, setScheduledPreview] = useState<{ date: Date; plan: ScheduledPlan } | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const rangeStart = startOfWeek(startOfMonth(month));
   const rangeEnd = endOfWeek(endOfMonth(month));
@@ -60,6 +65,23 @@ export default function ContentCalendar() {
         .order("publish_date", { ascending: true });
       if (error) throw error;
       return data as CalendarPost[];
+    },
+    enabled: !!effectiveOrgId,
+  });
+
+  // Future schedule preview — the rotation is deterministic, so we can show what
+  // WILL be written on a future day even before blog_posts has a row for it
+  // (the writer only ever creates tomorrow's row, the night before).
+  const { data: schedule } = useQuery({
+    queryKey: ["content-calendar-schedule", effectiveOrgId],
+    queryFn: async () => {
+      if (!effectiveOrgId) return null;
+      const [{ data: config }, { data: products }] = await Promise.all([
+        supabase.from("mkt_linkedin_config").select("start_date").eq("org_id", effectiveOrgId).eq("active", true).maybeSingle(),
+        supabase.from("mkt_products").select("product_key, product_name").eq("org_id", effectiveOrgId).eq("active", true).order("product_key"),
+      ]);
+      if (!config?.start_date || !products?.length) return null;
+      return { startDate: config.start_date as string, products };
     },
     enabled: !!effectiveOrgId,
   });
@@ -88,6 +110,7 @@ export default function ContentCalendar() {
             <p className="text-sm text-muted-foreground">
               Everything the marketing engine has written, posted, or has queued — LinkedIn, Facebook, Instagram, YouTube.
               Posts go out automatically at their scheduled time unless you edit or skip them here.
+              Dashed entries on future dates are the planned product/format — not written yet, shown so you can review the rotation ahead of time.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -124,6 +147,10 @@ export default function ContentCalendar() {
                 const key = format(day, "yyyy-MM-dd");
                 const dayPosts = postsByDay.get(key) || [];
                 const inMonth = isSameMonth(day, month);
+                const isFuture = day > new Date() && !isToday(day);
+                const plan = isFuture && dayPosts.length === 0 && schedule
+                  ? getScheduledPlan(schedule.startDate, key, schedule.products)
+                  : null;
                 return (
                   <div
                     key={key}
@@ -146,6 +173,16 @@ export default function ContentCalendar() {
                           </button>
                         );
                       })}
+                      {plan && (
+                        <button
+                          onClick={() => { setScheduledPreview({ date: day, plan }); setPreviewOpen(true); }}
+                          className="w-full flex items-center gap-1 text-left px-1 py-0.5 rounded hover:bg-accent truncate text-muted-foreground border border-dashed"
+                          title="Scheduled — not written yet"
+                        >
+                          <Clock className="h-3 w-3 shrink-0" />
+                          <span className="truncate">{plan.product_name} · {plan.format}</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -156,6 +193,12 @@ export default function ContentCalendar() {
       </div>
 
       <PostDetailDialog post={selectedPost} open={detailOpen} onOpenChange={setDetailOpen} />
+      <ScheduledPreviewDialog
+        date={scheduledPreview?.date ?? null}
+        plan={scheduledPreview?.plan ?? null}
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+      />
     </DashboardLayout>
   );
 }
