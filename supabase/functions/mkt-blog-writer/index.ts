@@ -233,6 +233,33 @@ interface BlogDraft {
   strategy_note: string; // 2-3 sentences: why this angle, what data/logic anchors it
 }
 
+// ── Brand-led strategy (2026-07-15) ─────────────────────────────────────────
+// Every post promotes the In-Sync PLATFORM story; individual products appear
+// only as proof points inside the narrative, never as standalone offerings.
+// Narrative and proof points are lifted from the website home page — keep in
+// sync with in-sync.co.in if the positioning there changes.
+const BRAND_STORY = `BRAND: In-Sync (in-sync.co.in) — "Run your entire business on one platform."
+CORE NARRATIVE: Growing Indian businesses run on spreadsheets, WhatsApp groups, and ten disconnected tools. Every gap between those tools leaks money, time, customers, and reputation. In-Sync replaces them with focused apps that share one backbone — your contacts, your channels, your data.
+PROOF POINTS:
+- One platform, ten products — start with the one that hurts most, the others plug straight in
+- Built for India from day one: WhatsApp Business API, Aadhaar/PAN verification, Razorpay payments, Indian telephony built in, not bolted on
+- AI where it earns its keep: AI calling agents, lead scoring, document analysis woven into the workflows, not sold as an add-on
+- Live in days, not months: CSV imports, guided setup, per-user pricing that makes sense for growing teams
+- Trusted across 8+ industries and 60+ cities in India`;
+
+// The five brand story pillars. Rotates per post (like angle/format) so the
+// week covers the whole story; stored on the row as content_theme for review.
+const CONTENT_THEMES = [
+  'operational efficiency: work should flow through one system instead of being retyped, forwarded, and chased across disconnected tools',
+  'cost of fragmentation (loss): the silent leaks — enquiries that die in WhatsApp groups, payments that slip, hours burned reconciling tools that do not talk to each other',
+  'brand image: slow replies, missed follow-ups, and inconsistent customer experience quietly teach customers the business is not reliable',
+  'team alignment: everyone working from one truth — same contacts, same status, same priorities — instead of private spreadsheets and forgotten threads',
+  'productivity: fewer tools, fewer tabs, fewer handoffs — people spend their day on customers, not on coordination',
+];
+function themeFor(postSeq: number): string {
+  return CONTENT_THEMES[postSeq % CONTENT_THEMES.length];
+}
+
 // Rotating content angle, shared across every format so a reviewer can see the
 // same "why" regardless of whether that day's post is text/image/video/carousel.
 const CONTENT_ANGLES = [
@@ -261,40 +288,42 @@ async function generateBlogPost(
   const ahaEvent = typeof icp?.aha_event === 'string' ? icp.aha_event : '';
 
   const angleHint = angleFor(dayIndex);
+  const themeHint = themeFor(dayIndex);
 
-  const prompt = `You are Arohan, the autonomous marketing AI for In-Sync, a B2B SaaS company.
+  const prompt = `You are Arohan, the autonomous marketing AI for In-Sync, a B2B SaaS platform company.
 
-PRODUCT: ${product.product_name}
-PRODUCT URL: ${product.product_url}
-ICP INDUSTRIES: ${industries}
-ICP ROLES: ${designations}
-PAIN POINTS: ${painPoints}
-AHA MOMENT: ${ahaEvent}
-ANGLE FOR TODAY: ${angleHint}
+${BRAND_STORY}
 
-Write a high-engagement LinkedIn thought leadership post for the In-Sync company page.
+THEME FOR TODAY (the story pillar this post must serve): ${themeHint}
+ANGLE FOR TODAY (the rhetorical approach): ${angleHint}
+EXAMPLE PRODUCT (proof point only): ${product.product_name}
+AUDIENCE: ${designations} in ${industries}
+THEIR PAIN POINTS: ${painPoints}
+${ahaEvent ? `AHA MOMENT: ${ahaEvent}` : ''}
 
-PRIMARY OBJECTIVE: Drive the reader to visit ${product.product_url} and click the trial/demo button. Engagement (likes, comments) is secondary. The post succeeds only when it creates enough credibility and curiosity that the reader wants to see the product.
+Write a high-engagement LinkedIn thought leadership post promoting the In-Sync BRAND and platform story — NOT a pitch for any single product.
+
+PRIMARY OBJECTIVE: Make the reader recognise the cost of running their business on disconnected tools, and want to see how one platform changes that. Drive them toward in-sync.co.in and a demo. Engagement (likes, comments) is secondary.
 
 CONTENT STANDARDS:
 1. Every factual claim must be based on verifiable, real-world data. Use actual statistics from published research, government reports, or well-known analysts (Gartner, McKinsey, NASSCOM, RBI, Forrester, etc.). Cite the source inline naturally (e.g. "According to a 2024 NASSCOM report..."). Do NOT fabricate numbers.
 2. Write specifically for ${designations} in ${industries} — use their exact vocabulary, their operational context, their real daily frustrations. Avoid generic B2B language.
-3. The product mention must feel earned, not forced. Introduce ${product.product_name} as the logical conclusion to the argument you've built.
+3. THE PLATFORM IS THE HERO. Do not position ${product.product_name} as a standalone offering. Where the argument needs a concrete example, use ${product.product_name} in ONE paragraph as a proof point of what "one backbone" looks like in practice — then return to the platform story.
 
 STRUCTURE:
 
 HOOK (3-4 lines, ≤220 chars total):
-Stop the scroll. Open with a verified statistic, a counterintuitive truth, or a direct challenge to a common assumption. Must name a specific pain the ICP recognises immediately.
+Stop the scroll. Open with a verified statistic, a counterintuitive truth, or a direct challenge to a common assumption. Must name a specific pain the audience recognises immediately, framed through today's theme.
 
 BODY (8-12 paragraphs, ≤1900 chars total):
 - Each paragraph: 1-3 lines, one idea, no bullet points
-- Build the argument: problem depth → why existing approaches fail → what the shift looks like
+- Build the argument through today's theme: the cost of fragmentation → why adding more disconnected tools fails → what running on one platform changes
 - Include at least 2 real data points with source attribution
-- One paragraph naturally introduces ${product.product_name} as the mechanism for the shift
+- One paragraph uses ${product.product_name} as the concrete proof point (see standard 3)
 - Final paragraph: a specific, direct question that makes the reader want to comment
 
 CTA LINE (1 line):
-Natural, non-pushy. Directs to the product without including the actual URL in the post body (LinkedIn deprioritises posts with external links). Example: "We built ${product.product_name} for exactly this — link in comments."
+Natural, non-pushy. Directs to the In-Sync platform without including the actual URL in the post body (LinkedIn deprioritises posts with external links). Example: "This is exactly why we built In-Sync as one platform — link in comments."
 
 HASHTAGS (4-5, one line):
 Industry-specific + product-specific mix.
@@ -346,26 +375,30 @@ async function generateShortCaption(
   const designations = Array.isArray(icp?.designations) ? (icp.designations as string[]).slice(0, 3).join(', ') : 'decision makers';
   const painPoints = Array.isArray(icp?.pain_points) ? (icp.pain_points as string[]).slice(0, 3).join('; ') : '';
   const angleHint = angleFor(dayIndex);
+  const themeHint = themeFor(dayIndex);
 
-  const prompt = `You are Arohan, the autonomous marketing AI for In-Sync, a B2B SaaS company.
+  const prompt = `You are Arohan, the autonomous marketing AI for In-Sync, a B2B SaaS platform company.
 
-PRODUCT: ${product.product_name}
-ICP ROLES: ${designations} in ${industries}
-PAIN POINTS: ${painPoints}
-ANGLE FOR TODAY: ${angleHint}
+${BRAND_STORY}
 
-Write a SHORT LinkedIn caption to accompany a ${mediaKind === 'video' ? 'short vertical video' : 'photo'} post. The visual carries the message — this caption should NOT try to be a full essay.
+THEME FOR TODAY (the story pillar this post must serve): ${themeHint}
+ANGLE FOR TODAY (the rhetorical approach): ${angleHint}
+EXAMPLE PRODUCT (proof point only, optional in this short form): ${product.product_name}
+AUDIENCE: ${designations} in ${industries}
+THEIR PAIN POINTS: ${painPoints}
+
+Write a SHORT LinkedIn caption to accompany a ${mediaKind === 'video' ? 'short vertical video' : 'photo'} post promoting the In-Sync BRAND — the one-platform story — NOT a pitch for any single product. The visual carries the message; this caption should NOT try to be a full essay.
 
 RULES:
 - 2-4 short lines, 250-450 characters total
-- Open with a hook line, one supporting line, then a soft CTA line (no raw URL — say something like "link in comments")
-- End with 3-4 relevant hashtags on their own line
+- Open with a hook line built on today's theme, one supporting line, then a soft CTA line toward In-Sync (no raw URL — say something like "link in comments")
+- End with 3-4 relevant hashtags on their own line (brand/theme hashtags, not product ones)
 - No markdown, no bullet points
-- Reflect today's angle even in this short form
+- The platform is the hero; mention ${product.product_name} only if it fits naturally as a quick example
 
-image_keywords: 4 specific visual search terms for a compelling B2B photo relevant to ${product.product_name} and ${industries}.
+image_keywords: 4 specific visual search terms for a compelling B2B photo that dramatises today's theme in an Indian business context (e.g. the chaos of disconnected tools, or a team aligned around one screen).
 
-strategy_note: 1-2 sentences for a human reviewer (not part of the post itself) explaining WHY this caption was framed this way given today's angle and the pain point it targets.
+strategy_note: 1-2 sentences for a human reviewer (not part of the post itself) explaining WHY this caption was framed this way given today's theme, angle, and the pain point it targets.
 
 Return JSON only:
 {
@@ -403,30 +436,34 @@ async function generateCarouselContent(
   const designations = Array.isArray(icp?.designations) ? (icp.designations as string[]).slice(0, 3).join(', ') : 'decision makers';
   const painPoints = Array.isArray(icp?.pain_points) ? (icp.pain_points as string[]).slice(0, 3).join('; ') : '';
   const angleHint = angleFor(dayIndex);
+  const themeHint = themeFor(dayIndex);
 
-  const prompt = `You are Arohan, the autonomous marketing AI for In-Sync, a B2B SaaS company.
+  const prompt = `You are Arohan, the autonomous marketing AI for In-Sync, a B2B SaaS platform company.
 
-PRODUCT: ${product.product_name}
-ICP ROLES: ${designations} in ${industries}
-PAIN POINTS: ${painPoints}
-ANGLE FOR TODAY: ${angleHint}
+${BRAND_STORY}
 
-Write an ${CAROUSEL_SLIDE_COUNT}-slide LinkedIn carousel (swipeable slide deck) for the In-Sync page.
+THEME FOR TODAY (the story pillar this deck must serve): ${themeHint}
+ANGLE FOR TODAY (the rhetorical approach): ${angleHint}
+EXAMPLE PRODUCT (proof point only): ${product.product_name}
+AUDIENCE: ${designations} in ${industries}
+THEIR PAIN POINTS: ${painPoints}
+
+Write an ${CAROUSEL_SLIDE_COUNT}-slide LinkedIn carousel (swipeable slide deck) promoting the In-Sync BRAND — the one-platform story — NOT a pitch for any single product.
 
 STRUCTURE (exactly ${CAROUSEL_SLIDE_COUNT} slides):
-- Slide 1: hook — a bold statement or question that stops the scroll
-- Slides 2-7: one idea per slide, building the argument (a stat, a pain point, a contrast, a mechanism, an outcome) — ${product.product_name} should appear naturally by slide 5 or 6 as the resolution
+- Slide 1: hook — a bold statement or question built on today's theme that stops the scroll
+- Slides 2-7: one idea per slide, building the argument (a stat, the cost of fragmentation, a contrast, what one backbone changes, an outcome) — In-Sync the platform appears by slide 5 or 6 as the resolution, with ${product.product_name} usable as a one-slide concrete example
 - Slide 8: direct CTA — invite the reader to comment or check the link in comments
-- Build the deck around today's angle
+- Build the deck around today's theme; never position any product as a standalone offering
 
 RULES PER SLIDE:
 - Max 100 characters per slide — these render as large title text on a slide image, not paragraphs
 - No slide numbers, no markdown
 - Punchy, declarative, one idea only
 
-caption: a short LinkedIn intro (150-300 characters) that accompanies the carousel post — a hook line plus 3-4 hashtags, no need to repeat the slide content.
+caption: a short LinkedIn intro (150-300 characters) that accompanies the carousel post — a hook line plus 3-4 hashtags (brand/theme hashtags, not product ones), no need to repeat the slide content.
 
-image_keywords: 4 visual search terms for the background imagery style of this carousel (professional B2B, relevant to ${industries}).
+image_keywords: 4 visual search terms for the background imagery style of this carousel (professional B2B, dramatising today's theme in an Indian business context).
 
 strategy_note: 2-3 sentences for a human reviewer (not part of the post itself) explaining WHY this carousel was built this way — the angle used, and what data point/logic anchors the argument.
 
@@ -594,6 +631,7 @@ Deno.serve(async (req) => {
       linkedin_cycle: cycle,
       post_format: postFormat,
       content_angle: angleFor(postSeq),
+      content_theme: themeFor(postSeq),
       content_icp_snapshot: icp || null,
     };
 

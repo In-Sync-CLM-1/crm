@@ -1,6 +1,6 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { ScheduledPlan } from "@/lib/contentSchedule";
+import { ScheduledPlan, themeLabel } from "@/lib/contentSchedule";
 import { format } from "date-fns";
 
 export function ScheduledPreviewDialog({
@@ -26,14 +26,22 @@ export function ScheduledPreviewDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3 text-sm">
-          <div className="flex items-center gap-2">
-            <Badge>{plan.product_name}</Badge>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Badge>{themeLabel(plan.theme)}</Badge>
             <Badge variant="secondary">{plan.format}</Badge>
             <Badge variant="outline">{plan.slot_time} IST</Badge>
           </div>
           <div>
+            <div className="text-xs font-medium text-muted-foreground mb-1">Brand theme</div>
+            <p className="text-foreground">{plan.theme}</p>
+          </div>
+          <div>
             <div className="text-xs font-medium text-muted-foreground mb-1">Content angle</div>
             <p className="text-foreground">{plan.angle}</p>
+          </div>
+          <div>
+            <div className="text-xs font-medium text-muted-foreground mb-1">Proof-point product</div>
+            <p className="text-foreground">{plan.product_name} — woven in as an example, not pitched standalone</p>
           </div>
         </div>
       </DialogContent>

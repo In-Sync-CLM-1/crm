@@ -22,7 +22,7 @@ import { useOrgContext } from "@/hooks/useOrgContext";
 import { LoadingState } from "@/components/common/LoadingState";
 import { PostDetailDialog, CalendarPost } from "@/components/Marketing/PostDetailDialog";
 import { ScheduledPreviewDialog } from "@/components/Marketing/ScheduledPreviewDialog";
-import { getScheduledPlans, ScheduledPlan, POSTS_PER_DAY } from "@/lib/contentSchedule";
+import { getScheduledPlans, ScheduledPlan, POSTS_PER_DAY, themeLabel } from "@/lib/contentSchedule";
 import { Clock } from "lucide-react";
 
 const statusDot: Record<string, string> = {
@@ -208,7 +208,7 @@ export default function ContentCalendar() {
                         >
                           <Clock className="h-3 w-3 shrink-0" />
                           <span className="shrink-0 tabular-nums text-[10px]">{plan.slot_time}</span>
-                          <span className="truncate">{plan.product_name} · {plan.format}</span>
+                          <span className="truncate">{themeLabel(plan.theme)} · {plan.format}</span>
                         </button>
                       ))}
                     </div>

@@ -7,6 +7,21 @@
 export const POSTS_PER_DAY = 4;
 export const BUFFER_DAYS = 7;
 
+// Brand story pillars — every post serves one of these (platform is the hero,
+// products are proof points). Mirrors CONTENT_THEMES in mkt-blog-writer.
+export const CONTENT_THEMES = [
+  "operational efficiency: work should flow through one system instead of being retyped, forwarded, and chased across disconnected tools",
+  "cost of fragmentation (loss): the silent leaks — enquiries that die in WhatsApp groups, payments that slip, hours burned reconciling tools that do not talk to each other",
+  "brand image: slow replies, missed follow-ups, and inconsistent customer experience quietly teach customers the business is not reliable",
+  "team alignment: everyone working from one truth — same contacts, same status, same priorities — instead of private spreadsheets and forgotten threads",
+  "productivity: fewer tools, fewer tabs, fewer handoffs — people spend their day on customers, not on coordination",
+];
+
+/** Short label for a theme line ("operational efficiency: ..." → "operational efficiency"). */
+export function themeLabel(theme: string): string {
+  return theme.split(":")[0];
+}
+
 export const CONTENT_ANGLES = [
   "problem-focused: expose a costly, specific operational pain the ICP lives with daily",
   "transformation-focused: show a before/after contrast with a concrete outcome metric",
@@ -30,9 +45,10 @@ export function daysSince(dateStr: string, referenceDate: string): number {
 export interface ScheduledPlan {
   day_seq: number;
   product_key: string;
-  product_name: string;
+  product_name: string; // proof-point product woven into the brand story
   format: string;
   angle: string;
+  theme: string; // brand story pillar the post serves
   slot_time: string; // HH:MM IST
 }
 
@@ -54,6 +70,7 @@ export function getScheduledPlans(
       product_name: product.product_name,
       format: FORMAT_CYCLE[seq % FORMAT_CYCLE.length],
       angle: CONTENT_ANGLES[seq % CONTENT_ANGLES.length],
+      theme: CONTENT_THEMES[seq % CONTENT_THEMES.length],
       slot_time: slots[seq % slots.length],
     };
   });

@@ -33,6 +33,7 @@ export interface CalendarPost {
   error_message: string | null;
   linkedin_slot_index: number | null;
   day_seq: number | null;
+  content_theme: string | null;
   content_angle: string | null;
   content_strategy_note: string | null;
   content_icp_snapshot: { industries?: string[]; designations?: string[]; pain_points?: string[]; aha_event?: string } | null;
@@ -139,6 +140,9 @@ export function PostDetailDialog({
           {(post.content_angle || post.content_strategy_note || post.content_icp_snapshot) && (
             <div className="bg-violet-50 border border-violet-200 rounded p-3 space-y-1.5 text-sm">
               <div className="font-medium text-violet-900">Why this post was built this way</div>
+              {post.content_theme && (
+                <div className="text-violet-800"><span className="font-medium">Brand theme:</span> {post.content_theme}</div>
+              )}
               {post.content_angle && (
                 <div className="text-violet-800"><span className="font-medium">Angle:</span> {post.content_angle}</div>
               )}
