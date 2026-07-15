@@ -67,7 +67,6 @@ const WhatsAppSettings = lazy(() => import("./pages/WhatsAppSettings"));
 const EmailSettings = lazy(() => import("./pages/EmailSettings"));
 
 // Lazy loaded pages - Other
-const RedefineDataRepository = lazy(() => import("./pages/RedefineDataRepository"));
 const BillingSystem = lazy(() => import("./pages/BillingSystem"));
 const Accounting = lazy(() => import("./pages/Accounting"));
 const SupportTickets = lazy(() => import("./pages/SupportTickets"));
@@ -288,13 +287,6 @@ const App = () => (
           <Route path="/whatsapp-settings" element={
             <ProtectedRoute requiredRole="admin">
               <WhatsAppSettings />
-            </ProtectedRoute>
-          } />
-
-          {/* Other Routes */}
-          <Route path="/redefine-repository" element={
-            <ProtectedRoute>
-              <RedefineDataRepository />
             </ProtectedRoute>
           } />
 
