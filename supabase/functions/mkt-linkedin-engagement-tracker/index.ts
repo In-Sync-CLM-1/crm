@@ -14,16 +14,14 @@ interface Engagement {
   clicks: number;
 }
 
-async function fetchEngagement(postUrn: string, token: string): Promise<Engagement> {
+async function fetchEngagement(postUrn: string, token: string): Promise<Engagement | null> {
   // organizationalEntityShareStatistics requires organization-page access, which
   // this LinkedIn app doesn't have (posting happens as a member, not a company
-  // page). socialActions gives like/comment counts for any post regardless of
-  // author type, so that's the only source available here — impressions and
-  // reposts aren't exposed to member-level access.
-  return fetchEngagementFallback(postUrn, token);
-}
-
-async function fetchEngagementFallback(postUrn: string, token: string): Promise<Engagement> {
+  // page). socialActions was the intended fallback, but as of 2025 LinkedIn
+  // gates ALL of it (even like/comment counts) behind the partner program —
+  // verified 2026-07-15: GET summary/likes/comments each 403
+  // "partnerApiSocialActions". Returns null when unavailable so the caller
+  // records "unknown", never a fake zero.
   const encodedUrn = encodeURIComponent(postUrn);
   const res = await fetch(
     `https://api.linkedin.com/rest/socialActions/${encodedUrn}?fields=likesSummary,commentsSummary`,
@@ -37,7 +35,10 @@ async function fetchEngagementFallback(postUrn: string, token: string): Promise<
     },
   );
 
-  if (!res.ok) return { impressions: 0, likes: 0, comments: 0, reposts: 0, clicks: 0 };
+  if (!res.ok) {
+    console.warn(`[engagement-tracker] socialActions ${res.status} for ${postUrn} — engagement not available at this access level`);
+    return null;
+  }
 
   const data = await res.json();
   return {
@@ -344,6 +345,16 @@ Deno.serve(async (req) => {
         if (!post.linkedin_post_urn) continue;
 
         const eng = await fetchEngagement(post.linkedin_post_urn, token);
+        if (!eng) {
+          // Metrics unavailable (LinkedIn partner-gated) — mark the attempt so
+          // the row isn't retried forever, but leave every metric NULL:
+          // "unknown" must stay distinguishable from a real zero.
+          await supabase
+            .from('blog_posts')
+            .update({ linkedin_engagement_fetched_at: new Date().toISOString() })
+            .eq('id', post.id);
+          continue;
+        }
         const score = eng.likes * 1 + eng.comments * 3 + eng.reposts * 5;
 
         await supabase
