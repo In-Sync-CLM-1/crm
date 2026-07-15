@@ -171,9 +171,6 @@ verify_jwt = false
 [functions.lead-alert-call-webhook]
 verify_jwt = false
 
-[functions.daily-lead-scoring]
-verify_jwt = false
-
 [functions.analyze-campaign-performance]
 verify_jwt = false
 
