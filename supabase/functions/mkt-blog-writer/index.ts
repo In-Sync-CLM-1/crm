@@ -333,6 +333,7 @@ FORMAT RULES:
 - No markdown (no **, no ##, no leading dashes)
 - Blank line between each paragraph
 - Divider "───────────────" between HOOK and BODY, and between CTA and HASHTAGS
+- Inside the post text, use single quotes (') for quoted phrases — never double quotes, which break the JSON response
 
 image_keywords: 4 specific visual search terms that would find a compelling, professional B2B image for this post — think workplace scenarios, industry contexts, technology concepts. Avoid generic terms like "business" or "office".
 

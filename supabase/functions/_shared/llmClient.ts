@@ -200,32 +200,48 @@ export async function callLLM(
 /**
  * Call LLM and parse the response as JSON.
  * Handles markdown code fences that the LLM sometimes wraps JSON in.
+ * If the first response is not valid JSON (the usual culprit is an unescaped
+ * double quote inside a long string value), retries the call once with an
+ * explicit escaping reminder before giving up — long-form content generators
+ * hit this often enough that one retry meaningfully cuts failed runs.
  */
 export async function callLLMJson<T = unknown>(
   prompt: string,
   options: Omit<LLMOptions, 'json_mode'> = {}
 ): Promise<{ data: T; tokens: { input: number; output: number } }> {
-  const response = await callLLM(prompt, { ...options, json_mode: true });
+  let lastParseError: unknown = null;
+  let lastRaw = '';
 
-  let jsonStr = response.content.trim();
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const attemptPrompt = attempt === 1
+      ? prompt
+      : prompt + '\n\nCRITICAL: Your previous response was not valid JSON. Return strictly valid JSON. Escape any double quote inside a string value as \\" (better: use single quotes for quoted phrases inside text).';
 
-  // Strip markdown code fences if present
-  if (jsonStr.startsWith('```')) {
-    jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+    const response = await callLLM(attemptPrompt, { ...options, json_mode: true });
+
+    let jsonStr = response.content.trim();
+
+    // Strip markdown code fences if present
+    if (jsonStr.startsWith('```')) {
+      jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+    }
+
+    try {
+      const data = JSON.parse(jsonStr) as T;
+      return {
+        data,
+        tokens: {
+          input: response.input_tokens,
+          output: response.output_tokens,
+        },
+      };
+    } catch (parseError) {
+      lastParseError = parseError;
+      lastRaw = jsonStr;
+    }
   }
 
-  try {
-    const data = JSON.parse(jsonStr) as T;
-    return {
-      data,
-      tokens: {
-        input: response.input_tokens,
-        output: response.output_tokens,
-      },
-    };
-  } catch (parseError) {
-    throw new Error(
-      `Failed to parse LLM JSON response: ${parseError}. Raw content: ${jsonStr.substring(0, 200)}`
-    );
-  }
+  throw new Error(
+    `Failed to parse LLM JSON response after retry: ${lastParseError}. Raw content: ${lastRaw.substring(0, 200)}`
+  );
 }
