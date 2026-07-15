@@ -28,11 +28,6 @@ const Dashboard = lazy(() => import("./pages/Dashboard"));
 const ClientHub = lazy(() => import("./pages/ClientHub"));
 const ClientDetail = lazy(() => import("./pages/ClientDetail"));
 
-// Lazy loaded pages - Reports & Analytics (undecided — kept as-is for now)
-const Reports = lazy(() => import("./pages/Reports"));
-const ReportBuilder = lazy(() => import("./pages/ReportBuilder"));
-const SavedReports = lazy(() => import("./pages/SavedReports"));
-
 // Lazy loaded pages - Campaigns
 const Templates = lazy(() => import("./pages/Templates"));
 const TemplateBuilder = lazy(() => import("./pages/TemplateBuilder"));
@@ -106,25 +101,6 @@ const App = () => (
           <Route path="/clients/:id" element={
             <ProtectedRoute>
               <ClientDetail />
-            </ProtectedRoute>
-          } />
-
-          {/* Reports & Analytics Routes */}
-          <Route path="/reports" element={
-            <ProtectedRoute>
-              <Reports />
-            </ProtectedRoute>
-          } />
-
-          <Route path="/reports/builder" element={
-            <ProtectedRoute>
-              <ReportBuilder />
-            </ProtectedRoute>
-          } />
-
-          <Route path="/reports/saved" element={
-            <ProtectedRoute>
-              <SavedReports />
             </ProtectedRoute>
           } />
 

@@ -22,76 +22,31 @@ const roleSteps: Record<string, OnboardingStep[]> = {
       description: "You have full access to all system features. Let's get you started with the key areas you'll manage.",
     },
     {
-      title: "Manage Your Organization",
-      description: "Set up your organization profile, upload your logo, and configure company settings.",
-      action: { label: "Go to Settings", path: "/settings" },
-    },
-    {
-      title: "Create User Roles & Permissions",
-      description: "Define designations, set up reporting hierarchy, and configure approval workflows.",
-      action: { label: "Manage Designations", path: "/designations" },
-    },
-    {
-      title: "Build Your Teams",
-      description: "Organize your users into teams, assign managers, and structure your organization.",
-      action: { label: "Manage Teams", path: "/teams" },
-    },
-    {
-      title: "Configure Custom Fields",
-      description: "Customize your contact fields to match your business needs and data requirements.",
-      action: { label: "Custom Fields", path: "/custom-fields" },
+      title: "Review Your Dashboard",
+      description: "Monitor revenue, billing, and marketing performance at a glance.",
+      action: { label: "View Dashboard", path: "/dashboard" },
     },
   ],
   admin: [
     {
       title: "Welcome, Admin!",
-      description: "You have administrative access to manage users, teams, and key system configurations.",
+      description: "You have administrative access to manage billing, marketing, and key system configurations.",
     },
     {
-      title: "Invite Your Team",
-      description: "Start by adding users to your organization and assigning them to appropriate roles.",
-      action: { label: "Manage Users", path: "/users" },
-    },
-    {
-      title: "Configure Pipeline Stages",
-      description: "Set up your sales pipeline stages to track deals from lead to close.",
-      action: { label: "Pipeline Stages", path: "/pipeline-stages" },
-    },
-    {
-      title: "Set Up Call Dispositions",
-      description: "Define call outcomes and dispositions for better activity tracking.",
-      action: { label: "Call Dispositions", path: "/call-dispositions" },
-    },
-    {
-      title: "Create Custom Forms",
-      description: "Build forms to collect lead information and streamline data capture.",
-      action: { label: "Manage Forms", path: "/forms" },
+      title: "Review Your Dashboard",
+      description: "Monitor revenue, billing, and marketing performance at a glance.",
+      action: { label: "View Dashboard", path: "/dashboard" },
     },
   ],
   sales_manager: [
     {
-      title: "Welcome, Sales Manager!",
-      description: "You're set up to lead your team, track performance, and drive sales success.",
+      title: "Welcome!",
+      description: "You're set up to track performance and drive results.",
     },
     {
       title: "Review Your Dashboard",
-      description: "Monitor key metrics, team performance, and sales trends at a glance.",
+      description: "Monitor key metrics and revenue trends at a glance.",
       action: { label: "View Dashboard", path: "/dashboard" },
-    },
-    {
-      title: "Manage Your Team",
-      description: "Oversee team members, assign leads, and ensure balanced workload distribution.",
-      action: { label: "View Teams", path: "/teams" },
-    },
-    {
-      title: "Track Your Pipeline",
-      description: "Monitor deals across stages, identify bottlenecks, and forecast accurately.",
-      action: { label: "Pipeline Board", path: "/pipeline-board" },
-    },
-    {
-      title: "Analyze Reports",
-      description: "Access sales reports, conversion metrics, and team performance analytics.",
-      action: { label: "View Reports", path: "/reports" },
     },
   ],
   support_manager: [
@@ -101,49 +56,19 @@ const roleSteps: Record<string, OnboardingStep[]> = {
     },
     {
       title: "Review Your Dashboard",
-      description: "Track support metrics, response times, and customer satisfaction scores.",
+      description: "Track support metrics and daily activity at a glance.",
       action: { label: "View Dashboard", path: "/dashboard" },
-    },
-    {
-      title: "Manage Your Team",
-      description: "Oversee support agents, manage assignments, and balance ticket loads.",
-      action: { label: "View Teams", path: "/teams" },
-    },
-    {
-      title: "Monitor Call Activities",
-      description: "Review call logs, dispositions, and ensure quality customer interactions.",
-      action: { label: "Call Logs", path: "/call-logs" },
-    },
-    {
-      title: "Access Customer Contacts",
-      description: "View and manage customer information, history, and support tickets.",
-      action: { label: "View Contacts", path: "/contacts" },
     },
   ],
   sales_agent: [
     {
-      title: "Welcome, Sales Agent!",
-      description: "You're all set to connect with leads, close deals, and hit your targets.",
+      title: "Welcome!",
+      description: "You're all set to get started.",
     },
     {
       title: "Explore Your Dashboard",
-      description: "View your personal metrics, today's tasks, and performance at a glance.",
+      description: "View your metrics and performance at a glance.",
       action: { label: "View Dashboard", path: "/dashboard" },
-    },
-    {
-      title: "Start with Contacts",
-      description: "Access your assigned leads and contacts. Add notes, schedule follow-ups, and track interactions.",
-      action: { label: "View Contacts", path: "/contacts" },
-    },
-    {
-      title: "Work Your Pipeline",
-      description: "Move deals through stages, update probabilities, and focus on high-value opportunities.",
-      action: { label: "Pipeline Board", path: "/pipeline-board" },
-    },
-    {
-      title: "Log Your Activities",
-      description: "Record calls, emails, and meetings to maintain accurate activity history.",
-      action: { label: "Make Calls", path: "/calling-dashboard" },
     },
   ],
   support_agent: [
@@ -153,23 +78,8 @@ const roleSteps: Record<string, OnboardingStep[]> = {
     },
     {
       title: "Check Your Dashboard",
-      description: "See your assigned tickets, pending tasks, and daily activity summary.",
+      description: "See your assigned tickets and daily activity summary.",
       action: { label: "View Dashboard", path: "/dashboard" },
-    },
-    {
-      title: "Access Customer Contacts",
-      description: "View customer information, interaction history, and support needs.",
-      action: { label: "View Contacts", path: "/contacts" },
-    },
-    {
-      title: "Handle Calls Efficiently",
-      description: "Use the calling dashboard to manage customer calls and log outcomes.",
-      action: { label: "Calling Dashboard", path: "/calling-dashboard" },
-    },
-    {
-      title: "Track Your Activities",
-      description: "Log all customer interactions to maintain comprehensive support records.",
-      action: { label: "View Call Logs", path: "/call-logs" },
     },
   ],
 };

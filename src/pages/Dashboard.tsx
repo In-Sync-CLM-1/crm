@@ -1258,18 +1258,6 @@ export default function Dashboard() {
                   <RefreshCw className={`h-4 w-4 mr-1.5 ${isRefreshing ? 'animate-spin' : ''}`} />
                   {isRefreshing ? 'Refreshing...' : 'Refresh'}
                 </Button>
-                <Button variant="outline" size="sm" asChild>
-                  <Link to="/reports" className="gap-1.5">
-                    <TrendingUp className="h-4 w-4" />
-                    Analytics
-                  </Link>
-                </Button>
-                <Button variant="outline" size="sm" asChild>
-                  <Link to="/calling-dashboard" className="gap-1.5">
-                    <PhoneCall className="h-4 w-4" />
-                    Calling
-                  </Link>
-                </Button>
               </>
             )}
             <DateRangeFilter
