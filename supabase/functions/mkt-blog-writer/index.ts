@@ -231,6 +231,39 @@ interface BlogDraft {
   teaser: string;       // hook lines only, for blog_excerpt
   image_keywords: string[];
   strategy_note: string; // 2-3 sentences: why this angle, what data/logic anchors it
+  sources?: SourceRef[]; // links to the reports/surveys quoted in the post
+}
+
+// ── Source links (2026-07-15 user requirement) ──────────────────────────────
+// Quoted survey/report stats must carry a real link — it reads as authentic.
+// The LLM proposes sources; we verify each URL actually resolves before
+// appending it, so a hallucinated link never reaches a live post. A stat whose
+// link fails verification keeps its inline named attribution only.
+
+interface SourceRef { label: string; url: string }
+
+const SOURCE_JSON_FIELD = `"sources": [{"label": "report/survey name, publisher, year", "url": "https://direct-public-link-to-the-report-or-a-page-about-it"}] — 1-2 entries, ONLY for reports/surveys actually quoted in the content. Only give URLs you are confident really exist and are publicly accessible; each will be machine-verified and silently dropped if it does not resolve, so a guessed URL just loses you the citation.`;
+
+const NUMERIC_CLAIMS_RULE = `Prefer quantified statements over vague comparatives wherever the underlying research supports one — write "37% more", "2.4x faster", "11 hours a week", never "more", "faster", "a lot". Never invent a number: quantify only what the cited source actually measured.`;
+
+async function verifiedSourceLines(sources: SourceRef[] | undefined): Promise<string> {
+  if (!Array.isArray(sources) || !sources.length) return '';
+  const checks = await Promise.all(sources.slice(0, 3).map(async (s) => {
+    if (!s?.url || !s?.label || !/^https?:\/\//i.test(s.url)) return null;
+    try {
+      const res = await fetch(s.url, {
+        redirect: 'follow',
+        signal: AbortSignal.timeout(8_000),
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; InSyncBot/1.0)' },
+      });
+      return res.ok ? s : null;
+    } catch {
+      return null;
+    }
+  }));
+  const good = checks.filter((s): s is SourceRef => s !== null);
+  if (!good.length) return '';
+  return '\n\n' + good.map((s) => `Source: ${s.label} — ${s.url}`).join('\n');
 }
 
 // ── Brand-led strategy (2026-07-15) ─────────────────────────────────────────
@@ -306,7 +339,7 @@ Write a high-engagement LinkedIn thought leadership post promoting the In-Sync B
 PRIMARY OBJECTIVE: Make the reader recognise the cost of running their business on disconnected tools, and want to see how one platform changes that. Drive them toward in-sync.co.in and a demo. Engagement (likes, comments) is secondary.
 
 CONTENT STANDARDS:
-1. Every factual claim must be based on verifiable, real-world data. Use actual statistics from published research, government reports, or well-known analysts (Gartner, McKinsey, NASSCOM, RBI, Forrester, etc.). Cite the source inline naturally (e.g. "According to a 2024 NASSCOM report..."). Do NOT fabricate numbers.
+1. Every factual claim must be based on verifiable, real-world data. Use actual statistics from published research, government reports, or well-known analysts (Gartner, McKinsey, NASSCOM, RBI, Forrester, etc.). Cite the source inline naturally (e.g. "According to a 2024 NASSCOM report..."). Do NOT fabricate numbers. ${NUMERIC_CLAIMS_RULE}
 2. Write specifically for ${designations} in ${industries} — use their exact vocabulary, their operational context, their real daily frustrations. Avoid generic B2B language.
 3. THE PLATFORM IS THE HERO. Do not position ${product.product_name} as a standalone offering. Where the argument needs a concrete example, use ${product.product_name} in ONE paragraph as a proof point of what "one backbone" looks like in practice — then return to the platform story.
 
@@ -345,7 +378,8 @@ Return JSON only:
   "teaser": "the hook section only (first 3-4 lines)",
   "full_post": "complete post: hook + divider + body + cta_line + divider + hashtags, ≤2800 chars",
   "image_keywords": ["keyword1", "keyword2", "keyword3", "keyword4"],
-  "strategy_note": "explanation as described above"
+  "strategy_note": "explanation as described above",
+  ${SOURCE_JSON_FIELD}
 }`;
 
   const { data } = await callLLMJson<BlogDraft>(prompt, {
@@ -364,6 +398,7 @@ interface ShortCaption {
   caption: string;       // full LinkedIn post text, ≤600 chars
   image_keywords: string[];
   strategy_note: string; // 2-3 sentences: why this angle, what data/logic anchors it
+  sources?: SourceRef[]; // links to the reports/surveys quoted in the caption
 }
 
 async function generateShortCaption(
@@ -396,6 +431,7 @@ RULES:
 - End with 3-4 relevant hashtags on their own line (brand/theme hashtags, not product ones)
 - No markdown, no bullet points
 - The platform is the hero; mention ${product.product_name} only if it fits naturally as a quick example
+- If you quote a statistic, it must come from a real published report/survey, named inline (e.g. "per a 2024 NASSCOM study"). ${NUMERIC_CLAIMS_RULE}
 
 image_keywords: 4 specific visual search terms for a compelling B2B photo that dramatises today's theme in an Indian business context (e.g. the chaos of disconnected tools, or a team aligned around one screen).
 
@@ -406,7 +442,8 @@ Return JSON only:
   "title": "internal tracking title, max 120 chars",
   "caption": "the full short caption as described above",
   "image_keywords": ["keyword1", "keyword2", "keyword3", "keyword4"],
-  "strategy_note": "explanation as described above"
+  "strategy_note": "explanation as described above",
+  ${SOURCE_JSON_FIELD}
 }`;
 
   const { data } = await callLLMJson<ShortCaption>(prompt, {
@@ -426,6 +463,7 @@ interface CarouselContent {
   slides: string[];        // exactly CAROUSEL_SLIDE_COUNT short slide lines
   image_keywords: string[];
   strategy_note: string;   // 2-3 sentences: why this angle, what data/logic anchors it
+  sources?: SourceRef[];   // links to the reports/surveys quoted on the slides
 }
 
 async function generateCarouselContent(
@@ -461,6 +499,7 @@ RULES PER SLIDE:
 - Max 100 characters per slide — these render as large title text on a slide image, not paragraphs
 - No slide numbers, no markdown
 - Punchy, declarative, one idea only
+- A slide quoting a survey/report stat must name the source briefly at the end (e.g. "— Gartner, 2025"), within the 100-character limit. ${NUMERIC_CLAIMS_RULE}
 
 caption: a short LinkedIn intro (150-300 characters) that accompanies the carousel post — a hook line plus 3-4 hashtags (brand/theme hashtags, not product ones), no need to repeat the slide content.
 
@@ -474,7 +513,8 @@ Return JSON only:
   "caption": "short intro text as described above",
   "slides": ["slide 1 text", "slide 2 text", "...exactly ${CAROUSEL_SLIDE_COUNT} entries..."],
   "image_keywords": ["keyword1", "keyword2", "keyword3", "keyword4"],
-  "strategy_note": "explanation as described above"
+  "strategy_note": "explanation as described above",
+  ${SOURCE_JSON_FIELD}
 }`;
 
   const { data } = await callLLMJson<CarouselContent>(prompt, {
@@ -651,12 +691,13 @@ Deno.serve(async (req) => {
         });
       }
       if (!videoUrl) videoUrl = await fetchPexelsVideo(draft.image_keywords || []).catch(() => null);
+      const sourceLines = await verifiedSourceLines(draft.sources);
 
       row = {
         ...baseRow,
         blog_title: draft.title,
         blog_excerpt: draft.teaser,
-        linkedin_draft_text: draft.full_post,
+        linkedin_draft_text: draft.full_post + sourceLines,
         image_url: imageUrl || null,
         video_url: videoUrl || null,
         content_strategy_note: draft.strategy_note || null,
@@ -666,12 +707,13 @@ Deno.serve(async (req) => {
       // 6b. Image post — short caption + AI-generated editorial photo.
       const draft = await generateShortCaption(product, icp, postSeq, 'image');
       const imageUrl = await getPostImage(draft.image_keywords, '4:5');
+      const sourceLines = await verifiedSourceLines(draft.sources);
 
       row = {
         ...baseRow,
         blog_title: draft.title,
-        blog_excerpt: draft.caption,
-        linkedin_short_caption: draft.caption,
+        blog_excerpt: draft.caption + sourceLines,
+        linkedin_short_caption: draft.caption + sourceLines,
         image_url: imageUrl || null,
         content_strategy_note: draft.strategy_note || null,
       };
@@ -688,12 +730,13 @@ Deno.serve(async (req) => {
         });
       }
       if (!videoUrl) videoUrl = await fetchPexelsVideo(draft.image_keywords || []).catch(() => null);
+      const sourceLines = await verifiedSourceLines(draft.sources);
 
       row = {
         ...baseRow,
         blog_title: draft.title,
-        blog_excerpt: draft.caption,
-        linkedin_short_caption: draft.caption,
+        blog_excerpt: draft.caption + sourceLines,
+        linkedin_short_caption: draft.caption + sourceLines,
         image_url: imageUrl || null,
         video_url: videoUrl || null,
         content_strategy_note: draft.strategy_note || null,
@@ -701,12 +744,13 @@ Deno.serve(async (req) => {
 
     } else {
       // 6d. Carousel — 8 short slides rendered as branded still images over an
-      // AI-generated background designed for white text overlay.
+      // AI-generated background. The photo must read at full brightness: the
+      // slide renderer only darkens the lower band where the text sits.
       const draft = await generateCarouselContent(product, icp, postSeq);
       const bgImageUrl = await getPostImage(
         draft.image_keywords,
         '1:1',
-        'Dark, moody, low-contrast composition with soft shadows and generous negative space — designed as a background for white display text.',
+        'Bright, airy composition with generous negative space and a calm, uncluttered lower third — white display text will be overlaid near the bottom.',
       );
 
       let slideUrls: (string | null)[] = draft.slides.map(() => null);
@@ -732,11 +776,13 @@ Deno.serve(async (req) => {
         return err(500, `Carousel slide rendering failed — ${JSON.stringify(slideErrors)}`);
       }
 
+      const sourceLines = await verifiedSourceLines(draft.sources);
+
       row = {
         ...baseRow,
         blog_title: draft.title,
-        blog_excerpt: draft.caption,
-        linkedin_short_caption: draft.caption,
+        blog_excerpt: draft.caption + sourceLines,
+        linkedin_short_caption: draft.caption + sourceLines,
         carousel_slide_texts: draft.slides,
         carousel_slide_urls: slideUrls,
         image_url: slideUrls[0] || null,

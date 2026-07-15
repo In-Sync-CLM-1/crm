@@ -8,12 +8,12 @@
  * two tracks correctly when played over time. Rendering locally avoids
  * depending on that behavior entirely.
  *
- * Design (2026-07-15 rework, after image-quality feedback): instead of a hard
- * dark band across the middle, slides now use a full-height bottom-weighted
- * gradient scrim with left-aligned display type in the lower third, a thin
- * accent rule, a slide counter top-right, and an In-Sync wordmark — the same
- * dark/minimal branding as the videos, but composed like a designed slide
- * rather than a caption stamped on a photo.
+ * Design (2026-07-15, second rework — "all slides look black" feedback): the
+ * photo must stay visible. No global darken; the scrim is scoped to the text
+ * block only — transparent above it, ramping to near-opaque dark by the first
+ * text line and held to the bottom edge. The upper ~half of every slide is
+ * the untouched photo; type, accent rule, wordmark, and counter sit inside
+ * the scrimmed lower band.
  */
 import { Image, TextLayout } from 'https://deno.land/x/imagescript@1.3.0/mod.ts';
 
@@ -51,19 +51,6 @@ export async function renderSlideImage(
   const bg = await Image.decode(new Uint8Array(await bgRes.arrayBuffer()));
   bg.cover(SIZE, SIZE);
 
-  // Light global darken so white type reads anywhere on the photo.
-  bg.drawBox(0, 0, SIZE, SIZE, Image.rgbaToColor(8, 10, 16, 70));
-
-  // Bottom-weighted gradient scrim: transparent at 35% height → near-black at
-  // the bottom edge. Drawn as 4px horizontal strips (270 blends, cheap).
-  const scrimTop = Math.floor(SIZE * 0.35);
-  const strip = 4;
-  for (let y = scrimTop; y < SIZE; y += strip) {
-    const t = (y - scrimTop) / (SIZE - scrimTop); // 0 → 1
-    const alpha = Math.round(200 * t * t + 20 * t); // ease-in, max ~220
-    bg.drawBox(0, y, SIZE, Math.min(strip, SIZE - y), Image.rgbaToColor(6, 8, 14, alpha));
-  }
-
   const { bold, regular } = await getFonts();
   const white = Image.rgbaToColor(255, 255, 255, 255);
   const dim = Image.rgbaToColor(255, 255, 255, 175);
@@ -76,11 +63,29 @@ export async function renderSlideImage(
     white,
     new TextLayout({ maxWidth: SIZE - MARGIN * 2, wrapStyle: 'word' }),
   );
-  const textY = SIZE - MARGIN - 96 - textImg.height; // 96px reserved for footer row
-  bg.composite(textImg, MARGIN, Math.max(scrimTop + 40, textY));
+  const textY = Math.max(120, SIZE - MARGIN - 96 - textImg.height); // 96px reserved for footer row
+
+  // Scrim scoped to the text block: transparent above it, easing (smoothstep,
+  // long ramp) to a translucent dark band behind the text, held to the bottom
+  // edge — the photo above stays untouched and still ghosts through the band.
+  // IMPORTANT: drawBox does NOT alpha-blend — it overwrites pixels with the
+  // raw RGBA value (which JPEG then flattens to opaque). The gradient must be
+  // drawn on its own transparent layer and composited, which does blend.
+  const scrimStart = Math.max(0, textY - 300);
+  const rampEnd = textY - 20;
+  const strip = 4;
+  const scrim = new Image(SIZE, SIZE - scrimStart);
+  for (let y = scrimStart; y < SIZE; y += strip) {
+    const t = Math.min(1, (y - scrimStart) / (rampEnd - scrimStart));
+    const alpha = Math.round(185 * t * t * (3 - 2 * t)); // smoothstep, max ~185
+    scrim.drawBox(0, y - scrimStart, SIZE, Math.min(strip, SIZE - y), Image.rgbaToColor(6, 8, 14, alpha));
+  }
+  bg.composite(scrim, 0, scrimStart);
+
+  bg.composite(textImg, MARGIN, textY);
 
   // Thin accent rule above the text block.
-  bg.drawBox(MARGIN, Math.max(scrimTop + 40, textY) - 28, 120, 6, white);
+  bg.drawBox(MARGIN, textY - 28, 120, 6, white);
 
   // Footer row: wordmark bottom-left, slide counter bottom-right.
   const wordmark = await Image.renderText(regular, 30, 'In-Sync', dim);
