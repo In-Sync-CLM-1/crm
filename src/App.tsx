@@ -57,16 +57,13 @@ const LeadBrowser = lazy(() => import("./pages/LeadBrowser"));
 const EnrollmentBrowser = lazy(() => import("./pages/EnrollmentBrowser"));
 const TemplateEditor = lazy(() => import("./pages/TemplateEditor"));
 const ArohanChat = lazy(() => import("./pages/ArohanChat"));
-const Communications = lazy(() => import("./pages/Communications"));
 const EngineConfig = lazy(() => import("./pages/EngineConfig"));
 const ProductManagement = lazy(() => import("./pages/ProductManagement"));
 const ProductICP = lazy(() => import("./pages/ProductICP"));
 
-// Lazy loaded pages - Admin (undecided comms/channel config kept as-is for now)
+// Lazy loaded pages - Admin
 const ApprovalMatrix = lazy(() => import("./pages/ApprovalMatrix"));
-const CommunicationSettings = lazy(() => import("./pages/CommunicationSettings"));
 const WhatsAppSettings = lazy(() => import("./pages/WhatsAppSettings"));
-const ExotelSettings = lazy(() => import("./pages/ExotelSettings"));
 const EmailSettings = lazy(() => import("./pages/EmailSettings"));
 
 // Lazy loaded pages - Other
@@ -281,12 +278,6 @@ const App = () => (
             </ProtectedRoute>
           } />
 
-          <Route path="/communications" element={
-            <ProtectedRoute>
-              <Communications />
-            </ProtectedRoute>
-          } />
-
           {/* Admin Routes */}
           <Route path="/admin/approval-matrix" element={
             <ProtectedRoute requiredRole="admin">
@@ -294,21 +285,9 @@ const App = () => (
             </ProtectedRoute>
           } />
 
-          <Route path="/admin/communication-settings" element={
-            <ProtectedRoute requiredRole="admin">
-              <CommunicationSettings />
-            </ProtectedRoute>
-          } />
-
           <Route path="/whatsapp-settings" element={
             <ProtectedRoute requiredRole="admin">
               <WhatsAppSettings />
-            </ProtectedRoute>
-          } />
-
-          <Route path="/exotel-settings" element={
-            <ProtectedRoute requiredRole="admin">
-              <ExotelSettings />
             </ProtectedRoute>
           } />
 
