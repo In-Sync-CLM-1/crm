@@ -20,7 +20,7 @@ import { ClientDocuments } from "@/components/Clients/ClientDocuments";
 import { ClientInvoices } from "@/components/Clients/ClientInvoices";
 import { ClientAlternateContacts } from "@/components/Clients/ClientAlternateContacts";
 import { MonthlyTaxSummary } from "@/components/Clients/MonthlyTaxSummary";
-import { NativeContactActions } from "@/components/Contact/NativeContactActions";
+import { NativeContactActions } from "@/components/Clients/NativeContactActions";
 
 type ClientStatus = 'active' | 'inactive' | 'churned';
 

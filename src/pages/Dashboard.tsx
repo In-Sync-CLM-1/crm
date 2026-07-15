@@ -7,7 +7,6 @@ import { isProsyncIssuedDoc } from "@/utils/billingUtils";
 import DashboardLayout from "@/components/Layout/DashboardLayout";
 import { useOrgContext } from "@/hooks/useOrgContext";
 import { LoadingState } from "@/components/common/LoadingState";
-import { useTasks } from "@/hooks/useTasks";
 import { useCallbackReminders } from "@/hooks/useCallbackReminders";
 import DateRangeFilter, { DateRangePreset, getDateRangeFromPreset } from "@/components/common/DateRangeFilter";
 import { format } from "date-fns";
@@ -22,7 +21,6 @@ import { DueToDeptDialog } from "@/components/Dashboard/DueToDeptDialog";
 import { DashboardRevenueChart } from "@/components/Dashboard/DashboardRevenueChart";
 import { DashboardPipelineChart } from "@/components/Dashboard/DashboardPipelineChart";
 import { DashboardActivityChart } from "@/components/Dashboard/DashboardActivityChart";
-import { DashboardTasksSection } from "@/components/Dashboard/DashboardTasksSection";
 
 // Revenue Dashboard components
 import { MonthlyGoalTracker } from "@/components/Revenue/MonthlyGoalTracker";
@@ -1041,11 +1039,6 @@ export default function Dashboard() {
     return { ytdDeals, ytdProposals, ytdRevenue, ytdDealsTarget, ytdProposalsTarget, ytdRevenueTarget, monthlyRevenueTrend };
   }, [monthlyActuals]);
 
-  // Fetch tasks for analytics
-  const { data: tasksData } = useTasks({ filter: "assigned_to_me" });
-  const allTasks = tasksData?.tasks || [];
-  const pendingTasksCount = allTasks.filter(t => t.status === "pending").length;
-  const overdueTasksCount = allTasks.filter(t => t.isOverdue && t.status !== "completed").length;
 
   const loading = orgLoading || statsLoading || pipelineLoading || revenueLoading || actualsLoading;
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -1351,11 +1344,7 @@ export default function Dashboard() {
         ) : (
           <>
             {/* Key Metrics */}
-            <DashboardStatsCards 
-              stats={stats} 
-              pendingTasksCount={pendingTasksCount} 
-              overdueTasksCount={overdueTasksCount} 
-            />
+            <DashboardStatsCards stats={stats} />
 
             {/* Revenue Metrics */}
             <DashboardRevenueCards
@@ -1393,8 +1382,6 @@ export default function Dashboard() {
               <DashboardActivityChart data={dailyActivityData} isLoading={activityLoading} />
             </div>
 
-            {/* My Tasks Section */}
-            <DashboardTasksSection limit={5} />
           </>
         )}
       </div>

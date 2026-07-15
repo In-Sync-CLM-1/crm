@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { Card } from "@/components/ui/card";
-import { Users, Target, CheckSquare, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { Users, Target, ArrowUpRight, ArrowDownRight } from "lucide-react";
 
 interface DashboardStatsCardsProps {
   stats: {
@@ -9,13 +9,11 @@ interface DashboardStatsCardsProps {
     dealsWonThisMonth: number;
     contactGrowth: number;
   };
-  pendingTasksCount: number;
-  overdueTasksCount: number;
 }
 
-export const DashboardStatsCards = memo(function DashboardStatsCards({ stats, pendingTasksCount, overdueTasksCount }: DashboardStatsCardsProps) {
+export const DashboardStatsCards = memo(function DashboardStatsCards({ stats }: DashboardStatsCardsProps) {
   return (
-    <div className="grid gap-2 grid-cols-2 lg:grid-cols-4">
+    <div className="grid gap-2 grid-cols-2">
       <Card className="p-3">
         <div className="flex items-center justify-between">
           <span className="text-xs font-medium text-muted-foreground">Total Contacts</span>
@@ -45,24 +43,6 @@ export const DashboardStatsCards = memo(function DashboardStatsCards({ stats, pe
         </div>
         <div className="text-xl font-bold mt-1">{`${stats.conversionRate}%`}</div>
         <p className="text-[10px] text-muted-foreground">{stats.dealsWonThisMonth} deals won</p>
-      </Card>
-
-      <Card className="p-3">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-medium text-muted-foreground">Pending Tasks</span>
-          <CheckSquare className="h-3.5 w-3.5 text-muted-foreground" />
-        </div>
-        <div className="text-xl font-bold mt-1">{pendingTasksCount}</div>
-        <p className="text-[10px] text-muted-foreground">Waiting to start</p>
-      </Card>
-
-      <Card className="p-3">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-medium text-muted-foreground">Overdue</span>
-          <CheckSquare className="h-3.5 w-3.5 text-destructive" />
-        </div>
-        <div className="text-xl font-bold text-destructive mt-1">{overdueTasksCount}</div>
-        <p className="text-[10px] text-muted-foreground">Need attention</p>
       </Card>
     </div>
   );

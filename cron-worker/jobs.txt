@@ -1,7 +1,5 @@
 retry-failed-whatsapp-messages|rpc:trigger_retry_failed_whatsapp||0 * * * *
 automation-email-sender|automation-email-sender||*/5 * * * *
-check-inactive-contacts|rpc:check_inactive_contacts||0 9 * * *
-process-time-based-triggers|rpc:process_time_based_triggers||0 8 * * *
 aggregate-automation-performance|rpc:aggregate_automation_performance_daily||0 1 * * *
 sync-platform-email-list-daily|rpc:sync_platform_email_list||0 2 * * *
 process-scheduled-messages-and-reminders|scheduled-messages-processor||*/5 * * * *
@@ -17,7 +15,6 @@ linkedin-slot-6|mkt-blog-poster||0 12 * * *
 linkedin-slot-7|mkt-blog-poster||30 13 * * *
 linkedin-slot-8|mkt-blog-poster||30 15 * * *
 mkt-blog-writer-second|mkt-blog-writer||0 16 * * *
-call-intelligence-daily|transcribe-and-analyze-call||15 2 * * *
 health-sentinel|health-sentinel|{"digest":true}|30 2 * * *
 health-sentinel-watch|health-sentinel||0 * * * *
 sentinel-tripwire|sentinel-tripwire||0 0,6,12,18 * * *

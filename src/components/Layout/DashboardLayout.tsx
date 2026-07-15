@@ -32,14 +32,11 @@ import { useFeatureAccess } from "@/hooks/useFeatureAccess";
 import { useModuleTracking } from "@/hooks/useModuleTracking";
 import { useTopModules } from "@/hooks/useTopModules";
 import { NotificationBell } from "./NotificationBell";
-import { QuickDial } from "@/components/Contact/QuickDial";
-import { CallbackReminderAlert } from "@/components/Contact/CallbackReminderAlert";
 import { OfflineBanner } from "@/components/Offline/OfflineBanner";
 import { SyncStatus } from "@/components/Offline/SyncStatus";
 import { QuietHoursBanner } from "@/components/Layout/QuietHoursBanner";
 import { useAuth } from "@/contexts/AuthProvider";
 import { useQuery } from "@tanstack/react-query";
- import { FloatingChatWidget } from "@/components/chat/FloatingChatWidget";
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -137,7 +134,6 @@ function DashboardLayout({ children }: DashboardLayoutProps) {
         )}
         <div className="flex items-center gap-1">
           <SyncStatus />
-          <QuickDial />
           <NotificationBell />
           <Button
             variant="ghost"
@@ -194,15 +190,6 @@ function DashboardLayout({ children }: DashboardLayoutProps) {
                   <span>Dashboard</span>
                 </Link>
               )}
-
-              <Link
-                to="/calendar"
-                className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors"
-                onClick={() => setSidebarOpen(false)}
-              >
-                <CalendarDays size={16} className="shrink-0 text-sidebar-muted" />
-                <span>Calendar</span>
-              </Link>
 
               <Link
                 to="/marketing"
@@ -262,28 +249,6 @@ function DashboardLayout({ children }: DashboardLayoutProps) {
                 </div>
               )}
               
-              {canAccessFeature("pipeline_stages") && (
-                <Link
-                  to="/pipeline"
-                  className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors"
-                  onClick={() => setSidebarOpen(false)}
-                >
-                  <GitBranch size={16} className="shrink-0 text-sidebar-muted" />
-                  <span>Pipeline</span>
-                </Link>
-              )}
-              
-              {canAccessFeature("contacts") && (
-                <Link
-                  to="/contacts"
-                  className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors"
-                  onClick={() => setSidebarOpen(false)}
-                >
-                  <Contact size={16} className="shrink-0 text-sidebar-muted" />
-                  <span>Contacts</span>
-                </Link>
-              )}
-
               {canAccessFeature("communications") && (
                 <Link
                   to="/communications"
@@ -305,44 +270,6 @@ function DashboardLayout({ children }: DashboardLayoutProps) {
                   <span>Data Repository</span>
                 </Link>
               )}
-
-              {canAccessFeature("inventory") && orgName === "C.Parekh & Co" && (
-                <Link
-                  to="/inventory"
-                  className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors"
-                  onClick={() => setSidebarOpen(false)}
-                >
-                  <Package size={16} className="shrink-0 text-sidebar-muted" />
-                  <span>Inventory</span>
-                </Link>
-              )}
-
-              <Link
-                to="/tasks"
-                className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors"
-                onClick={() => setSidebarOpen(false)}
-              >
-                <CheckSquare size={16} className="shrink-0 text-sidebar-muted" />
-                <span>Tasks</span>
-              </Link>
-
-               <Link
-                 to="/chat"
-                 className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors"
-                 onClick={() => setSidebarOpen(false)}
-               >
-                 <MessageCircle size={16} className="shrink-0 text-sidebar-muted" />
-                 <span>Messages</span>
-               </Link>
-
-              <Link
-                to="/call-intelligence"
-                className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors"
-                onClick={() => setSidebarOpen(false)}
-              >
-                <Headphones size={16} className="shrink-0 text-sidebar-muted" />
-                <span>Call Intelligence</span>
-              </Link>
 
               <div className="pt-3 pb-1 px-2">
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-sidebar-primary">
@@ -442,11 +369,6 @@ function DashboardLayout({ children }: DashboardLayoutProps) {
         />
       )}
 
-      {/* Callback Reminder Alert */}
-      <CallbackReminderAlert />
-
-       {/* Floating Chat Widget */}
-       <FloatingChatWidget />
     </div>
   );
 }
