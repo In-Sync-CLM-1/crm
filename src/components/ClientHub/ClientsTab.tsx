@@ -12,6 +12,7 @@ import { useOrgContext } from "@/hooks/useOrgContext";
 import { LoadingState } from "@/components/common/LoadingState";
 import { EmptyState } from "@/components/common/EmptyState";
 import { format } from "date-fns";
+import { AddClientDialog } from "@/components/Clients/AddClientDialog";
 
 export function ClientsTab() {
   const navigate = useNavigate();
@@ -108,10 +109,13 @@ export function ClientsTab() {
             className="pl-10"
           />
         </div>
-        <Button variant="outline" onClick={() => refetch()}>
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Refresh
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => refetch()}>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh
+          </Button>
+          <AddClientDialog />
+        </div>
       </div>
 
       {/* Clients Table */}
@@ -121,7 +125,7 @@ export function ClientsTab() {
         <EmptyState
           icon={<Users className="h-12 w-12" />}
           title="No clients yet"
-          message="Clients will appear here when deals are marked as Won in the pipeline."
+          message="Add your first client to get started."
         />
       ) : (
         <Card>
