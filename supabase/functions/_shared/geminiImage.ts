@@ -42,6 +42,7 @@ const STYLE_TEMPLATES: Record<ImageStyle, (scene: string, industries: string) =>
     `Abstract conceptual graphic for a B2B SaaS brand representing: ${scene}, in the context of ${industries}.`,
     'Flowing geometric shapes, gradient mesh in brand teal-to-coral, dashboard and data-flow motifs rendered abstractly,',
     'no literal people, no realistic scene, clean modern SaaS-marketing aesthetic.',
+    'Do NOT add any caption labels, callouts, or annotations next to the shapes — this is a pure abstract graphic, not an infographic or diagram, so nothing in it should read as a word.',
   ].join(' '),
 };
 
