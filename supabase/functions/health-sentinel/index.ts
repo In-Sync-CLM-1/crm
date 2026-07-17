@@ -239,6 +239,19 @@ async function checkDialer(ref: string): Promise<Check[]> {
 async function checkDemoConfirmation(ref: string): Promise<Check> {
   const ORG = "61f7f96d-e80c-4d9b-a765-8eb32bd3c70d"; // In-Sync Demo / WorkSync
   try {
+    // Same exception as checkDialer: when dialing is intentionally switched off
+    // for this org, no qualify call/confirmation was ever going to fire, so a
+    // lead sitting in Demo Requested is the EXPECTED outcome, not a fault. Only
+    // alert when the dialer is actually on and still failed to follow up.
+    const cfg = await sql(ref, `select dialing_active from organization_settings where org_id='${ORG}'`);
+    if (cfg[0]?.dialing_active !== true) {
+      return {
+        label: "Demo confirmation not stuck",
+        status: "ok",
+        detail: "dialer PAUSED for this org (dialing_active = false) — stuck Demo Requested leads are expected, not a fault",
+      };
+    }
+
     const stuck = await sql(
       ref,
       `select c.first_name, c.last_name, c.created_at
