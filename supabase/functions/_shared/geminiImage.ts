@@ -57,7 +57,8 @@ export function buildImagePrompt(keywords: string[], industries: string, extra =
     STYLE_TEMPLATES[style](scene, industries || 'business'),
     'It must be ONE single continuous composition — never a split/side-by-side layout, never a multi-panel grid, never a collage of separate frames.',
     extra,
-    'Final reminder, the single most important constraint: the image must contain ABSOLUTELY ZERO text of any kind anywhere in the frame — no words, lettering, numbers, captions, labels, signage, logos, watermarks, or fake UI/screen text, even a single word, even if the concept implies a comparison or message.',
+    'Final reminder, the single most important constraint: the image must contain ABSOLUTELY ZERO text of any kind anywhere in the frame — no words, lettering, numbers, captions, labels, signage, watermarks, or fake UI/screen text, even a single word, even if the concept implies a comparison or message.',
+    'Equally important: NO logos or brand marks of any kind — no invented company logo, emblem, badge, crest, monogram, app icon, or trademark/® symbol may appear anywhere: not on walls, screens, laptops, clothing, mugs, signage, or floating in a corner. The scene must be completely brand-free.',
   ].filter(Boolean).join(' ');
 }
 
