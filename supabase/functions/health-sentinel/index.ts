@@ -171,15 +171,23 @@ async function checkRlsExposure(ref: string): Promise<Check> {
 
 // --- specialised checks ------------------------------------------------------
 
-async function checkDialer(ref: string): Promise<Check[]> {
+const GC_ORG = "61f7f96d-e80c-4d9b-a765-8eb32bd3c70d"; // In-Sync Demo / WorkSync org
+
+// Single source of truth for "is this org's dialer switched on", shared by
+// checkDialer and checkDemoConfirmation so a paused dialer is looked up once
+// per run instead of each check re-querying it independently.
+async function fetchDialingActive(ref: string): Promise<boolean> {
+  try {
+    const cfg = await sql(ref, `select dialing_active from organization_settings where org_id='${GC_ORG}'`);
+    return cfg[0]?.dialing_active === true;
+  } catch {
+    return false; // unreadable settings → treat as paused (conservative: no false alarms on a config-read blip)
+  }
+}
+
+async function checkDialer(ref: string, active: boolean): Promise<Check[]> {
   const out: Check[] = [];
   try {
-    const cfg = await sql(
-      ref,
-      "select dialing_active, calling_windows from organization_settings where org_id='61f7f96d-e80c-4d9b-a765-8eb32bd3c70d'",
-    );
-    const active = cfg[0]?.dialing_active === true;
-
     // A dialer manually switched off (dialing_active = false) is an INTENTIONAL
     // pause, not a fault. Report it as paused (status "ok" → no incident, no
     // escalation) and skip the downstream liveness checks: zero calls is the
@@ -200,8 +208,8 @@ async function checkDialer(ref: string): Promise<Check[]> {
     // or a script that lost its owner).
     const cand = await sql(
       ref,
-      `select s.name, (select count(*) from get_ai_call_candidates('61f7f96d-e80c-4d9b-a765-8eb32bd3c70d'::uuid, 100000, s.owner_id)) n
-       from ai_call_scripts s where s.org_id='61f7f96d-e80c-4d9b-a765-8eb32bd3c70d' and s.is_active=true and s.owner_id is not null`,
+      `select s.name, (select count(*) from get_ai_call_candidates('${GC_ORG}'::uuid, 100000, s.owner_id)) n
+       from ai_call_scripts s where s.org_id='${GC_ORG}' and s.is_active=true and s.owner_id is not null`,
     );
     const dry = cand.filter((c) => Number(c.n) === 0).map((c) => c.name);
     const total = cand.reduce((a, c) => a + Number(c.n), 0);
@@ -215,7 +223,7 @@ async function checkDialer(ref: string): Promise<Check[]> {
     // zero calls. 48h window smooths the Sunday no-call day.
     const calls = await sql(
       ref,
-      "select count(*) n from call_logs where org_id='61f7f96d-e80c-4d9b-a765-8eb32bd3c70d' and caller_type='ai' and created_at > now() - interval '48 hours'",
+      `select count(*) n from call_logs where org_id='${GC_ORG}' and caller_type='ai' and created_at > now() - interval '48 hours'`,
     );
     const n = Number(calls[0]?.n || 0);
     out.push({
@@ -236,15 +244,13 @@ async function checkDialer(ref: string): Promise<Check[]> {
 // qualify call had no fallback, and nothing noticed. A lead stuck in "Demo
 // Requested" for a full day (well past any calling-window delay) means
 // SOMETHING in that chain silently broke.
-async function checkDemoConfirmation(ref: string): Promise<Check> {
-  const ORG = "61f7f96d-e80c-4d9b-a765-8eb32bd3c70d"; // In-Sync Demo / WorkSync
+async function checkDemoConfirmation(ref: string, dialingActive: boolean): Promise<Check> {
   try {
     // Same exception as checkDialer: when dialing is intentionally switched off
     // for this org, no qualify call/confirmation was ever going to fire, so a
     // lead sitting in Demo Requested is the EXPECTED outcome, not a fault. Only
     // alert when the dialer is actually on and still failed to follow up.
-    const cfg = await sql(ref, `select dialing_active from organization_settings where org_id='${ORG}'`);
-    if (cfg[0]?.dialing_active !== true) {
+    if (!dialingActive) {
       return {
         label: "Demo confirmation not stuck",
         status: "ok",
@@ -256,7 +262,7 @@ async function checkDemoConfirmation(ref: string): Promise<Check> {
       ref,
       `select c.first_name, c.last_name, c.created_at
        from contacts c join pipeline_stages ps on ps.id = c.pipeline_stage_id
-       where ps.name = 'Demo Requested' and c.org_id = '${ORG}'
+       where ps.name = 'Demo Requested' and c.org_id = '${GC_ORG}'
          and c.created_at < now() - interval '24 hours'
        order by c.created_at asc limit 10`,
     );
@@ -427,7 +433,6 @@ async function checkFrontend(ref: string, web: string): Promise<Check> {
 // module going red (instead of a vague "project up"). Probes are read-only.
 //   table/view: assert it exists and the listed key columns are present
 //   rpc: actually execute it (read-only) and assert it doesn't error
-const GC_ORG = "61f7f96d-e80c-4d9b-a765-8eb32bd3c70d";
 type ModSpec =
   | { m: string; table: string; cols?: string[] }
   | { m: string; view: string; cols?: string[] }
@@ -645,8 +650,11 @@ async function runProject(ref: string): Promise<{ ref: string; name: string; che
   if (checks[0].status !== "fail") {
     checks.push(await checkRegistration(ref));
     checks.push(await checkRlsExposure(ref));
-    if (m.dialer) checks.push(...(await checkDialer(ref)));
-    if (m.demoConfirm) checks.push(await checkDemoConfirmation(ref));
+    if (m.dialer || m.demoConfirm) {
+      const dialingActive = await fetchDialingActive(ref);
+      if (m.dialer) checks.push(...(await checkDialer(ref, dialingActive)));
+      if (m.demoConfirm) checks.push(await checkDemoConfirmation(ref, dialingActive));
+    }
     if (m.marketing) checks.push(await checkMarketing(ref));
     if (m.feedCheck) checks.push(await checkSmbFeed(ref));
     checks.push(...(await checkModules(ref)));
