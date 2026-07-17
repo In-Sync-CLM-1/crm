@@ -16,6 +16,7 @@
  * the scrimmed lower band.
  */
 import { Image, TextLayout } from 'https://deno.land/x/imagescript@1.3.0/mod.ts';
+import { fetchLogoBytes } from './brandLogo.ts';
 
 const FONT_URL = 'https://github.com/googlefonts/opensans/raw/main/fonts/ttf/OpenSans-Bold.ttf';
 const FONT_REGULAR_URL = 'https://github.com/googlefonts/opensans/raw/main/fonts/ttf/OpenSans-SemiBold.ttf';
@@ -87,9 +88,12 @@ export async function renderSlideImage(
   // Thin accent rule above the text block.
   bg.drawBox(MARGIN, textY - 28, 120, 6, white);
 
-  // Footer row: wordmark bottom-left, slide counter bottom-right.
-  const wordmark = await Image.renderText(regular, 30, 'In-Sync', dim);
-  bg.composite(wordmark, MARGIN, SIZE - MARGIN + 10 - wordmark.height);
+  // Footer row: In-Sync logo mark bottom-left (brand recall), slide counter
+  // bottom-right. The colored mark reads clearly against the dark scrim.
+  const logo = await Image.decode(await fetchLogoBytes());
+  const logoH = 40;
+  logo.resize(Image.RESIZE_AUTO, logoH);
+  bg.composite(logo, MARGIN, SIZE - MARGIN + 10 - logoH);
 
   if (slideNum && slideTotal) {
     const counter = await Image.renderText(regular, 30, `${slideNum} / ${slideTotal}`, dim);

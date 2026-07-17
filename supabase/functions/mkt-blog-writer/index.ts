@@ -26,6 +26,7 @@ import { corsHeaders } from '../_shared/corsHeaders.ts';
 import { renderSlideImage } from '../_shared/slideImage.ts';
 import { uploadToMarketingR2 } from '../_shared/r2Marketing.ts';
 import { buildImagePrompt, generateGeminiImage, GeminiAspect } from '../_shared/geminiImage.ts';
+import { brandImageUrl, LOGO_MARK_URL } from '../_shared/brandLogo.ts';
 
 const LINKEDIN_ORG_ID = Deno.env.get('LINKEDIN_ORG_ID') || '35932282';
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000; // UTC+5:30
@@ -154,7 +155,7 @@ async function generateShotstackVideo(imageUrl: string, title: string): Promise<
             },
           ],
         },
-        // Track 2 (top): Title text — fade in at 1.5s, hold, fade out
+        // Track 2 (middle): Title text — fade in at 1.5s, hold, fade out
         {
           clips: [
             {
@@ -169,6 +170,22 @@ async function generateShotstackVideo(imageUrl: string, title: string): Promise<
               length: 15,
               position: 'center',
               transition: { in: 'fade', out: 'fade' },
+            },
+          ],
+        },
+        // Track 3 (top): In-Sync logo mark, fixed top-right for the full
+        // clip — brand recall that survives the background's zoom/pan.
+        {
+          clips: [
+            {
+              asset: { type: 'image', src: LOGO_MARK_URL },
+              start: 0,
+              length: 20,
+              fit: 'none',
+              scale: 0.14,
+              position: 'topRight',
+              offset: { x: -0.05, y: 0.05 },
+              opacity: 0.92,
             },
           ],
         },
@@ -653,11 +670,27 @@ Deno.serve(async (req) => {
 
     // Gemini AI image (primary) with Pexels stock as fallback.
     const r2Prefix = `ai/${targetDate}/${product.product_key}-${daySeq ?? 'force'}-${Date.now()}`;
-    async function getPostImage(keywords: string[], aspect: GeminiAspect, extra = ''): Promise<string | null> {
+    // Raw image (no watermark) — used as Shotstack's zoom/pan background,
+    // where a corner-baked logo would drift out of frame as the zoom
+    // progresses. The dedicated Shotstack overlay track handles video
+    // branding instead (fixed position, immune to the zoom effect).
+    async function getRawPostImage(keywords: string[], aspect: GeminiAspect, extra = ''): Promise<string | null> {
       const aiUrl = await generateGeminiImage(buildImagePrompt(keywords || [], icpIndustries, extra), aspect, r2Prefix);
       if (aiUrl) return aiUrl;
       console.warn('[blog-writer] Gemini image unavailable — falling back to Pexels');
       return await fetchPexelsImage(keywords || []).catch(() => null);
+    }
+
+    // Branded image — the In-Sync logo stamped on for brand recall. This is
+    // what gets stored as the post's image_url and posted directly as a
+    // standalone image (LinkedIn image posts, Instagram feed image).
+    async function getPostImage(keywords: string[], aspect: GeminiAspect, extra = ''): Promise<string | null> {
+      const rawUrl = await getRawPostImage(keywords, aspect, extra);
+      if (!rawUrl) return null;
+      return await brandImageUrl(rawUrl, `${r2Prefix}-branded`).catch((e) => {
+        console.warn('[blog-writer] logo stamping failed, using unbranded image:', e instanceof Error ? e.message : e);
+        return rawUrl;
+      });
     }
 
     console.log(`[blog-writer] writing for ${targetDate} seq=${daySeq} product=${product.product_key} slot=${slotIndex} cycle=${cycle} format=${postFormat}`);
@@ -686,15 +719,18 @@ Deno.serve(async (req) => {
       // 6a. Long-form text post — unchanged from the original design.
       const draft = await generateBlogPost(product, icp, postSeq);
       console.log(`[blog-writer] generating media for keywords: ${draft.image_keywords?.join(', ')}`);
-      const imageUrl = await getPostImage(draft.image_keywords, '4:5');
+      const rawImageUrl = await getRawPostImage(draft.image_keywords, '4:5');
       let videoUrl: string | null = null;
-      if (imageUrl) {
-        videoUrl = await generateShotstackVideo(imageUrl, draft.title).catch((e) => {
+      if (rawImageUrl) {
+        videoUrl = await generateShotstackVideo(rawImageUrl, draft.title).catch((e) => {
           console.warn('[blog-writer] Shotstack failed, falling back to Pexels video:', e.message);
           return null;
         });
       }
       if (!videoUrl) videoUrl = await fetchPexelsVideo(draft.image_keywords || []).catch(() => null);
+      const imageUrl = rawImageUrl
+        ? await brandImageUrl(rawImageUrl, `${r2Prefix}-branded`).catch(() => rawImageUrl)
+        : null;
       const sourceLines = await verifiedSourceLines(draft.sources);
 
       row = {
@@ -725,15 +761,18 @@ Deno.serve(async (req) => {
     } else if (postFormat === 'video') {
       // 6c. Video post — short caption; AI image becomes the video background.
       const draft = await generateShortCaption(product, icp, postSeq, 'video');
-      const imageUrl = await getPostImage(draft.image_keywords, '9:16');
+      const rawImageUrl = await getRawPostImage(draft.image_keywords, '9:16');
       let videoUrl: string | null = null;
-      if (imageUrl) {
-        videoUrl = await generateShotstackVideo(imageUrl, draft.title).catch((e) => {
+      if (rawImageUrl) {
+        videoUrl = await generateShotstackVideo(rawImageUrl, draft.title).catch((e) => {
           console.warn('[blog-writer] Shotstack failed, falling back to Pexels video:', e.message);
           return null;
         });
       }
       if (!videoUrl) videoUrl = await fetchPexelsVideo(draft.image_keywords || []).catch(() => null);
+      const imageUrl = rawImageUrl
+        ? await brandImageUrl(rawImageUrl, `${r2Prefix}-branded`).catch(() => rawImageUrl)
+        : null;
       const sourceLines = await verifiedSourceLines(draft.sources);
 
       row = {
