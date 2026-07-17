@@ -86,6 +86,51 @@ async function publishImagePost(
   return publishContainer(igUserId, containerId, token);
 }
 
+// Carousel post — all slides as one swipeable IG carousel (max 10 children),
+// mirroring the Facebook album fix: LinkedIn gets the full document, so the
+// other channels must not silently truncate to the cover slide.
+async function publishCarouselPost(
+  igUserId: string,
+  token: string,
+  imageUrls: string[],
+  caption: string,
+): Promise<string> {
+  // Step 1: create child containers concurrently
+  const children = await Promise.all(
+    imageUrls.slice(0, 10).map(async (url) => {
+      const res = await fetch(`https://graph.facebook.com/${FB_API_VERSION}/${igUserId}/media`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image_url: url, is_carousel_item: true, access_token: token }),
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (!res.ok) throw new Error(`IG carousel child ${res.status}: ${await res.text()}`);
+      const { id } = await res.json();
+      return id as string;
+    }),
+  );
+
+  // Step 2: wait for every child to finish processing
+  await Promise.all(children.map((id) => awaitContainer(id, token)));
+
+  // Step 3: create + publish the carousel container
+  const res = await fetch(`https://graph.facebook.com/${FB_API_VERSION}/${igUserId}/media`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      media_type: 'CAROUSEL',
+      children: children.join(','),
+      caption,
+      access_token: token,
+    }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!res.ok) throw new Error(`IG carousel container ${res.status}: ${await res.text()}`);
+  const { id: containerId } = await res.json();
+  await awaitContainer(containerId, token);
+  return publishContainer(igUserId, containerId, token);
+}
+
 async function publishReel(
   igUserId: string,
   token: string,
@@ -142,7 +187,7 @@ Deno.serve(async (req) => {
 
     const { data: post, error: postErr } = await supabase
       .from('blog_posts')
-      .select('id, blog_title, blog_excerpt, image_url, video_url')
+      .select('id, blog_title, blog_excerpt, linkedin_short_caption, post_format, image_url, video_url, carousel_slide_urls')
       .eq('id', blog_post_id)
       .maybeSingle();
 
@@ -150,11 +195,37 @@ Deno.serve(async (req) => {
     if (!post) return err(404, 'Blog post not found');
 
     const result: Record<string, unknown> = {};
-    // IG caption: use excerpt for brevity (max 2200 chars)
-    const caption = ((post.blog_excerpt || post.blog_title) as string).slice(0, 2200);
+    // IG caption: short caption preferred (max 2200 chars)
+    const caption = ((post.linkedin_short_caption || post.blog_excerpt || post.blog_title) as string).slice(0, 2200);
+    const slides = Array.isArray(post.carousel_slide_urls)
+      ? (post.carousel_slide_urls as string[]).filter(Boolean)
+      : [];
 
-    // ── Image post ──────────────────────────────────────────────────────────
-    if (post.image_url) {
+    // ── Carousel post ───────────────────────────────────────────────────────
+    if (post.post_format === 'carousel' && slides.length > 1) {
+      try {
+        const mediaId = await publishCarouselPost(igUserId, token, slides, caption);
+        await supabase
+          .from('blog_posts')
+          .update({ ig_post_id: mediaId, ig_posted_at: new Date().toISOString() })
+          .eq('id', post.id);
+        result.ig_post_id = mediaId;
+        console.log(`[social-instagram] carousel posted: ${mediaId}`);
+      } catch (e) {
+        console.warn('[social-instagram] carousel failed, falling back to cover image:', e instanceof Error ? e.message : e);
+        try {
+          const mediaId = await publishImagePost(igUserId, token, slides[0], caption);
+          await supabase
+            .from('blog_posts')
+            .update({ ig_post_id: mediaId, ig_posted_at: new Date().toISOString() })
+            .eq('id', post.id);
+          result.ig_post_id = mediaId;
+        } catch (e2) {
+          result.image_error = e2 instanceof Error ? e2.message : String(e2);
+          console.error('[social-instagram] carousel fallback failed:', result.image_error);
+        }
+      }
+    } else if (post.image_url) {
       try {
         const mediaId = await publishImagePost(igUserId, token, post.image_url as string, caption);
         await supabase
