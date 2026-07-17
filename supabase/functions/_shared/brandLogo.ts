@@ -29,7 +29,7 @@ export async function fetchLogoBytes(): Promise<Uint8Array> {
  */
 export async function stampLogoOnBytes(
   imageBytes: Uint8Array,
-  corner: LogoCorner = 'br',
+  corner: LogoCorner = 'tr',
   widthPct = 0.15,
 ): Promise<Uint8Array> {
   const img = await Image.decode(imageBytes);
@@ -55,7 +55,7 @@ export async function stampLogoOnBytes(
  * Fetch a source image URL, stamp the logo watermark, and re-upload the
  * branded version to the marketing R2 bucket under `${r2Key}.jpg`.
  */
-export async function brandImageUrl(imageUrl: string, r2Key: string, corner: LogoCorner = 'br'): Promise<string> {
+export async function brandImageUrl(imageUrl: string, r2Key: string, corner: LogoCorner = 'tr'): Promise<string> {
   const res = await fetch(imageUrl, { signal: AbortSignal.timeout(20_000) });
   if (!res.ok) throw new Error(`Source image fetch failed: ${res.status}`);
   const bytes = new Uint8Array(await res.arrayBuffer());

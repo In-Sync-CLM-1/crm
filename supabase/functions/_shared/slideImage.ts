@@ -88,13 +88,15 @@ export async function renderSlideImage(
   // Thin accent rule above the text block.
   bg.drawBox(MARGIN, textY - 28, 120, 6, white);
 
-  // Footer row: In-Sync logo mark bottom-left (brand recall), slide counter
-  // bottom-right. The colored mark reads clearly against the dark scrim.
+  // In-Sync logo mark top-right, clear of the text block which always sits
+  // left-aligned in the lower band — top-right stays uncluttered on every
+  // slide regardless of how much text a slide carries.
   const logo = await Image.decode(await fetchLogoBytes());
-  const logoH = 40;
+  const logoH = 48;
   logo.resize(Image.RESIZE_AUTO, logoH);
-  bg.composite(logo, MARGIN, SIZE - MARGIN + 10 - logoH);
+  bg.composite(logo, SIZE - MARGIN - logo.width, MARGIN);
 
+  // Footer row: slide counter bottom-right.
   if (slideNum && slideTotal) {
     const counter = await Image.renderText(regular, 30, `${slideNum} / ${slideTotal}`, dim);
     bg.composite(counter, SIZE - MARGIN - counter.width, SIZE - MARGIN + 10 - counter.height);
