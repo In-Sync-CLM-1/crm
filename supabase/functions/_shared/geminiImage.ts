@@ -13,16 +13,49 @@ const GEMINI_MODEL = 'gemini-2.5-flash-image';
 export type GeminiAspect = '1:1' | '4:5' | '9:16' | '16:9';
 
 /**
- * Build a photographic prompt from the post's context. `keywords` come from
- * the LLM's image_keywords; `industries` grounds the scene in the ICP's world.
+ * Visual style rotation — a deliberate visual break across the feed and a
+ * variable to watch for which style holds attention best. `photo` is the
+ * original/default treatment; the others trade photorealism (and its failure
+ * modes — fake UI text, split-panel compositions) for illustrated styles.
  */
-export function buildImagePrompt(keywords: string[], industries: string, extra = ''): string {
+export type ImageStyle = 'photo' | 'illustration' | '3d' | 'abstract';
+export const IMAGE_STYLES: ImageStyle[] = ['photo', 'illustration', '3d', 'abstract'];
+
+const STYLE_TEMPLATES: Record<ImageStyle, (scene: string, industries: string) => string> = {
+  photo: (scene, industries) => [
+    `Professional editorial photograph for a B2B SaaS brand: ${scene}.`,
+    `Indian workplace context — Indian professionals in a modern Indian office (${industries} setting).`,
+    'Natural light, shallow depth of field, photorealistic, high detail, muted corporate palette.',
+  ].join(' '),
+  illustration: (scene, industries) => [
+    `Flat vector illustration for a B2B SaaS brand depicting: ${scene}.`,
+    `Indian professionals in a modern office (${industries} setting), rendered in a clean flat-design illustration style —`,
+    'bold simple shapes, minimal line detail, limited palette built from teal and coral accents on a soft neutral background,',
+    'no photorealism, no photographic texture, flat color blocks only.',
+  ].join(' '),
+  '3d': (scene, industries) => [
+    `Soft 3D rendered illustration for a B2B SaaS brand depicting: ${scene}.`,
+    `Indian professionals in a modern office (${industries} setting), shown as smooth minimal 3D characters (Notion/Stripe-style 3D illustration),`,
+    'soft studio lighting, gentle shadows, rounded friendly shapes, muted pastel palette with teal and coral accents.',
+  ].join(' '),
+  abstract: (scene, industries) => [
+    `Abstract conceptual graphic for a B2B SaaS brand representing: ${scene}, in the context of ${industries}.`,
+    'Flowing geometric shapes, gradient mesh in brand teal-to-coral, dashboard and data-flow motifs rendered abstractly,',
+    'no literal people, no realistic scene, clean modern SaaS-marketing aesthetic.',
+  ].join(' '),
+};
+
+/**
+ * Build an image prompt from the post's context. `keywords` come from the
+ * LLM's image_keywords; `industries` grounds the scene in the ICP's world;
+ * `style` picks the visual treatment (defaults to the original photo style).
+ */
+export function buildImagePrompt(keywords: string[], industries: string, extra = '', style: ImageStyle = 'photo'): string {
   const scene = keywords.slice(0, 4).join(', ');
   return [
-    `Professional editorial photograph for a B2B SaaS brand: ${scene}.`,
-    `Indian workplace context — Indian professionals in a modern Indian office (${industries || 'business'} setting).`,
-    'Natural light, shallow depth of field, photorealistic, high detail, muted corporate palette.',
-    'The photograph must contain ZERO text of any kind — no words, lettering, numbers, labels, signage, logos, or watermarks — even if the scene concept implies a comparison or message. One single continuous scene, never a split/side-by-side layout.',
+    STYLE_TEMPLATES[style](scene, industries || 'business'),
+    'The image must contain ZERO text of any kind — no words, lettering, numbers, labels, signage, logos, watermarks, or fake UI/screen text — even if the concept implies a comparison or message.',
+    'It must be ONE single continuous composition — never a split/side-by-side layout, never a multi-panel grid, never a collage of separate frames.',
     extra,
   ].filter(Boolean).join(' ');
 }

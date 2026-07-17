@@ -25,7 +25,7 @@ import { callLLMJson } from '../_shared/llmClient.ts';
 import { corsHeaders } from '../_shared/corsHeaders.ts';
 import { renderSlideImage } from '../_shared/slideImage.ts';
 import { uploadToMarketingR2 } from '../_shared/r2Marketing.ts';
-import { buildImagePrompt, generateGeminiImage, GeminiAspect } from '../_shared/geminiImage.ts';
+import { buildImagePrompt, generateGeminiImage, GeminiAspect, ImageStyle, IMAGE_STYLES } from '../_shared/geminiImage.ts';
 import { brandImageUrl, LOGO_MARK_URL } from '../_shared/brandLogo.ts';
 
 const LINKEDIN_ORG_ID = Deno.env.get('LINKEDIN_ORG_ID') || '35932282';
@@ -325,6 +325,14 @@ const CONTENT_ANGLES = [
 ];
 function angleFor(dayIndex: number): string {
   return CONTENT_ANGLES[dayIndex % CONTENT_ANGLES.length];
+}
+
+// Visual style rotation — deliberate visual break across the feed, and a
+// variable to watch for which style holds attention best. One style per
+// post, applied consistently to every image the post uses (single image,
+// or all 8 carousel slide backgrounds).
+function styleFor(postSeq: number): ImageStyle {
+  return IMAGE_STYLES[postSeq % IMAGE_STYLES.length];
 }
 
 async function generateBlogPost(
@@ -667,6 +675,7 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     const icpIndustries = Array.isArray(icp?.industries) ? (icp!.industries as string[]).slice(0, 3).join(', ') : 'B2B';
+    const imageStyle = styleFor(postSeq);
 
     // Gemini AI image (primary) with Pexels stock as fallback.
     const r2Prefix = `ai/${targetDate}/${product.product_key}-${daySeq ?? 'force'}-${Date.now()}`;
@@ -675,7 +684,7 @@ Deno.serve(async (req) => {
     // progresses. The dedicated Shotstack overlay track handles video
     // branding instead (fixed position, immune to the zoom effect).
     async function getRawPostImage(keywords: string[], aspect: GeminiAspect, extra = ''): Promise<string | null> {
-      const aiUrl = await generateGeminiImage(buildImagePrompt(keywords || [], icpIndustries, extra), aspect, r2Prefix);
+      const aiUrl = await generateGeminiImage(buildImagePrompt(keywords || [], icpIndustries, extra, imageStyle), aspect, r2Prefix);
       if (aiUrl) return aiUrl;
       console.warn('[blog-writer] Gemini image unavailable — falling back to Pexels');
       return await fetchPexelsImage(keywords || []).catch(() => null);
@@ -711,6 +720,7 @@ Deno.serve(async (req) => {
       content_angle: angleFor(postSeq),
       content_theme: themeFor(postSeq),
       content_icp_snapshot: icp || null,
+      image_style: imageStyle,
     };
 
     let row: Record<string, unknown>;
@@ -803,7 +813,7 @@ Deno.serve(async (req) => {
       const bgUrls = await Promise.all(
         scenes.map((scene, i) =>
           generateGeminiImage(
-            buildImagePrompt([scene, ...(draft.image_keywords || []).slice(0, 2)], icpIndustries, carouselExtra),
+            buildImagePrompt([scene, ...(draft.image_keywords || []).slice(0, 2)], icpIndustries, carouselExtra, imageStyle),
             '1:1',
             `${r2Prefix}-slide${i + 1}`,
           ),

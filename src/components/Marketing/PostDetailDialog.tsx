@@ -35,6 +35,7 @@ export interface CalendarPost {
   day_seq: number | null;
   content_theme: string | null;
   content_angle: string | null;
+  image_style: string | null;
   content_strategy_note: string | null;
   content_icp_snapshot: { industries?: string[]; designations?: string[]; pain_points?: string[]; aha_event?: string } | null;
 }
@@ -133,6 +134,7 @@ export function PostDetailDialog({
             <Badge variant="outline" className={statusColor[post.status] || ""}>{post.status}</Badge>
             <Badge variant="secondary">{post.post_format}</Badge>
             {post.product_key && <Badge variant="outline">{post.product_key}</Badge>}
+            {post.image_style && <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-300">style: {post.image_style}</Badge>}
           </div>
         </DialogHeader>
 

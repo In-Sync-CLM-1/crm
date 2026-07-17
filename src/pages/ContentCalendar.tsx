@@ -40,6 +40,15 @@ const formatIcon: Record<string, React.ComponentType<{ className?: string }>> = 
   carousel: LayoutGrid,
 };
 
+// Visual style rotation — a colored dot per style so the pattern (which
+// style sits on which post) is visible across the whole month at a glance.
+const styleColor: Record<string, string> = {
+  photo: "bg-sky-500",
+  illustration: "bg-violet-500",
+  "3d": "bg-amber-500",
+  abstract: "bg-rose-500",
+};
+
 export default function ContentCalendar() {
   const { effectiveOrgId } = useOrgContext();
   const [month, setMonth] = useState(new Date());
@@ -153,6 +162,13 @@ export default function ContentCalendar() {
               <span className={`h-2 w-2 rounded-full ${color}`} /> {status}
             </span>
           ))}
+          <span className="w-px h-3 bg-border mx-1" />
+          <span className="text-muted-foreground/70">image style:</span>
+          {Object.entries(styleColor).map(([style, color]) => (
+            <span key={style} className="flex items-center gap-1">
+              <span className={`h-2 w-2 rounded-full ${color}`} /> {style}
+            </span>
+          ))}
         </div>
 
         {isLoading ? (
@@ -190,9 +206,12 @@ export default function ContentCalendar() {
                             key={p.id}
                             onClick={() => openPost(p)}
                             className="w-full flex items-center gap-1 text-left px-1 py-0.5 rounded hover:bg-accent truncate"
-                            title={`${time ? time + " IST — " : ""}${p.blog_title || ""}`}
+                            title={`${time ? time + " IST — " : ""}${p.blog_title || ""}${p.image_style ? ` · style: ${p.image_style}` : ""}`}
                           >
                             <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${statusDot[p.status] || "bg-gray-300"}`} />
+                            {p.image_style && (
+                              <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${styleColor[p.image_style] || "bg-gray-300"}`} />
+                            )}
                             <Icon className="h-3 w-3 shrink-0" />
                             {time && <span className="shrink-0 tabular-nums text-[10px] text-muted-foreground">{time}</span>}
                             <span className="truncate">{p.blog_title || p.post_format}</span>
