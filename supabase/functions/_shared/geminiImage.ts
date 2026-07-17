@@ -40,9 +40,9 @@ const STYLE_TEMPLATES: Record<ImageStyle, (scene: string, industries: string) =>
   ].join(' '),
   abstract: (scene, industries) => [
     `Abstract conceptual graphic for a B2B SaaS brand representing: ${scene}, in the context of ${industries}.`,
-    'Flowing geometric shapes, gradient mesh in brand teal-to-coral, dashboard and data-flow motifs rendered abstractly,',
+    'Flowing geometric shapes, gradient mesh in brand teal-to-coral, translucent panel and data-flow motifs rendered abstractly,',
     'no literal people, no realistic scene, clean modern SaaS-marketing aesthetic.',
-    'Do NOT add any caption labels, callouts, or annotations next to the shapes — this is a pure abstract graphic, not an infographic or diagram, so nothing in it should read as a word.',
+    'This is a pure abstract graphic, not an infographic, not a dashboard mockup, not a diagram — no panel or shape may carry a caption, label, callout, or any word on it.',
   ].join(' '),
 };
 
@@ -55,9 +55,9 @@ export function buildImagePrompt(keywords: string[], industries: string, extra =
   const scene = keywords.slice(0, 4).join(', ');
   return [
     STYLE_TEMPLATES[style](scene, industries || 'business'),
-    'The image must contain ZERO text of any kind — no words, lettering, numbers, labels, signage, logos, watermarks, or fake UI/screen text — even if the concept implies a comparison or message.',
     'It must be ONE single continuous composition — never a split/side-by-side layout, never a multi-panel grid, never a collage of separate frames.',
     extra,
+    'Final reminder, the single most important constraint: the image must contain ABSOLUTELY ZERO text of any kind anywhere in the frame — no words, lettering, numbers, captions, labels, signage, logos, watermarks, or fake UI/screen text, even a single word, even if the concept implies a comparison or message.',
   ].filter(Boolean).join(' ');
 }
 
