@@ -30,6 +30,15 @@ export interface CalendarPost {
   linkedin_likes: number | null;
   linkedin_comments: number | null;
   linkedin_reposts: number | null;
+  fb_likes: number | null;
+  fb_comments: number | null;
+  fb_shares: number | null;
+  fb_clicks: number | null;
+  ig_reach: number | null;
+  ig_likes: number | null;
+  ig_comments: number | null;
+  ig_saves: number | null;
+  ig_shares: number | null;
   error_message: string | null;
   linkedin_slot_index: number | null;
   day_seq: number | null;
@@ -237,15 +246,35 @@ export function PostDetailDialog({
           )}
 
           {post.status === "posted" && (
-            <div className="flex items-center gap-4 text-sm text-muted-foreground border-t pt-3">
-              <span className="flex items-center gap-1"><Eye className="h-3.5 w-3.5" /> {post.linkedin_impressions ?? "—"}</span>
-              <span className="flex items-center gap-1"><ThumbsUp className="h-3.5 w-3.5" /> {post.linkedin_likes ?? "—"}</span>
-              <span className="flex items-center gap-1"><MessageCircle className="h-3.5 w-3.5" /> {post.linkedin_comments ?? "—"}</span>
-              <span className="flex items-center gap-1"><Repeat2 className="h-3.5 w-3.5" /> {post.linkedin_reposts ?? "—"}</span>
-              {post.linkedin_url && (
-                <a href={post.linkedin_url} target="_blank" rel="noreferrer" className="ml-auto flex items-center gap-1 text-primary hover:underline">
-                  View on LinkedIn <ExternalLink className="h-3.5 w-3.5" />
-                </a>
+            <div className="space-y-1.5 text-sm text-muted-foreground border-t pt-3">
+              <div className="flex items-center gap-4">
+                <span className="w-20 text-xs font-medium">LinkedIn</span>
+                <span className="flex items-center gap-1"><ThumbsUp className="h-3.5 w-3.5" /> {post.linkedin_likes ?? "—"}</span>
+                <span className="flex items-center gap-1"><MessageCircle className="h-3.5 w-3.5" /> {post.linkedin_comments ?? "—"}</span>
+                <span className="flex items-center gap-1"><Repeat2 className="h-3.5 w-3.5" /> {post.linkedin_reposts ?? "—"}</span>
+                {post.linkedin_url && (
+                  <a href={post.linkedin_url} target="_blank" rel="noreferrer" className="ml-auto flex items-center gap-1 text-primary hover:underline">
+                    View on LinkedIn <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                )}
+              </div>
+              {post.fb_post_id && (
+                <div className="flex items-center gap-4">
+                  <span className="w-20 text-xs font-medium">Facebook</span>
+                  <span className="flex items-center gap-1"><ThumbsUp className="h-3.5 w-3.5" /> {post.fb_likes ?? "—"}</span>
+                  <span className="flex items-center gap-1"><MessageCircle className="h-3.5 w-3.5" /> {post.fb_comments ?? "—"}</span>
+                  <span className="flex items-center gap-1"><Repeat2 className="h-3.5 w-3.5" /> {post.fb_shares ?? "—"}</span>
+                  <span className="text-xs">clicks {post.fb_clicks ?? "—"}</span>
+                </div>
+              )}
+              {post.ig_post_id && (
+                <div className="flex items-center gap-4">
+                  <span className="w-20 text-xs font-medium">Instagram</span>
+                  <span className="flex items-center gap-1"><Eye className="h-3.5 w-3.5" /> {post.ig_reach ?? "—"}</span>
+                  <span className="flex items-center gap-1"><ThumbsUp className="h-3.5 w-3.5" /> {post.ig_likes ?? "—"}</span>
+                  <span className="flex items-center gap-1"><MessageCircle className="h-3.5 w-3.5" /> {post.ig_comments ?? "—"}</span>
+                  <span className="text-xs">saves {post.ig_saves ?? "—"} · shares {post.ig_shares ?? "—"}</span>
+                </div>
               )}
             </div>
           )}
