@@ -71,6 +71,7 @@ Deno.serve(async (req) => {
     if (pages.length) {
       // Prefer a page whose name mentions "in-sync"; otherwise take the first.
       page = pages.find((p) => p.name.toLowerCase().includes('in-sync')) || pages[0];
+      console.log('[fb-oauth-callback] pages found:', JSON.stringify(pages.map((p) => ({ id: p.id, name: p.name }))));
     } else {
       // This Configuration granted only page-scoped permissions with a single
       // Page asset selected, so Facebook Login for Business handed back a
@@ -128,7 +129,10 @@ Deno.serve(async (req) => {
       await supabase.from('mkt_social_config').insert(row);
     }
 
-    return html(`<h2>Facebook connected</h2><p>Page: ${page.name} (${page.id})</p><p>Instagram: ${igUserId ?? '(no linked Instagram Business account found)'}</p><p>You can close this tab.</p>`);
+    const pagesDebug = pages.length
+      ? `<p style="color:#666;font-size:13px">All pages this login could see: ${pages.map((p) => `${p.name} (${p.id})`).join(', ')}</p>`
+      : '';
+    return html(`<h2>Facebook connected</h2><p>Page: ${page.name} (${page.id})</p><p>Instagram: ${igUserId ?? '(no linked Instagram Business account found)'}</p>${pagesDebug}<p>You can close this tab.</p>`);
 
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
