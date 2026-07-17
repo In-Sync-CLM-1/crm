@@ -30,19 +30,6 @@ Deno.serve(async (req) => {
   const clientId = Deno.env.get('FB_APP_ID')!;
   const clientSecret = Deno.env.get('FB_APP_SECRET')!;
 
-  // One-off diagnostic path — no user login needed, uses an app access token
-  // to check whether the target Page is even visible/owned the way we expect.
-  if (url.searchParams.get('diag') === 'pageinfo') {
-    const appToken = `${clientId}|${clientSecret}`;
-    const pageId = url.searchParams.get('page_id') || '887430171125971';
-    const fields = url.searchParams.get('fields') || 'name,link';
-    const res = await fetch(
-      `https://graph.facebook.com/${FB_API_VERSION}/${pageId}?fields=${encodeURIComponent(fields)}&access_token=${appToken}`,
-    );
-    const data = await res.json();
-    return new Response(JSON.stringify(data, null, 2), { headers: { 'Content-Type': 'application/json' } });
-  }
-
   if (error) return html(`<h2>Facebook declined the request</h2><p>${error}</p>`, 400);
   if (!code) return html(`<h2>Missing authorization code</h2>`, 400);
 
@@ -84,7 +71,6 @@ Deno.serve(async (req) => {
     if (pages.length) {
       // Prefer a page whose name mentions "in-sync"; otherwise take the first.
       page = pages.find((p) => p.name.toLowerCase().includes('in-sync')) || pages[0];
-      console.log('[fb-oauth-callback] pages found:', JSON.stringify(pages.map((p) => ({ id: p.id, name: p.name }))));
     } else {
       // This Configuration granted only page-scoped permissions with a single
       // Page asset selected, so Facebook Login for Business handed back a
@@ -142,10 +128,7 @@ Deno.serve(async (req) => {
       await supabase.from('mkt_social_config').insert(row);
     }
 
-    const pagesDebug = pages.length
-      ? `<p style="color:#666;font-size:13px">All pages this login could see: ${pages.map((p) => `${p.name} (${p.id})`).join(', ')}</p>`
-      : '';
-    return html(`<h2>Facebook connected</h2><p>Page: ${page.name} (${page.id})</p><p>Instagram: ${igUserId ?? '(no linked Instagram Business account found)'}</p>${pagesDebug}<p>You can close this tab.</p>`);
+    return html(`<h2>Facebook connected</h2><p>Page: ${page.name} (${page.id})</p><p>Instagram: ${igUserId ?? '(no linked Instagram Business account found)'}</p><p>You can close this tab.</p>`);
 
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
