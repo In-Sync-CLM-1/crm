@@ -35,8 +35,9 @@ Deno.serve(async (req) => {
   if (url.searchParams.get('diag') === 'pageinfo') {
     const appToken = `${clientId}|${clientSecret}`;
     const pageId = url.searchParams.get('page_id') || '887430171125971';
+    const fields = url.searchParams.get('fields') || 'name,link';
     const res = await fetch(
-      `https://graph.facebook.com/${FB_API_VERSION}/${pageId}?fields=name,link,is_published,verification_status,owner_business&access_token=${appToken}`,
+      `https://graph.facebook.com/${FB_API_VERSION}/${pageId}?fields=${encodeURIComponent(fields)}&access_token=${appToken}`,
     );
     const data = await res.json();
     return new Response(JSON.stringify(data, null, 2), { headers: { 'Content-Type': 'application/json' } });
