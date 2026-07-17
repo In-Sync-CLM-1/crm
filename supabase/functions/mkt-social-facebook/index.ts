@@ -1,12 +1,15 @@
 /**
- * mkt-social-facebook — Post blog content to Facebook company page.
+ * mkt-social-facebook — Post blog content to the Facebook company Page.
  *
- * Called by mkt-blog-poster after a successful LinkedIn post.
- * Posts blog title + excerpt as the message with the blog URL as the link.
- * Facebook auto-generates the OG link preview.
+ * Called by mkt-blog-poster after a successful LinkedIn post. Mirrors
+ * mkt-social-instagram's approach: read whatever media the post actually
+ * carries (image_url / video_url / carousel_slide_urls) and post that,
+ * rather than depending on a "published blog article" URL that the current
+ * content pipeline no longer produces.
  *
- * Page ID + Page access token come from mkt_social_config, populated by
- * mkt-facebook-oauth-callback (Meta connect flow).
+ * Page ID + Page access token come from mkt_social_config (System User
+ * Page token, generated in Meta Business Settings — see
+ * mkt-facebook-oauth-callback for the OAuth alternative).
  */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/corsHeaders.ts';
@@ -31,31 +34,49 @@ function err(status: number, message: string) {
   });
 }
 
-async function postToFacebook(
-  pageId: string,
-  token: string,
-  message: string,
-  link: string,
-): Promise<string> {
+async function postWithRetry(url: string, params: Record<string, string>): Promise<{ id: string }> {
   const doPost = () =>
-    fetch(`https://graph.facebook.com/${FB_API_VERSION}/${pageId}/feed`, {
+    fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, link, access_token: token }),
-      signal: AbortSignal.timeout(25_000),
+      body: JSON.stringify(params),
+      signal: AbortSignal.timeout(30_000),
     });
 
   let res = await doPost();
-  // Retry once on rate limit
   if (res.status === 429) {
     console.warn('[social-facebook] rate limited — retrying in 5s');
     await sleep(5_000);
     res = await doPost();
   }
-
   if (!res.ok) throw new Error(`FB Graph API ${res.status}: ${await res.text()}`);
-  const data = await res.json();
-  return data.id as string; // format: {page-id}_{post-id}
+  return res.json();
+}
+
+async function postText(pageId: string, token: string, message: string): Promise<string> {
+  const data = await postWithRetry(`https://graph.facebook.com/${FB_API_VERSION}/${pageId}/feed`, {
+    message,
+    access_token: token,
+  });
+  return data.id;
+}
+
+async function postPhoto(pageId: string, token: string, imageUrl: string, caption: string): Promise<string> {
+  const data = await postWithRetry(`https://graph.facebook.com/${FB_API_VERSION}/${pageId}/photos`, {
+    url: imageUrl,
+    caption,
+    access_token: token,
+  });
+  return data.id;
+}
+
+async function postVideo(pageId: string, token: string, videoUrl: string, description: string): Promise<string> {
+  const data = await postWithRetry(`https://graph.facebook.com/${FB_API_VERSION}/${pageId}/videos`, {
+    file_url: videoUrl,
+    description,
+    access_token: token,
+  });
+  return data.id;
 }
 
 Deno.serve(async (req) => {
@@ -85,22 +106,29 @@ Deno.serve(async (req) => {
 
     const { data: post, error: postErr } = await supabase
       .from('blog_posts')
-      .select('id, blog_title, blog_excerpt, blog_url')
+      .select('id, blog_title, blog_excerpt, post_format, image_url, video_url, carousel_slide_urls')
       .eq('id', blog_post_id)
       .maybeSingle();
 
     if (postErr) return err(500, postErr.message);
     if (!post) return err(404, 'Blog post not found');
-    if (!post.blog_url || post.blog_url.startsWith('draft://')) {
-      return ok({ skip: 'No public URL yet — post still a draft' });
+
+    const message = ((post.blog_excerpt || post.blog_title) as string || '').slice(0, 63_000);
+    const firstCarouselSlide = Array.isArray(post.carousel_slide_urls) && post.carousel_slide_urls.length
+      ? (post.carousel_slide_urls[0] as string)
+      : null;
+
+    let fbPostId: string;
+    if (post.video_url) {
+      fbPostId = await postVideo(pageId, token, post.video_url as string, message);
+    } else if (post.image_url) {
+      fbPostId = await postPhoto(pageId, token, post.image_url as string, message);
+    } else if (firstCarouselSlide) {
+      fbPostId = await postPhoto(pageId, token, firstCarouselSlide, message);
+    } else {
+      fbPostId = await postText(pageId, token, message);
     }
-
-    const message = [post.blog_title, post.blog_excerpt]
-      .filter(Boolean)
-      .join('\n\n');
-
-    const fbPostId = await postToFacebook(pageId, token, message, post.blog_url);
-    console.log(`[social-facebook] posted: ${fbPostId}`);
+    console.log(`[social-facebook] posted (format=${post.post_format}): ${fbPostId}`);
 
     await supabase
       .from('blog_posts')
