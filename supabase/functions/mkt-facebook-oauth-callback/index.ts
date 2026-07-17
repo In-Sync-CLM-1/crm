@@ -27,11 +27,23 @@ Deno.serve(async (req) => {
   const code = url.searchParams.get('code');
   const error = url.searchParams.get('error_description') || url.searchParams.get('error');
 
-  if (error) return html(`<h2>Facebook declined the request</h2><p>${error}</p>`, 400);
-  if (!code) return html(`<h2>Missing authorization code</h2>`, 400);
-
   const clientId = Deno.env.get('FB_APP_ID')!;
   const clientSecret = Deno.env.get('FB_APP_SECRET')!;
+
+  // One-off diagnostic path — no user login needed, uses an app access token
+  // to check whether the target Page is even visible/owned the way we expect.
+  if (url.searchParams.get('diag') === 'pageinfo') {
+    const appToken = `${clientId}|${clientSecret}`;
+    const pageId = url.searchParams.get('page_id') || '887430171125971';
+    const res = await fetch(
+      `https://graph.facebook.com/${FB_API_VERSION}/${pageId}?fields=name,link,is_published,verification_status,owner_business&access_token=${appToken}`,
+    );
+    const data = await res.json();
+    return new Response(JSON.stringify(data, null, 2), { headers: { 'Content-Type': 'application/json' } });
+  }
+
+  if (error) return html(`<h2>Facebook declined the request</h2><p>${error}</p>`, 400);
+  if (!code) return html(`<h2>Missing authorization code</h2>`, 400);
 
   try {
     // 1. Exchange code for a short-lived user access token
