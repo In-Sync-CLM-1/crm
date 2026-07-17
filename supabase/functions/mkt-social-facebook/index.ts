@@ -34,7 +34,7 @@ function err(status: number, message: string) {
   });
 }
 
-async function postWithRetry(url: string, params: Record<string, string>): Promise<{ id: string }> {
+async function postWithRetry(url: string, params: Record<string, unknown>): Promise<{ id: string }> {
   const doPost = () =>
     fetch(url, {
       method: 'POST',
@@ -65,6 +65,27 @@ async function postPhoto(pageId: string, token: string, imageUrl: string, captio
   const data = await postWithRetry(`https://graph.facebook.com/${FB_API_VERSION}/${pageId}/photos`, {
     url: imageUrl,
     caption,
+    access_token: token,
+  });
+  return data.id;
+}
+
+// Carousel as a proper multi-photo album post — LinkedIn gets all slides as a
+// swipeable document, so Facebook must show all of them too, not just the
+// cover. Photos are uploaded unpublished, then attached to one feed post.
+async function postMultiPhoto(pageId: string, token: string, imageUrls: string[], message: string): Promise<string> {
+  const mediaIds: string[] = [];
+  for (const url of imageUrls) {
+    const data = await postWithRetry(`https://graph.facebook.com/${FB_API_VERSION}/${pageId}/photos`, {
+      url,
+      published: 'false',
+      access_token: token,
+    });
+    mediaIds.push(data.id);
+  }
+  const data = await postWithRetry(`https://graph.facebook.com/${FB_API_VERSION}/${pageId}/feed`, {
+    message,
+    attached_media: mediaIds.map((id) => ({ media_fbid: id })),
     access_token: token,
   });
   return data.id;
@@ -106,25 +127,32 @@ Deno.serve(async (req) => {
 
     const { data: post, error: postErr } = await supabase
       .from('blog_posts')
-      .select('id, blog_title, blog_excerpt, post_format, image_url, video_url, carousel_slide_urls')
+      .select('id, blog_title, blog_excerpt, linkedin_short_caption, post_format, image_url, video_url, carousel_slide_urls')
       .eq('id', blog_post_id)
       .maybeSingle();
 
     if (postErr) return err(500, postErr.message);
     if (!post) return err(404, 'Blog post not found');
 
-    const message = ((post.blog_excerpt || post.blog_title) as string || '').slice(0, 63_000);
-    const firstCarouselSlide = Array.isArray(post.carousel_slide_urls) && post.carousel_slide_urls.length
-      ? (post.carousel_slide_urls[0] as string)
-      : null;
+    // Facebook always gets the short caption — long LinkedIn text collapses
+    // behind "See more" and reads out of place there.
+    const message = ((post.linkedin_short_caption || post.blog_excerpt || post.blog_title) as string || '').slice(0, 63_000);
+    const slides = Array.isArray(post.carousel_slide_urls)
+      ? (post.carousel_slide_urls as string[]).filter(Boolean)
+      : [];
 
     let fbPostId: string;
-    if (post.video_url) {
+    if (post.post_format === 'carousel' && slides.length > 1) {
+      fbPostId = await postMultiPhoto(pageId, token, slides, message).catch(async (e) => {
+        console.warn('[social-facebook] multi-photo failed, falling back to cover photo:', e instanceof Error ? e.message : e);
+        return await postPhoto(pageId, token, slides[0], message);
+      });
+    } else if (post.video_url) {
       fbPostId = await postVideo(pageId, token, post.video_url as string, message);
     } else if (post.image_url) {
       fbPostId = await postPhoto(pageId, token, post.image_url as string, message);
-    } else if (firstCarouselSlide) {
-      fbPostId = await postPhoto(pageId, token, firstCarouselSlide, message);
+    } else if (slides.length) {
+      fbPostId = await postPhoto(pageId, token, slides[0], message);
     } else {
       fbPostId = await postText(pageId, token, message);
     }
