@@ -348,6 +348,34 @@ Deno.serve(async (req) => {
     const memberUrn = identity.authorUrn;
     const orgUrn = identity.isOrg ? identity.authorUrn : null;
 
+    // Daily follower snapshot (powers the Performance dashboard growth trend)
+    if (orgUrn) {
+      const sizeRes = await fetch(
+        `https://api.linkedin.com/rest/networkSizes/${encodeURIComponent(orgUrn)}?edgeType=COMPANY_FOLLOWED_BY_MEMBER`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'LinkedIn-Version': LINKEDIN_VERSION,
+            'X-Restli-Protocol-Version': '2.0.0',
+          },
+          signal: AbortSignal.timeout(15_000),
+        },
+      );
+      if (sizeRes.ok) {
+        const size = await sizeRes.json();
+        const statDate = new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10); // IST day
+        await supabase.from('mkt_channel_stats_daily').upsert({
+          org_id: config.org_id,
+          stat_date: statDate,
+          channel: 'linkedin',
+          followers: (size.firstDegreeSize as number) ?? null,
+          extra: {},
+        }, { onConflict: 'org_id,stat_date,channel' });
+      } else {
+        console.warn(`[engagement-tracker] networkSizes ${sizeRes.status}: ${await sizeRes.text()}`);
+      }
+    }
+
     // 2. Find posts with LinkedIn URNs (last 7 days) for comment replies
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const { data: recentPosts } = await supabase

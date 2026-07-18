@@ -289,39 +289,6 @@ Deno.serve(async (req) => {
     const inboundEmail: ResendInboundPayload = payload;
     console.log('Processing inbound email from:', inboundEmail.from);
 
-    // --- Marketing Reply Detection ---
-    // All emails to @reply.in-sync.co.in are marketing replies — attribute via In-Reply-To header
-    const isMktReply = inboundEmail.to?.includes('@reply.in-sync.co.in');
-    if (isMktReply) {
-      console.log(`[inbound-webhook] Marketing reply detected from: ${inboundEmail.from}`);
-      try {
-        const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
-        const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
-        const mktReplyResponse = await fetch(`${supabaseUrl}/functions/v1/mkt-handle-email-reply`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceKey}` },
-          body: JSON.stringify({
-            from_email: inboundEmail.from,
-            from_name: inboundEmail.fromName,
-            subject: inboundEmail.subject,
-            text: inboundEmail.text,
-            html: inboundEmail.html,
-            message_id: inboundEmail.messageId,
-            in_reply_to: inboundEmail.inReplyTo,
-          }),
-        });
-        const mktReplyResult = await mktReplyResponse.json();
-        console.log('[inbound-webhook] mkt-handle-email-reply response:', mktReplyResult);
-        return new Response(
-          JSON.stringify({ success: true, message: 'Marketing reply handled', result: mktReplyResult }),
-          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      } catch (mktErr) {
-        console.error('[inbound-webhook] Error forwarding to mkt-handle-email-reply:', mktErr);
-        // Fall through to generic inbound processing
-      }
-    }
-
     // --- Support Ticket Reply Detection ---
     // Check if this email is a reply to a support ticket by looking for TKT-XXXXX pattern
     const ticketFromSubject = inboundEmail.subject?.match(/\[?(TKT-\d+)\]?/i);

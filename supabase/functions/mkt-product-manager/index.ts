@@ -980,28 +980,9 @@ async function stepSourceLeads(ctx: StepContext): Promise<Record<string, unknown
     };
   }
 
-  const supabaseUrl = Deno.env.get('SUPABASE_URL');
-  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-
-  if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY for mkt-source-leads invocation');
-  }
-
-  const resp = await fetch(`${supabaseUrl}/functions/v1/mkt-source-leads`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${serviceRoleKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ org_id, product_key }),
-  });
-
-  if (!resp.ok) {
-    const errText = await resp.text();
-    throw new Error(`mkt-source-leads returned ${resp.status}: ${errText}`);
-  }
-
-  const result = await resp.json();
+  // Outreach model removed 2026-07-18 — lead sourcing (mkt-source-leads) no
+  // longer exists. Products are content-pipeline proof points now.
+  const result = { skipped: true, reason: 'outreach model removed — no lead sourcing' };
 
   // After sourcing, enroll new contacts into any active campaign for this product.
   // This handles the case where the product toggle was activated before leads were available.

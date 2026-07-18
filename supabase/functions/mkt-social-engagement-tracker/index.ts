@@ -108,12 +108,40 @@ Deno.serve(async (req) => {
   try {
     const { data: config } = await supabase
       .from('mkt_social_config')
-      .select('fb_page_access_token')
+      .select('org_id, fb_page_id, ig_user_id, fb_page_access_token')
       .eq('active', true)
       .maybeSingle();
 
     const token = config?.fb_page_access_token as string | undefined;
     if (!token) return ok({ skip: 'no fb_page_access_token on mkt_social_config' });
+
+    // Daily follower snapshot per channel (powers the Performance dashboard's
+    // growth trend). Upsert = re-runs on the same day just refresh the row.
+    const statDate = new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10); // IST day
+    if (config.fb_page_id) {
+      const page = await graphGet(`${config.fb_page_id}?fields=followers_count,fan_count`, token);
+      if (page) {
+        await supabase.from('mkt_channel_stats_daily').upsert({
+          org_id: config.org_id,
+          stat_date: statDate,
+          channel: 'facebook',
+          followers: (page.followers_count as number) ?? (page.fan_count as number) ?? null,
+          extra: { fan_count: page.fan_count ?? null },
+        }, { onConflict: 'org_id,stat_date,channel' });
+      }
+    }
+    if (config.ig_user_id) {
+      const ig = await graphGet(`${config.ig_user_id}?fields=followers_count,media_count`, token);
+      if (ig) {
+        await supabase.from('mkt_channel_stats_daily').upsert({
+          org_id: config.org_id,
+          stat_date: statDate,
+          channel: 'instagram',
+          followers: (ig.followers_count as number) ?? null,
+          extra: { media_count: ig.media_count ?? null },
+        }, { onConflict: 'org_id,stat_date,channel' });
+      }
+    }
 
     const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
     const { data: posts, error: postsErr } = await supabase

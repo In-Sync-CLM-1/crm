@@ -45,11 +45,8 @@ const EmailAutomations = lazy(() => import("./pages/EmailAutomations"));
 const EmailAutomationSettings = lazy(() => import("./pages/EmailAutomationSettings"));
 const CampaignOverview = lazy(() => import("./pages/Campaigns/CampaignOverview"));
 const AIInsightsDashboard = lazy(() => import("./pages/Campaigns/AIInsightsDashboard"));
-const MarketingDashboard = lazy(() => import("./pages/MarketingDashboard"));
+const SocialPerformance = lazy(() => import("./pages/SocialPerformance"));
 const MarketingAdAnalytics = lazy(() => import("./pages/MarketingAdAnalytics"));
-const CampaignManager = lazy(() => import("./pages/CampaignManager"));
-const LeadBrowser = lazy(() => import("./pages/LeadBrowser"));
-const EnrollmentBrowser = lazy(() => import("./pages/EnrollmentBrowser"));
 const TemplateEditor = lazy(() => import("./pages/TemplateEditor"));
 const ArohanChat = lazy(() => import("./pages/ArohanChat"));
 const EngineConfig = lazy(() => import("./pages/EngineConfig"));
@@ -204,7 +201,12 @@ const App = () => (
 
           <Route path="/marketing" element={
             <ProtectedRoute>
-              <MarketingDashboard />
+              <SocialPerformance />
+            </ProtectedRoute>
+          } />
+          <Route path="/marketing/performance" element={
+            <ProtectedRoute>
+              <SocialPerformance />
             </ProtectedRoute>
           } />
           <Route path="/marketing/ad-analytics" element={
@@ -212,24 +214,9 @@ const App = () => (
               <MarketingAdAnalytics />
             </ProtectedRoute>
           } />
-          <Route path="/marketing/campaigns" element={
-            <ProtectedRoute>
-              <CampaignManager />
-            </ProtectedRoute>
-          } />
-          <Route path="/marketing/leads" element={
-            <ProtectedRoute>
-              <LeadBrowser />
-            </ProtectedRoute>
-          } />
           <Route path="/marketing/templates" element={
             <ProtectedRoute>
               <TemplateEditor />
-            </ProtectedRoute>
-          } />
-          <Route path="/marketing/enrollments" element={
-            <ProtectedRoute>
-              <EnrollmentBrowser />
             </ProtectedRoute>
           } />
           <Route path="/marketing/config" element={

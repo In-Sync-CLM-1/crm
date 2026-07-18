@@ -14,9 +14,6 @@ verify_jwt = false
 [functions.mkt-product-manager]
 verify_jwt = false
 
-[functions.mkt-source-leads]
-verify_jwt = false
-
 [functions.mkt-arohan-chat]
 verify_jwt = false
 
@@ -25,19 +22,10 @@ verify_jwt = false
 # JWT verification must be disabled. Without these entries the webhooks
 # return 401 and DLRs / status callbacks are silently dropped — that's
 # the recurring "WhatsApp delivered = 0" symptom.
-[functions.mkt-whatsapp-webhook]
-verify_jwt = false
-
-[functions.mkt-email-webhook]
-verify_jwt = false
-
 [functions.mkt-linkedin-oauth-callback]
 verify_jwt = false
 
 [functions.mkt-facebook-oauth-callback]
-verify_jwt = false
-
-[functions.mkt-bolna-webhook]
 verify_jwt = false
 
 [functions.mkt-evolve-icp]
@@ -49,11 +37,6 @@ verify_jwt = false
 [functions.mkt-sync-whatsapp-status]
 verify_jwt = false
 
-[functions.mkt-backfill-events]
-verify_jwt = false
-
-# Internal, cron-triggered (Cloudflare worker). No user auth; uses service role
-# internally. Public-but-harmless: it ignores the request body and is idempotent.
 [functions.mkt-ad-conversion-upload]
 verify_jwt = false
 
@@ -87,9 +70,6 @@ verify_jwt = false
 [functions.queue-manager]
 verify_jwt = true
 
-[functions.analyze-lead]
-verify_jwt = true
-
 [functions.sync-exotel-whatsapp-templates]
 verify_jwt = true
 
@@ -109,12 +89,6 @@ verify_jwt = true
 verify_jwt = false
 
 [functions.email-inbound-webhook]
-verify_jwt = false
-
-[functions.mkt-handle-email-reply]
-verify_jwt = false
-
-[functions.mkt-handle-whatsapp-reply]
 verify_jwt = false
 
 [functions.exotel-make-call]
@@ -162,9 +136,6 @@ verify_jwt = false
 [functions.unsubscribe]
 verify_jwt = false
 
-[functions.blog-webhook]
-verify_jwt = false
-
 [functions.lead-alert-notify]
 verify_jwt = false
 
@@ -176,12 +147,6 @@ verify_jwt = false
 
 [functions.analyze-pipeline-performance]
 verify_jwt = false
-
-[functions.enrich-contact]
-verify_jwt = true
-
-[functions.bulk-enrich-contacts]
-verify_jwt = true
 
 [functions.send-sms]
 verify_jwt = true

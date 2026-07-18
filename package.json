@@ -61,6 +61,7 @@
     "date-fns-tz": "^3.2.0",
     "dexie": "^4.4.2",
     "dexie-react-hooks": "^4.4.0",
+    "echarts": "^6.1.0",
     "embla-carousel-react": "^8.6.0",
     "emoji-picker-react": "^4.17.4",
     "html2canvas": "^1.4.1",

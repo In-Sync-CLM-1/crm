@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect, KeyboardEvent } from "react";
+import { useLocation } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import DashboardLayout from "@/components/Layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -7,20 +9,18 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { useArohanChat, ChatMessage } from "@/hooks/useArohanChat";
-import { useArohanContext, CampaignStat, TechRequest } from "@/hooks/useArohanContext";
+import { useOrgContext } from "@/hooks/useOrgContext";
+import { supabase } from "@/integrations/supabase/client";
+import { format, subDays } from "date-fns";
 import {
   Send,
   RefreshCw,
   RotateCcw,
-  Zap,
-  CheckCircle2,
   Radio,
   Users,
   TrendingUp,
-  Clock,
-  ChevronRight,
-  Wrench,
   PanelRight,
+  CalendarDays,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -50,42 +50,10 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
         {msg.isLoading ? (
           <span className="flex items-center gap-1.5 text-muted-foreground">
             <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-            Thinking…
+            Analysing…
           </span>
         ) : (
-          <>
-            <p className="whitespace-pre-wrap">{msg.content}</p>
-
-            {msg.actionsTriggered && msg.actionsTriggered.length > 0 && (
-              <div className="flex flex-wrap gap-1 mt-2 pt-2 border-t border-border/40">
-                {msg.actionsTriggered.map((action, i) => (
-                  <Badge key={i} variant="secondary" className="text-[10px] gap-1 py-0">
-                    <CheckCircle2 className="h-3 w-3 text-green-600" />
-                    {action.type === "icp_update"
-                      ? `ICP updated — ${(action.details as { product_key?: string }).product_key ?? ""} v${(action.details as { new_version?: number }).new_version ?? "?"}`
-                      : action.type === "regenerate_step"
-                      ? `Regenerating ${(action.details as { step_name?: string }).step_name?.replace(/_/g, " ") ?? "step"} — ${(action.details as { product_key?: string }).product_key ?? ""}`
-                      : action.type === "campaign_launch"
-                      ? `Campaign launched — ${(action.details as { product_key?: string }).product_key ?? ""} · ${(action.details as { enrolled?: number }).enrolled ?? 0} enrolled`
-                      : action.type === "campaign_pause"
-                      ? `Campaign paused — ${(action.details as { product_key?: string }).product_key ?? ""}`
-                      : action.type === "campaign_resume"
-                      ? `Campaign resumed — ${(action.details as { product_key?: string }).product_key ?? ""}`
-                      : action.type === "tech_request"
-                      ? `Tech request logged — ${(action.details as { title?: string }).title ?? "pending"}`
-                      : action.type}
-                  </Badge>
-                ))}
-              </div>
-            )}
-
-            {msg.isSuggestion && !msg.actionsTriggered?.length && (
-              <Badge variant="outline" className="mt-1.5 text-[10px] gap-1">
-                <Zap className="h-3 w-3 text-yellow-500" />
-                Suggestion detected
-              </Badge>
-            )}
-          </>
+          <p className="whitespace-pre-wrap">{msg.content}</p>
         )}
       </div>
 
@@ -99,99 +67,84 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
 }
 
 // ---------------------------------------------------------------------------
-// Context panel — campaigns
+// Context panel — live social snapshot
 // ---------------------------------------------------------------------------
 
-function CampaignCard({ c }: { c: CampaignStat }) {
-  const openRate = c.sent > 0 ? Math.round((c.opened / c.sent) * 100) : 0;
-  const delivRate = c.sent > 0 ? Math.round((c.delivered / c.sent) * 100) : 0;
-
-  return (
-    <div
-      className={cn(
-        "rounded-lg border p-2.5 text-xs space-y-1.5",
-        c.isLive ? "border-green-400 bg-green-50/50" : "border-border bg-background"
-      )}
-    >
-      <div className="flex items-center justify-between gap-1">
-        <span className="font-medium truncate">{c.name}</span>
-        <div className="flex items-center gap-1 flex-shrink-0">
-          {c.isLive && (
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
-            </span>
-          )}
-          <Badge
-            variant="outline"
-            className={cn(
-              "text-[9px] py-0 px-1",
-              c.status === "active" ? "text-green-700 border-green-300" : "text-amber-700 border-amber-300"
-            )}
-          >
-            {c.isLive ? "Live" : c.status}
-          </Badge>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-3 gap-1 text-[10px] text-muted-foreground">
-        <div>
-          <div className="font-medium text-foreground">{c.enrolled.toLocaleString()}</div>
-          <div>enrolled</div>
-        </div>
-        <div>
-          <div className="font-medium text-foreground">{c.sent.toLocaleString()}</div>
-          <div>sent</div>
-        </div>
-        <div>
-          <div className="font-medium text-foreground">{openRate}%</div>
-          <div>open rate</div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-3 gap-1 text-[10px] text-muted-foreground">
-        <div>
-          <div className="font-medium text-foreground">{delivRate}%</div>
-          <div>delivered</div>
-        </div>
-        <div>
-          <div className="font-medium text-foreground">{c.replied}</div>
-          <div>replied</div>
-        </div>
-        <div>
-          <div className="font-medium text-foreground text-blue-600">{c.todaySent}</div>
-          <div>today</div>
-        </div>
-      </div>
-    </div>
-  );
+interface SnapshotPost {
+  publish_date: string;
+  status: string;
+  post_format: string | null;
+  linkedin_likes: number | null;
+  linkedin_comments: number | null;
+  linkedin_reposts: number | null;
+  fb_likes: number | null;
+  fb_comments: number | null;
+  fb_shares: number | null;
+  ig_likes: number | null;
+  ig_comments: number | null;
+  ig_saves: number | null;
+  ig_shares: number | null;
 }
 
-// ---------------------------------------------------------------------------
-// Context panel
-// ---------------------------------------------------------------------------
+function useSocialSnapshot() {
+  const { effectiveOrgId } = useOrgContext();
+  return useQuery({
+    queryKey: ["arohan-social-snapshot", effectiveOrgId],
+    queryFn: async () => {
+      if (!effectiveOrgId) return null;
+      const since = format(subDays(new Date(), 7), "yyyy-MM-dd");
+      const today = format(new Date(), "yyyy-MM-dd");
+      const [postsRes, followersRes, todayRes] = await Promise.all([
+        supabase
+          .from("blog_posts")
+          .select("publish_date, status, post_format, linkedin_likes, linkedin_comments, linkedin_reposts, fb_likes, fb_comments, fb_shares, ig_likes, ig_comments, ig_saves, ig_shares")
+          .eq("org_id", effectiveOrgId)
+          .eq("status", "posted")
+          .gte("publish_date", since),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (supabase as any)
+          .from("mkt_channel_stats_daily")
+          .select("stat_date, channel, followers")
+          .eq("org_id", effectiveOrgId)
+          .order("stat_date", { ascending: false })
+          .limit(12),
+        supabase
+          .from("blog_posts")
+          .select("status")
+          .eq("org_id", effectiveOrgId)
+          .eq("publish_date", today),
+      ]);
+      const posts = (postsRes.data || []) as SnapshotPost[];
+      const nz = (v: number | null) => v ?? 0;
+      const li = posts.reduce((s, p) => s + nz(p.linkedin_likes) + nz(p.linkedin_comments) + nz(p.linkedin_reposts), 0);
+      const fb = posts.reduce((s, p) => s + nz(p.fb_likes) + nz(p.fb_comments) + nz(p.fb_shares), 0);
+      const ig = posts.reduce((s, p) => s + nz(p.ig_likes) + nz(p.ig_comments) + nz(p.ig_saves) + nz(p.ig_shares), 0);
+
+      const followers: Record<string, number> = {};
+      for (const row of (followersRes.data || []) as { channel: string; followers: number | null }[]) {
+        if (!(row.channel in followers) && row.followers != null) followers[row.channel] = row.followers;
+      }
+
+      const todayStatuses = (todayRes.data || []).map((r) => r.status);
+      return {
+        weekPosts: posts.length,
+        interactions: { LinkedIn: li, Facebook: fb, Instagram: ig },
+        followers,
+        today: {
+          posted: todayStatuses.filter((s) => s === "posted").length,
+          pending: todayStatuses.filter((s) => s === "pending").length,
+        },
+      };
+    },
+    enabled: !!effectiveOrgId,
+  });
+}
 
 function ContextPanel({ onRefresh }: { onRefresh: () => void }) {
-  const { context, isLoading } = useArohanContext();
-
-  const funnelOrder = ["new", "enriched", "scored", "enrolled", "converted", "unsubscribed", "disqualified"];
-  const funnelColors: Record<string, string> = {
-    new: "text-gray-600",
-    enriched: "text-blue-600",
-    scored: "text-indigo-600",
-    enrolled: "text-purple-600",
-    converted: "text-green-600",
-    unsubscribed: "text-amber-600",
-    disqualified: "text-red-500",
-  };
-
-  const totalContacts = context
-    ? Object.values(context.funnel).reduce((a, b) => a + b, 0)
-    : 0;
+  const { data: snap, isLoading } = useSocialSnapshot();
 
   return (
     <div className="flex flex-col gap-3 h-full overflow-y-auto pr-0.5">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Live Context</span>
         <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onRefresh}>
@@ -199,161 +152,74 @@ function ContextPanel({ onRefresh }: { onRefresh: () => void }) {
         </Button>
       </div>
 
-      {/* Campaigns */}
       <Card className="border shadow-none">
         <CardHeader className="p-2 pb-1">
           <CardTitle className="text-[11px] flex items-center gap-1.5">
             <Radio className="h-3 w-3 text-green-500" />
-            Campaigns
+            Today's posting
           </CardTitle>
         </CardHeader>
-        <CardContent className="p-2 pt-0 space-y-1.5">
-          {isLoading ? (
-            <div className="text-xs text-muted-foreground">Loading…</div>
-          ) : context?.campaigns.length ? (
-            context.campaigns.map((c) => <CampaignCard key={c.id} c={c} />)
-          ) : (
-            <div className="text-xs text-muted-foreground">No sequenced campaigns.</div>
-          )}
+        <CardContent className="p-2 pt-0 text-xs text-muted-foreground">
+          {isLoading || !snap ? "Loading…" : `${snap.today.posted} posted · ${snap.today.pending} still scheduled`}
         </CardContent>
       </Card>
 
-      {/* Contact Funnel */}
       <Card className="border shadow-none">
         <CardHeader className="p-2 pb-1">
           <CardTitle className="text-[11px] flex items-center gap-1.5">
-            <Users className="h-3 w-3 text-blue-500" />
-            Contact Funnel
-            {totalContacts > 0 && (
-              <span className="text-muted-foreground font-normal">· {totalContacts.toLocaleString()} total</span>
-            )}
+            <TrendingUp className="h-3 w-3 text-blue-500" />
+            Interactions, last 7 days
           </CardTitle>
         </CardHeader>
-        <CardContent className="p-2 pt-0">
-          {isLoading ? (
+        <CardContent className="p-2 pt-0 space-y-1">
+          {isLoading || !snap ? (
             <div className="text-xs text-muted-foreground">Loading…</div>
-          ) : context?.funnel ? (
-            <div className="space-y-1">
-              {funnelOrder
-                .filter((s) => (context.funnel[s] ?? 0) > 0)
-                .map((s) => {
-                  const count = context.funnel[s] ?? 0;
-                  const pct = totalContacts > 0 ? Math.round((count / totalContacts) * 100) : 0;
-                  return (
-                    <div key={s} className="flex items-center gap-2 text-[11px]">
-                      <ChevronRight className="h-2.5 w-2.5 text-muted-foreground flex-shrink-0" />
-                      <span className="capitalize w-20 text-muted-foreground">{s}</span>
-                      <div className="flex-1 bg-muted rounded-full h-1.5">
-                        <div
-                          className="h-1.5 rounded-full bg-primary/40"
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                      <span className={cn("w-12 text-right font-medium", funnelColors[s] ?? "text-foreground")}>
-                        {count.toLocaleString()}
-                      </span>
-                    </div>
-                  );
-                })}
-            </div>
           ) : (
-            <div className="text-xs text-muted-foreground">No contacts yet.</div>
+            Object.entries(snap.interactions).map(([ch, v]) => (
+              <div key={ch} className="flex items-center justify-between text-[11px]">
+                <span className="text-muted-foreground">{ch}</span>
+                <span className="font-medium">{v}</span>
+              </div>
+            ))
+          )}
+          {snap && <p className="text-[10px] text-muted-foreground pt-1">{snap.weekPosts} posts published this week</p>}
+        </CardContent>
+      </Card>
+
+      <Card className="border shadow-none">
+        <CardHeader className="p-2 pb-1">
+          <CardTitle className="text-[11px] flex items-center gap-1.5">
+            <Users className="h-3 w-3 text-violet-500" />
+            Followers
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-2 pt-0 space-y-1">
+          {isLoading || !snap ? (
+            <div className="text-xs text-muted-foreground">Loading…</div>
+          ) : Object.keys(snap.followers).length ? (
+            Object.entries(snap.followers).map(([ch, v]) => (
+              <div key={ch} className="flex items-center justify-between text-[11px]">
+                <span className="text-muted-foreground capitalize">{ch}</span>
+                <span className="font-medium">{v}</span>
+              </div>
+            ))
+          ) : (
+            <div className="text-xs text-muted-foreground">First snapshot lands tonight.</div>
           )}
         </CardContent>
       </Card>
 
-      {/* Pending Suggestions */}
-      {(context?.pending?.length ?? 0) > 0 && (
-        <Card className="border shadow-none border-yellow-200 bg-yellow-50/40">
-          <CardHeader className="p-2 pb-1">
-            <CardTitle className="text-[11px] flex items-center gap-1.5">
-              <Zap className="h-3 w-3 text-yellow-500" />
-              Pending Suggestions
-              <Badge variant="secondary" className="text-[9px] py-0 px-1 ml-auto">
-                {context!.pending.length}
-              </Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-2 pt-0 space-y-1.5">
-            {context!.pending.map((s) => (
-              <div key={s.id} className="rounded border border-yellow-200 bg-white p-2 text-[11px]">
-                <p className="text-muted-foreground line-clamp-2">{s.message}</p>
-                <div className="flex items-center gap-1 mt-1">
-                  <Clock className="h-2.5 w-2.5 text-muted-foreground" />
-                  <span className="text-[10px] text-muted-foreground">
-                    {new Date(s.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
-                  </span>
-                  {s.suggestion_payload && (
-                    <Badge variant="outline" className="text-[9px] py-0 px-1 ml-auto capitalize">
-                      {(s.suggestion_payload as Record<string, unknown>).type as string}
-                    </Badge>
-                  )}
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Tech Requests */}
-      {(context?.techRequests?.length ?? 0) > 0 && (
-        <Card className="border shadow-none border-orange-200 bg-orange-50/40">
-          <CardHeader className="p-2 pb-1">
-            <CardTitle className="text-[11px] flex items-center gap-1.5">
-              <Wrench className="h-3 w-3 text-orange-500" />
-              Tech Requests
-              <Badge variant="secondary" className="text-[9px] py-0 px-1 ml-auto">
-                {context!.techRequests.length}
-              </Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-2 pt-0 space-y-1.5">
-            {context!.techRequests.map((r: TechRequest) => (
-              <div key={r.id} className="rounded border border-orange-200 bg-white p-2 text-[11px]">
-                <p className="font-medium text-foreground">{r.title}</p>
-                <p className="text-muted-foreground line-clamp-2 mt-0.5">{r.description}</p>
-                <div className="flex items-center gap-1 mt-1">
-                  <Badge
-                    variant="outline"
-                    className={cn(
-                      "text-[9px] py-0 px-1",
-                      r.priority === "high" ? "text-red-700 border-red-300" :
-                      r.priority === "low" ? "text-gray-500 border-gray-300" :
-                      "text-orange-700 border-orange-300"
-                    )}
-                  >
-                    {r.priority}
-                  </Badge>
-                  <Clock className="h-2.5 w-2.5 text-muted-foreground ml-auto" />
-                  <span className="text-[10px] text-muted-foreground">
-                    {new Date(r.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Stats strip */}
-      {context && (
-        <div className="mt-auto pt-2 border-t">
-          <div className="grid grid-cols-2 gap-2 text-[10px] text-muted-foreground">
-            <div className="flex items-center gap-1">
-              <TrendingUp className="h-3 w-3" />
-              <span>
-                {context.campaigns.reduce((a, c) => a + c.todaySent, 0).toLocaleString()} sent today
-              </span>
-            </div>
-            <div className="flex items-center gap-1">
-              <CheckCircle2 className="h-3 w-3 text-green-500" />
-              <span>
-                {(context.funnel["converted"] ?? 0).toLocaleString()} converted
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
+      <Card className="border shadow-none">
+        <CardHeader className="p-2 pb-1">
+          <CardTitle className="text-[11px] flex items-center gap-1.5">
+            <CalendarDays className="h-3 w-3 text-amber-500" />
+            Where to act
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-2 pt-0 text-[11px] text-muted-foreground leading-relaxed">
+          Edit or skip any upcoming post in the Content Calendar. Charts live on the Performance page.
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -363,10 +229,10 @@ function ContextPanel({ onRefresh }: { onRefresh: () => void }) {
 // ---------------------------------------------------------------------------
 
 const STARTER_QUESTIONS = [
-  "What's the current campaign performance?",
-  "Which campaign is live right now and how is it doing?",
-  "How many leads have converted this month?",
-  "What's blocking us from hitting M3 milestone?",
+  "Which format is earning the most engagement, and why?",
+  "How did this week compare to last week across channels?",
+  "Which story pillars are landing with the audience?",
+  "What should we change in next week's content mix?",
 ];
 
 function WelcomeScreen({ onStarter }: { onStarter: (q: string) => void }) {
@@ -375,10 +241,10 @@ function WelcomeScreen({ onStarter }: { onStarter: (q: string) => void }) {
       <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-xl font-bold mb-4">
         A
       </div>
-      <h2 className="text-lg font-semibold mb-1">Arohan — Revenue Intelligence</h2>
+      <h2 className="text-lg font-semibold mb-1">Arohan — Marketing Intelligence</h2>
       <p className="text-sm text-muted-foreground max-w-md mb-8">
-        Ask me about ICP strategy, campaign performance, lead quality, or suggest
-        refinements. I'll apply approved changes automatically.
+        Deep-dive into your social performance: what's working across LinkedIn,
+        Facebook, and Instagram, and what to change next.
       </p>
       <div className="grid gap-2 w-full max-w-sm">
         {STARTER_QUESTIONS.map((q) => (
@@ -401,11 +267,23 @@ function WelcomeScreen({ onStarter }: { onStarter: (q: string) => void }) {
 
 export default function ArohanChat() {
   const { messages, isSending, error, sendMessage, clearThread } = useArohanChat();
-  const { refetch: refetchContext } = useArohanContext();
+  const location = useLocation();
+  const snapshot = useSocialSnapshot();
   const [input, setInput] = useState("");
   const [contextOpen, setContextOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const prefillConsumed = useRef(false);
+
+  // Question handed over from the Performance page ("Ask Arohan" box)
+  useEffect(() => {
+    const prefill = (location.state as { prefill?: string } | null)?.prefill;
+    if (prefill && !prefillConsumed.current) {
+      prefillConsumed.current = true;
+      sendMessage(prefill);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -445,7 +323,7 @@ export default function ArohanChat() {
                 Arohan
               </h1>
               <p className="text-xs text-muted-foreground truncate">
-                Autonomous revenue intelligence · Ask anything
+                Marketing intelligence · Ask anything about your social data
               </p>
             </div>
             <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -498,7 +376,7 @@ export default function ArohanChat() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Ask Arohan or suggest a change… (Enter to send, Shift+Enter for newline)"
+                placeholder="Ask about formats, themes, channels, trends… (Enter to send)"
                 className="min-h-[60px] max-h-[160px] resize-none text-sm"
                 disabled={isSending}
               />
@@ -516,20 +394,20 @@ export default function ArohanChat() {
               </Button>
             </div>
             <p className="text-[10px] text-muted-foreground mt-1.5">
-              Arohan can update ICPs, launch/pause campaigns, and regenerate content automatically.
+              Arohan analyses and recommends — changes to the content plan happen in the Content Calendar.
             </p>
           </div>
         </div>
 
         {/* ── Context panel (desktop) ── */}
         <div className="hidden md:block w-72 flex-shrink-0 border-l pl-4 py-1">
-          <ContextPanel onRefresh={refetchContext} />
+          <ContextPanel onRefresh={() => snapshot.refetch()} />
         </div>
 
         {/* ── Context panel (mobile sheet) ── */}
         <Sheet open={contextOpen} onOpenChange={setContextOpen}>
           <SheetContent side="right" className="w-[88vw] sm:max-w-sm p-4 overflow-y-auto">
-            <ContextPanel onRefresh={refetchContext} />
+            <ContextPanel onRefresh={() => snapshot.refetch()} />
           </SheetContent>
         </Sheet>
       </div>

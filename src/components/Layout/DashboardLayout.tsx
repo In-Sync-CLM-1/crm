@@ -17,7 +17,6 @@ import {
   MessageCircle,
   Briefcase,
   CalendarDays,
-  Megaphone,
   Palette,
   IndianRupee,
   LifeBuoy,
@@ -197,7 +196,7 @@ function DashboardLayout({ children }: DashboardLayoutProps) {
                 onClick={() => setSidebarOpen(false)}
               >
                 <TrendingUp size={16} className="shrink-0 text-sidebar-muted" />
-                <span>Marketing</span>
+                <span>Performance</span>
               </Link>
               <Link
                 to="/marketing/ad-analytics"
@@ -222,14 +221,6 @@ function DashboardLayout({ children }: DashboardLayoutProps) {
               >
                 <Bot size={16} className="shrink-0 text-sidebar-muted" />
                 <span>Arohan</span>
-              </Link>
-              <Link
-                to="/marketing/campaigns"
-                className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors"
-                onClick={() => setSidebarOpen(false)}
-              >
-                <Megaphone size={16} className="shrink-0 text-sidebar-muted" />
-                <span>Campaigns</span>
               </Link>
               <Link
                 to="/marketing/templates"
