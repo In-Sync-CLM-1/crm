@@ -17,6 +17,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/corsHeaders.ts';
 import { uploadImageToLinkedIn, uploadVideoToLinkedIn, uploadDocumentToLinkedIn } from '../_shared/linkedinMedia.ts';
 import { buildCarouselPdf } from '../_shared/carouselPdf.ts';
+import { getLinkedInIdentity } from '../_shared/linkedinAuth.ts';
 
 const LINKEDIN_VERSION = '202503';
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
@@ -140,11 +141,12 @@ Deno.serve(async (req) => {
 
     if (configErr) return err(500, `Config load error: ${configErr.message}`);
     if (!config) return ok({ skip: 'no active linkedin config' });
-    if (!config.member_access_token || !config.member_urn) {
-      return err(500, 'LinkedIn not connected — no member_access_token/member_urn on mkt_linkedin_config');
-    }
-    if (config.member_token_expires_at && new Date(config.member_token_expires_at) < new Date()) {
-      return err(500, `LinkedIn token expired at ${config.member_token_expires_at} — reconnect via mkt-linkedin-oauth-callback`);
+
+    // Prefer the company page (org token, auto-refreshing); fall back to the
+    // member profile if the org connection isn't set up or is unusable.
+    const identity = await getLinkedInIdentity(supabase, config);
+    if (!identity) {
+      return err(500, 'LinkedIn not connected — no usable org or member token on mkt_linkedin_config; reconnect via mkt-linkedin-oauth-callback');
     }
 
     const ist = getIST();
@@ -206,19 +208,19 @@ Deno.serve(async (req) => {
     let media: LinkedInMedia | undefined;
 
     if (format === 'image' && draft.image_url) {
-      const id = await uploadImageToLinkedIn(config.member_access_token, config.member_urn, draft.image_url as string);
+      const id = await uploadImageToLinkedIn(identity.token, identity.authorUrn, draft.image_url as string);
       media = { id };
     } else if (format === 'video' && draft.video_url) {
-      const id = await uploadVideoToLinkedIn(config.member_access_token, config.member_urn, draft.video_url as string);
+      const id = await uploadVideoToLinkedIn(identity.token, identity.authorUrn, draft.video_url as string);
       media = { id };
     } else if (format === 'carousel' && Array.isArray(draft.carousel_slide_urls) && draft.carousel_slide_urls.length) {
       const pdfBytes = await buildCarouselPdf(draft.carousel_slide_urls as string[]);
-      const id = await uploadDocumentToLinkedIn(config.member_access_token, config.member_urn, pdfBytes);
+      const id = await uploadDocumentToLinkedIn(identity.token, identity.authorUrn, pdfBytes);
       media = { id, title: draft.blog_title as string };
     }
 
-    const { postUrn, postUrl } = await postToLinkedIn(commentary, config.member_access_token, config.member_urn, media);
-    console.log(`[blog-poster] posted: ${postUrn} (format=${format})`);
+    const { postUrn, postUrl } = await postToLinkedIn(commentary, identity.token, identity.authorUrn, media);
+    console.log(`[blog-poster] posted as ${identity.isOrg ? 'company page' : 'member'}: ${postUrn} (format=${format})`);
 
     // 7. Update blog_post — replace placeholder URL with real LinkedIn URL
     await supabase
@@ -273,6 +275,7 @@ Deno.serve(async (req) => {
       slot_index: todaySlotIdx,
       post_urn: postUrn,
       post_url: postUrl,
+      posted_as: identity.isOrg ? 'organization' : 'member',
       social: socialResult,
     });
 

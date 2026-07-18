@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { callLLM } from '../_shared/llmClient.ts';
 import { corsHeaders } from '../_shared/corsHeaders.ts';
+import { getLinkedInIdentity } from '../_shared/linkedinAuth.ts';
 
 const LINKEDIN_VERSION = '202503';
 
@@ -14,14 +15,48 @@ interface Engagement {
   clicks: number;
 }
 
+/**
+ * Full per-post statistics for company-page posts via the Community
+ * Management API (impressions, clicks, likes, comments, reposts). Only works
+ * for posts authored BY the organization — member-era posts return no
+ * elements and the caller falls back to socialActions.
+ */
+async function fetchOrgShareStats(postUrn: string, orgUrn: string, token: string): Promise<Engagement | null> {
+  const listParam = postUrn.includes(':ugcPost:') ? 'ugcPosts' : 'shares';
+  const res = await fetch(
+    `https://api.linkedin.com/rest/organizationalEntityShareStatistics?q=organizationalEntity&organizationalEntity=${encodeURIComponent(orgUrn)}&${listParam}=List(${encodeURIComponent(postUrn)})`,
+    {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'LinkedIn-Version': LINKEDIN_VERSION,
+        'X-Restli-Protocol-Version': '2.0.0',
+      },
+      signal: AbortSignal.timeout(15_000),
+    },
+  );
+
+  if (!res.ok) {
+    console.warn(`[engagement-tracker] shareStatistics ${res.status} for ${postUrn}: ${await res.text()}`);
+    return null;
+  }
+
+  const data = await res.json();
+  const s = data?.elements?.[0]?.totalShareStatistics;
+  if (!s) return null;
+  return {
+    impressions: s.impressionCount ?? 0,
+    likes: s.likeCount ?? 0,
+    comments: s.commentCount ?? 0,
+    reposts: s.shareCount ?? 0,
+    clicks: s.clickCount ?? 0,
+  };
+}
+
 async function fetchEngagement(postUrn: string, token: string): Promise<Engagement | null> {
-  // organizationalEntityShareStatistics requires organization-page access, which
-  // this LinkedIn app doesn't have (posting happens as a member, not a company
-  // page). socialActions was the intended fallback, but as of 2025 LinkedIn
-  // gates ALL of it (even like/comment counts) behind the partner program —
-  // verified 2026-07-15: GET summary/likes/comments each 403
-  // "partnerApiSocialActions". Returns null when unavailable so the caller
-  // records "unknown", never a fake zero.
+  // socialActions like/comment counts: 403 "partnerApiSocialActions" on the
+  // legacy member-token app (verified 2026-07-15), but allowed for a
+  // Community Management token on the org's own posts. Returns null when
+  // unavailable so the caller records "unknown", never a fake zero.
   const encodedUrn = encodeURIComponent(postUrn);
   const res = await fetch(
     `https://api.linkedin.com/rest/socialActions/${encodedUrn}?fields=likesSummary,commentsSummary`,
@@ -301,12 +336,17 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (!config) return ok({ skip: 'no active config' });
-    if (!config.member_access_token || !config.member_urn) {
-      return ok({ skip: 'linkedin not connected — no member_access_token/member_urn on config' });
+
+    // Company-page identity when connected (full stats + working comment
+    // APIs); member fallback otherwise (mostly partner-gated, records NULLs).
+    const identity = await getLinkedInIdentity(supabase, config);
+    if (!identity) {
+      return ok({ skip: 'linkedin not connected — no usable org or member token on config' });
     }
 
-    const token = config.member_access_token as string;
-    const memberUrn = config.member_urn as string;
+    const token = identity.token;
+    const memberUrn = identity.authorUrn;
+    const orgUrn = identity.isOrg ? identity.authorUrn : null;
 
     // 2. Find posts with LinkedIn URNs (last 7 days) for comment replies
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -344,7 +384,10 @@ Deno.serve(async (req) => {
       for (const post of pendingPosts) {
         if (!post.linkedin_post_urn) continue;
 
-        const eng = await fetchEngagement(post.linkedin_post_urn, token);
+        const eng = orgUrn
+          ? (await fetchOrgShareStats(post.linkedin_post_urn, orgUrn, token)) ??
+            (await fetchEngagement(post.linkedin_post_urn, token))
+          : await fetchEngagement(post.linkedin_post_urn, token);
         if (!eng) {
           // Metrics unavailable (LinkedIn partner-gated) — mark the attempt so
           // the row isn't retried forever, but leave every metric NULL:
