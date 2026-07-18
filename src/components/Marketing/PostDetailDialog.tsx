@@ -39,6 +39,9 @@ export interface CalendarPost {
   ig_comments: number | null;
   ig_saves: number | null;
   ig_shares: number | null;
+  yt_views: number | null;
+  yt_likes: number | null;
+  yt_comments: number | null;
   error_message: string | null;
   linkedin_slot_index: number | null;
   day_seq: number | null;
@@ -249,6 +252,7 @@ export function PostDetailDialog({
             <div className="space-y-1.5 text-sm text-muted-foreground border-t pt-3">
               <div className="flex items-center gap-4">
                 <span className="w-20 text-xs font-medium">LinkedIn</span>
+                <span className="flex items-center gap-1"><Eye className="h-3.5 w-3.5" /> {post.linkedin_impressions ?? "—"}</span>
                 <span className="flex items-center gap-1"><ThumbsUp className="h-3.5 w-3.5" /> {post.linkedin_likes ?? "—"}</span>
                 <span className="flex items-center gap-1"><MessageCircle className="h-3.5 w-3.5" /> {post.linkedin_comments ?? "—"}</span>
                 <span className="flex items-center gap-1"><Repeat2 className="h-3.5 w-3.5" /> {post.linkedin_reposts ?? "—"}</span>
@@ -274,6 +278,14 @@ export function PostDetailDialog({
                   <span className="flex items-center gap-1"><ThumbsUp className="h-3.5 w-3.5" /> {post.ig_likes ?? "—"}</span>
                   <span className="flex items-center gap-1"><MessageCircle className="h-3.5 w-3.5" /> {post.ig_comments ?? "—"}</span>
                   <span className="text-xs">saves {post.ig_saves ?? "—"} · shares {post.ig_shares ?? "—"}</span>
+                </div>
+              )}
+              {post.yt_video_id && (
+                <div className="flex items-center gap-4">
+                  <span className="w-20 text-xs font-medium">YouTube</span>
+                  <span className="flex items-center gap-1"><Eye className="h-3.5 w-3.5" /> {post.yt_views ?? "—"}</span>
+                  <span className="flex items-center gap-1"><ThumbsUp className="h-3.5 w-3.5" /> {post.yt_likes ?? "—"}</span>
+                  <span className="flex items-center gap-1"><MessageCircle className="h-3.5 w-3.5" /> {post.yt_comments ?? "—"}</span>
                 </div>
               )}
             </div>

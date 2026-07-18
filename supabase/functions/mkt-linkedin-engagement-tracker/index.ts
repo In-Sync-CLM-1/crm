@@ -52,6 +52,51 @@ async function fetchOrgShareStats(postUrn: string, orgUrn: string, token: string
   };
 }
 
+/**
+ * Per-post statistics for posts authored by the authenticated MEMBER (the
+ * founder persona stream + member-era posts) via memberCreatorPostAnalytics
+ * (r_member_postAnalytics). One request per metric; requires version >= 202508
+ * (the endpoint does not exist on this function's older baseline version).
+ * Returns null when the post isn't member-authored or access is denied.
+ */
+const MEMBER_ANALYTICS_VERSION = '202508';
+
+async function fetchMemberPostStats(postUrn: string, token: string): Promise<Engagement | null> {
+  const urnKey = postUrn.includes(':ugcPost:') ? 'ugc' : 'share';
+  const entity = `(${urnKey}:${encodeURIComponent(postUrn)})`;
+
+  const counts: Record<string, number> = {};
+  for (const metric of ['IMPRESSION', 'REACTION', 'COMMENT', 'RESHARE']) {
+    const res = await fetch(
+      `https://api.linkedin.com/rest/memberCreatorPostAnalytics?q=entity&entity=${entity}&queryType=${metric}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'LinkedIn-Version': MEMBER_ANALYTICS_VERSION,
+          'X-Restli-Protocol-Version': '2.0.0',
+        },
+        signal: AbortSignal.timeout(15_000),
+      },
+    );
+    if (!res.ok) {
+      console.warn(`[engagement-tracker] memberCreatorPostAnalytics ${res.status} (${metric}) for ${postUrn}`);
+      return null;
+    }
+    const data = await res.json();
+    const el = data?.elements?.[0];
+    if (!el || typeof el.count !== 'number') return null;
+    counts[metric] = el.count;
+  }
+
+  return {
+    impressions: counts.IMPRESSION ?? 0,
+    likes: counts.REACTION ?? 0,
+    comments: counts.COMMENT ?? 0,
+    reposts: counts.RESHARE ?? 0,
+    clicks: 0,
+  };
+}
+
 async function fetchEngagement(postUrn: string, token: string): Promise<Engagement | null> {
   // socialActions like/comment counts: 403 "partnerApiSocialActions" on the
   // legacy member-token app (verified 2026-07-15), but allowed for a
@@ -412,10 +457,13 @@ Deno.serve(async (req) => {
       for (const post of pendingPosts) {
         if (!post.linkedin_post_urn) continue;
 
-        const eng = orgUrn
-          ? (await fetchOrgShareStats(post.linkedin_post_urn, orgUrn, token)) ??
-            (await fetchEngagement(post.linkedin_post_urn, token))
-          : await fetchEngagement(post.linkedin_post_urn, token);
+        // Org-authored posts → org share statistics. Member-authored posts
+        // (persona stream + member-era rows) → memberCreatorPostAnalytics.
+        // socialActions is the last resort; a post none of them cover stays
+        // NULL ("unknown"), never a fake zero.
+        const eng = (orgUrn ? await fetchOrgShareStats(post.linkedin_post_urn, orgUrn, token) : null)
+          ?? (await fetchMemberPostStats(post.linkedin_post_urn, token))
+          ?? (await fetchEngagement(post.linkedin_post_urn, token));
         if (!eng) {
           // Metrics unavailable (LinkedIn partner-gated) — mark the attempt so
           // the row isn't retried forever, but leave every metric NULL:
