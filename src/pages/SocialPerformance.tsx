@@ -32,6 +32,7 @@ const CHANNEL_COLOR: Record<string, string> = {
   Facebook: "#008300",
   Instagram: "#e87ba4",
   YouTube: "#eda100",
+  X: "#1baf7a",
 };
 const FORMAT_COLOR: Record<string, string> = {
   text: "#2a78d6",
@@ -77,6 +78,11 @@ interface PerfPost {
   yt_views: number | null;
   yt_likes: number | null;
   yt_comments: number | null;
+  x_post_id: string | null;
+  x_impressions: number | null;
+  x_likes: number | null;
+  x_replies: number | null;
+  x_reposts: number | null;
 }
 
 const n = (v: number | null | undefined) => v ?? 0;
@@ -84,8 +90,9 @@ const liInteractions = (p: PerfPost) => n(p.linkedin_likes) + n(p.linkedin_comme
 const fbInteractions = (p: PerfPost) => n(p.fb_likes) + n(p.fb_comments) + n(p.fb_shares);
 const igInteractions = (p: PerfPost) => n(p.ig_likes) + n(p.ig_comments) + n(p.ig_saves) + n(p.ig_shares);
 const ytInteractions = (p: PerfPost) => n(p.yt_likes) + n(p.yt_comments);
-const totalInteractions = (p: PerfPost) => liInteractions(p) + fbInteractions(p) + igInteractions(p) + ytInteractions(p);
-const totalReach = (p: PerfPost) => n(p.linkedin_impressions) + n(p.ig_reach) + n(p.yt_views);
+const xInteractions = (p: PerfPost) => n(p.x_likes) + n(p.x_replies) + n(p.x_reposts);
+const totalInteractions = (p: PerfPost) => liInteractions(p) + fbInteractions(p) + igInteractions(p) + ytInteractions(p) + xInteractions(p);
+const totalReach = (p: PerfPost) => n(p.linkedin_impressions) + n(p.ig_reach) + n(p.yt_views) + n(p.x_impressions);
 
 function pctDelta(current: number, previous: number): number | null {
   if (!previous) return null;
@@ -134,7 +141,7 @@ export default function SocialPerformance() {
       if (!effectiveOrgId) return [];
       const { data, error } = await supabase
         .from("blog_posts")
-        .select("id, blog_title, publish_date, post_format, content_theme, product_key, status, linkedin_url, linkedin_impressions, linkedin_likes, linkedin_comments, linkedin_reposts, fb_post_id, fb_likes, fb_comments, fb_shares, fb_clicks, ig_post_id, ig_reel_id, ig_reach, ig_likes, ig_comments, ig_saves, ig_shares, yt_video_id, yt_views, yt_likes, yt_comments")
+        .select("id, blog_title, publish_date, post_format, content_theme, product_key, status, linkedin_url, linkedin_impressions, linkedin_likes, linkedin_comments, linkedin_reposts, fb_post_id, fb_likes, fb_comments, fb_shares, fb_clicks, ig_post_id, ig_reel_id, ig_reach, ig_likes, ig_comments, ig_saves, ig_shares, yt_video_id, yt_views, yt_likes, yt_comments, x_post_id, x_impressions, x_likes, x_replies, x_reposts")
         .eq("org_id", effectiveOrgId)
         .eq("status", "posted")
         .gte("publish_date", prevSince)
@@ -197,7 +204,7 @@ export default function SocialPerformance() {
 
     const followerSeries = new Map<string, { dates: string[]; values: number[] }>();
     for (const row of followerRows || []) {
-      const name = row.channel === "linkedin" ? "LinkedIn" : row.channel === "facebook" ? "Facebook" : row.channel === "instagram" ? "Instagram" : row.channel === "youtube" ? "YouTube" : row.channel;
+      const name = row.channel === "linkedin" ? "LinkedIn" : row.channel === "facebook" ? "Facebook" : row.channel === "instagram" ? "Instagram" : row.channel === "youtube" ? "YouTube" : row.channel === "x" ? "X" : row.channel;
       if (!followerSeries.has(name)) followerSeries.set(name, { dates: [], values: [] });
       const s = followerSeries.get(name)!;
       s.dates.push(row.stat_date);
@@ -225,11 +232,13 @@ export default function SocialPerformance() {
         Facebook: byDay(fbInteractions),
         Instagram: byDay(igInteractions),
         YouTube: byDay(ytInteractions),
+        X: byDay(xInteractions),
       },
       reachByChannel: {
         LinkedIn: byDay((p) => n(p.linkedin_impressions)),
         Instagram: byDay((p) => n(p.ig_reach)),
         YouTube: byDay((p) => n(p.yt_views)),
+        X: byDay((p) => n(p.x_impressions)),
       },
       byFormat,
       byTheme,
@@ -322,7 +331,7 @@ export default function SocialPerformance() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-xl font-semibold">Social Performance</h1>
-            <p className="text-sm text-muted-foreground">LinkedIn · Facebook · Instagram · YouTube — updated nightly.</p>
+            <p className="text-sm text-muted-foreground">LinkedIn · Facebook · Instagram · YouTube · X — updated nightly.</p>
           </div>
           <div className="flex gap-1">
             {RANGES.map((r) => (
@@ -338,7 +347,7 @@ export default function SocialPerformance() {
           <StatTile label={`Interactions (${rangeDays}d)`} value={String(model.interactionsTotal)} delta={model.interactionsDelta} sub="vs prior period" />
           <StatTile label={`Reach (${rangeDays}d)`} value={String(model.reachTotal)} delta={model.reachDelta} sub="vs prior period" />
           <StatTile label="Posts published" value={String(model.postsCount)} />
-          {(["LinkedIn", "Facebook", "Instagram", "YouTube"] as const).map((ch) => (
+          {(["LinkedIn", "Facebook", "Instagram", "YouTube", "X"] as const).map((ch) => (
             <StatTile
               key={ch}
               label={`${ch} followers`}
@@ -420,6 +429,7 @@ export default function SocialPerformance() {
                       {fbInteractions(p) > 0 && <Badge variant="outline" style={{ borderColor: CHANNEL_COLOR.Facebook, color: CHANNEL_COLOR.Facebook }}>fb {fbInteractions(p)}</Badge>}
                       {igInteractions(p) > 0 && <Badge variant="outline" style={{ borderColor: CHANNEL_COLOR.Instagram, color: CHANNEL_COLOR.Instagram }}>ig {igInteractions(p)}</Badge>}
                       {ytInteractions(p) > 0 && <Badge variant="outline" style={{ borderColor: CHANNEL_COLOR.YouTube, color: CHANNEL_COLOR.YouTube }}>yt {ytInteractions(p)}</Badge>}
+                      {xInteractions(p) > 0 && <Badge variant="outline" style={{ borderColor: CHANNEL_COLOR.X, color: CHANNEL_COLOR.X }}>x {xInteractions(p)}</Badge>}
                       <span className="font-medium w-8 text-right">{p.interactions}</span>
                     </div>
                     {p.linkedin_url && (

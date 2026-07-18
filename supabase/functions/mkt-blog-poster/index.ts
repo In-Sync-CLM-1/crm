@@ -279,15 +279,17 @@ Deno.serve(async (req) => {
           .then((r) => r.json()).catch((e) => ({ error: e?.message }));
         socialResult = { facebook: fbRes };
       } else {
-        const [fbRes, igRes, ytRes] = await Promise.allSettled([
+        const [fbRes, igRes, ytRes, xRes] = await Promise.allSettled([
           fetch(`${supaUrl}/functions/v1/mkt-social-facebook`, { method: 'POST', headers: socialHeaders, body: socialBody, signal: AbortSignal.timeout(30_000) }),
           fetch(`${supaUrl}/functions/v1/mkt-social-instagram`, { method: 'POST', headers: socialHeaders, body: socialBody, signal: AbortSignal.timeout(90_000) }),
           fetch(`${supaUrl}/functions/v1/mkt-social-youtube`, { method: 'POST', headers: socialHeaders, body: socialBody, signal: AbortSignal.timeout(120_000) }),
+          fetch(`${supaUrl}/functions/v1/mkt-social-x`, { method: 'POST', headers: socialHeaders, body: socialBody, signal: AbortSignal.timeout(120_000) }),
         ]);
         socialResult = {
           facebook: fbRes.status === 'fulfilled' ? await fbRes.value.json().catch(() => null) : { error: fbRes.reason?.message },
           instagram: igRes.status === 'fulfilled' ? await igRes.value.json().catch(() => null) : { error: igRes.reason?.message },
           youtube: ytRes.status === 'fulfilled' ? await ytRes.value.json().catch(() => null) : { error: ytRes.reason?.message },
+          x: xRes.status === 'fulfilled' ? await xRes.value.json().catch(() => null) : { error: xRes.reason?.message },
         };
       }
 

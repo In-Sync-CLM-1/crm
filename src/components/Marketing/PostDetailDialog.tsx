@@ -42,6 +42,11 @@ export interface CalendarPost {
   yt_views: number | null;
   yt_likes: number | null;
   yt_comments: number | null;
+  x_post_id: string | null;
+  x_impressions: number | null;
+  x_likes: number | null;
+  x_replies: number | null;
+  x_reposts: number | null;
   error_message: string | null;
   linkedin_slot_index: number | null;
   day_seq: number | null;
@@ -288,6 +293,15 @@ export function PostDetailDialog({
                   <span className="flex items-center gap-1"><MessageCircle className="h-3.5 w-3.5" /> {post.yt_comments ?? "—"}</span>
                 </div>
               )}
+              {post.x_post_id && (
+                <div className="flex items-center gap-4">
+                  <span className="w-20 text-xs font-medium">X</span>
+                  <span className="flex items-center gap-1"><Eye className="h-3.5 w-3.5" /> {post.x_impressions ?? "—"}</span>
+                  <span className="flex items-center gap-1"><ThumbsUp className="h-3.5 w-3.5" /> {post.x_likes ?? "—"}</span>
+                  <span className="flex items-center gap-1"><MessageCircle className="h-3.5 w-3.5" /> {post.x_replies ?? "—"}</span>
+                  <span className="flex items-center gap-1"><Repeat2 className="h-3.5 w-3.5" /> {post.x_reposts ?? "—"}</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -295,6 +309,7 @@ export function PostDetailDialog({
             {post.fb_post_id && <Badge variant="outline">Facebook posted</Badge>}
             {post.ig_post_id && <Badge variant="outline">Instagram posted</Badge>}
             {post.yt_video_id && <Badge variant="outline">YouTube posted</Badge>}
+            {post.x_post_id && <Badge variant="outline">X posted</Badge>}
           </div>
         </div>
 

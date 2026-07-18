@@ -15,6 +15,7 @@
  */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/corsHeaders.ts';
+import { getXCreds, getOwnProfile, getTweetMetrics } from '../_shared/xClient.ts';
 
 const FB_API_VERSION = 'v21.0';
 
@@ -230,23 +231,42 @@ Deno.serve(async (req) => {
       }
     }
 
+    // X: channel snapshot (followers) + per-post metrics prefetch
+    const xCreds = getXCreds();
+    if (xCreds) {
+      const profile = await getOwnProfile(xCreds);
+      if (profile) {
+        await supabase.from('mkt_channel_stats_daily').upsert({
+          org_id: config.org_id,
+          stat_date: statDate,
+          channel: 'x',
+          followers: profile.followers,
+          extra: { screen_name: profile.screenName },
+        }, { onConflict: 'org_id,stat_date,channel' });
+      }
+    }
+
     const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
     const { data: posts, error: postsErr } = await supabase
       .from('blog_posts')
-      .select('id, fb_post_id, ig_post_id, ig_reel_id, yt_video_id')
-      .or('fb_post_id.not.is.null,ig_post_id.not.is.null,ig_reel_id.not.is.null,yt_video_id.not.is.null')
+      .select('id, fb_post_id, ig_post_id, ig_reel_id, yt_video_id, x_post_id')
+      .or('fb_post_id.not.is.null,ig_post_id.not.is.null,ig_reel_id.not.is.null,yt_video_id.not.is.null,x_post_id.not.is.null')
       .gte('posted_timestamp', fourteenDaysAgo)
       .limit(120);
 
     if (postsErr) return err(500, postsErr.message);
-    if (!posts?.length) return ok({ skip: 'no recently posted rows with FB/IG/YT ids' });
+    if (!posts?.length) return ok({ skip: 'no recently posted rows with FB/IG/YT/X ids' });
 
     const ytIds = posts.map((p) => p.yt_video_id as string | null).filter(Boolean) as string[];
     const ytStats = ytAccessToken && ytIds.length ? await fetchYtStatsBatch(ytIds, ytAccessToken) : {};
 
+    const xIds = posts.map((p) => p.x_post_id as string | null).filter(Boolean) as string[];
+    const xStats = xCreds && xIds.length ? await getTweetMetrics(xIds, xCreds) : {};
+
     let fbUpdated = 0;
     let igUpdated = 0;
     let ytUpdated = 0;
+    let xUpdated = 0;
     const now = new Date().toISOString();
 
     for (const post of posts) {
@@ -291,13 +311,23 @@ Deno.serve(async (req) => {
         ytUpdated++;
       }
 
+      if (post.x_post_id && xStats[post.x_post_id as string]) {
+        const s = xStats[post.x_post_id as string];
+        update.x_impressions = s.impressions;
+        update.x_likes = s.likes;
+        update.x_replies = s.replies;
+        update.x_reposts = s.reposts;
+        update.x_engagement_fetched_at = now;
+        xUpdated++;
+      }
+
       if (Object.keys(update).length) {
         await supabase.from('blog_posts').update(update).eq('id', post.id);
       }
     }
 
-    console.log(`[social-engagement] swept ${posts.length} rows: fb=${fbUpdated} ig=${igUpdated} yt=${ytUpdated}`);
-    return ok({ success: true, swept: posts.length, fb_updated: fbUpdated, ig_updated: igUpdated, yt_updated: ytUpdated });
+    console.log(`[social-engagement] swept ${posts.length} rows: fb=${fbUpdated} ig=${igUpdated} yt=${ytUpdated} x=${xUpdated}`);
+    return ok({ success: true, swept: posts.length, fb_updated: fbUpdated, ig_updated: igUpdated, yt_updated: ytUpdated, x_updated: xUpdated });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error('[social-engagement] fatal:', msg);

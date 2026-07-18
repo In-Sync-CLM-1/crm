@@ -31,6 +31,7 @@ const liInt = (p: Row) => n(p.linkedin_likes) + n(p.linkedin_comments) + n(p.lin
 const fbInt = (p: Row) => n(p.fb_likes) + n(p.fb_comments) + n(p.fb_shares);
 const igInt = (p: Row) => n(p.ig_likes) + n(p.ig_comments) + n(p.ig_saves) + n(p.ig_shares);
 const ytInt = (p: Row) => n(p.yt_likes) + n(p.yt_comments);
+const xInt = (p: Row) => n(p.x_likes) + n(p.x_replies) + n(p.x_reposts);
 
 function isoDaysAgo(days: number): string {
   return new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
@@ -41,7 +42,7 @@ async function buildContext(supabase: any, orgId: string): Promise<string> {
   const [postedRes, upcomingRes, followersRes, configRes] = await Promise.all([
     supabase
       .from('blog_posts')
-      .select('publish_date, post_format, content_theme, product_key, blog_title, linkedin_impressions, linkedin_likes, linkedin_comments, linkedin_reposts, fb_likes, fb_comments, fb_shares, fb_clicks, ig_reach, ig_likes, ig_comments, ig_saves, ig_shares, yt_views, yt_likes, yt_comments, linkedin_url')
+      .select('publish_date, post_format, content_theme, product_key, blog_title, linkedin_impressions, linkedin_likes, linkedin_comments, linkedin_reposts, fb_likes, fb_comments, fb_shares, fb_clicks, ig_reach, ig_likes, ig_comments, ig_saves, ig_shares, yt_views, yt_likes, yt_comments, x_impressions, x_likes, x_replies, x_reposts, linkedin_url')
       .eq('org_id', orgId)
       .eq('status', 'posted')
       .gte('publish_date', isoDaysAgo(30))
@@ -76,12 +77,12 @@ async function buildContext(supabase: any, orgId: string): Promise<string> {
   const lines: string[] = [];
 
   lines.push('== POSTED CONTENT, LAST 30 DAYS (one line per post) ==');
-  lines.push('date | format | theme | product | LI int/impr | FB int | IG int/reach | YT int/views | title');
+  lines.push('date | format | theme | product | LI int/impr | FB int | IG int/reach | YT int/views | X int/impr | title');
   for (const p of posted) {
     lines.push(
       `${p.publish_date} | ${p.post_format ?? 'text'} | ${p.content_theme ?? '-'} | ${p.product_key ?? '-'} | ` +
       `${liInt(p)}/${p.linkedin_impressions ?? '?'} | ${fbInt(p)} | ${igInt(p)}/${p.ig_reach ?? '?'} | ` +
-      `${ytInt(p)}/${p.yt_views ?? '?'} | ` +
+      `${ytInt(p)}/${p.yt_views ?? '?'} | ${xInt(p)}/${p.x_impressions ?? '?'} | ` +
       `${(p.blog_title ?? '').slice(0, 70)}`,
     );
   }
@@ -95,6 +96,7 @@ async function buildContext(supabase: any, orgId: string): Promise<string> {
       fb: rows.reduce((s, p) => s + fbInt(p), 0),
       ig: rows.reduce((s, p) => s + igInt(p), 0),
       yt: rows.reduce((s, p) => s + ytInt(p), 0),
+      x: rows.reduce((s, p) => s + xInt(p), 0),
       impressions: rows.reduce((s, p) => s + n(p.linkedin_impressions), 0),
       reach: rows.reduce((s, p) => s + n(p.ig_reach), 0),
       views: rows.reduce((s, p) => s + n(p.yt_views), 0),
@@ -105,8 +107,8 @@ async function buildContext(supabase: any, orgId: string): Promise<string> {
   const prevWk = sumRange(isoDaysAgo(14), isoDaysAgo(7));
   lines.push('');
   lines.push('== WEEK VS PRIOR WEEK ==');
-  lines.push(`Last 7d: ${wk.posts} posts, interactions LI ${wk.li} / FB ${wk.fb} / IG ${wk.ig} / YT ${wk.yt}, LI impressions ${wk.impressions}, IG reach ${wk.reach}, YT views ${wk.views}`);
-  lines.push(`Prior 7d: ${prevWk.posts} posts, interactions LI ${prevWk.li} / FB ${prevWk.fb} / IG ${prevWk.ig} / YT ${prevWk.yt}, LI impressions ${prevWk.impressions}, IG reach ${prevWk.reach}, YT views ${prevWk.views}`);
+  lines.push(`Last 7d: ${wk.posts} posts, interactions LI ${wk.li} / FB ${wk.fb} / IG ${wk.ig} / YT ${wk.yt} / X ${wk.x}, LI impressions ${wk.impressions}, IG reach ${wk.reach}, YT views ${wk.views}`);
+  lines.push(`Prior 7d: ${prevWk.posts} posts, interactions LI ${prevWk.li} / FB ${prevWk.fb} / IG ${prevWk.ig} / YT ${prevWk.yt} / X ${prevWk.x}, LI impressions ${prevWk.impressions}, IG reach ${prevWk.reach}, YT views ${prevWk.views}`);
 
   lines.push('');
   lines.push('== FOLLOWER SNAPSHOTS (daily, last 30d) ==');
@@ -133,7 +135,7 @@ async function buildContext(supabase: any, orgId: string): Promise<string> {
   return lines.join('\n');
 }
 
-const SYSTEM_PROMPT = `You are Arohan, the marketing intelligence of In-Sync (in-sync.co.in), a multi-product business platform for Indian SMBs. You started as an outreach engine and evolved: today In-Sync's marketing is a brand-led content pipeline — 4 posts/day (text/image/carousel/video) published as the In-Sync company page on LinkedIn, and to Facebook, Instagram (@insyncclm), and YouTube, all prewritten into a 7-day buffer the founder reviews in the Content Calendar.
+const SYSTEM_PROMPT = `You are Arohan, the marketing intelligence of In-Sync (in-sync.co.in), a multi-product business platform for Indian SMBs. You started as an outreach engine and evolved: today In-Sync's marketing is a brand-led content pipeline — 4 posts/day (text/image/carousel/video) published as the In-Sync company page on LinkedIn, and to Facebook, Instagram (@insyncclm), YouTube, and X (@insyncclm), all prewritten into a 7-day buffer the founder reviews in the Content Calendar. X posts are deliberately link-free (a URL multiplies X's pay-per-use posting cost ~13x).
 
 You are talking to Amit, the founder (business user, not a developer). Your job: deep-dive analytics and strategy over the data provided — what is working, what isn't, and what to change.
 
