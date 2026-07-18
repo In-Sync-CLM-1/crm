@@ -19,7 +19,10 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const REDIRECT_URI = 'https://mlvgqudcwlkolsbighnn.supabase.co/functions/v1/mkt-linkedin-oauth-callback';
 const LINKEDIN_VERSION = '202503';
-const ORG_SCOPES = 'w_organization_social r_organization_social rw_organization_admin';
+// Everything the Community Management app offers — org posting/stats, plus
+// member posting/analytics so the persona stream runs on this app's
+// auto-refreshing token instead of the legacy 60-day member app.
+const ORG_SCOPES = 'w_organization_social r_organization_social rw_organization_admin r_organization_followers r_organization_social_feed w_organization_social_feed w_member_social w_member_social_feed r_basicprofile r_member_postAnalytics r_member_profileAnalytics r_1st_connections_size';
 
 function html(body: string, status = 200) {
   return new Response(`<!doctype html><html><body style="font-family:sans-serif;padding:40px;text-align:center">${body}</body></html>`, {
@@ -112,10 +115,33 @@ async function handleOrgCallback(code: string) {
   }
   const orgId = orgUrn.split(':').pop()!;
 
+  // Member URNs are app-scoped, so the legacy app's URN is useless with this
+  // token — re-resolve via /v2/me (r_basicprofile). When it works, the member
+  // columns switch over to this app too (same token holds w_member_social),
+  // retiring the legacy app's 60-day manual re-consent.
+  let memberUrn: string | null = null;
+  const meRes = await fetch('https://api.linkedin.com/v2/me?projection=(id)', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (meRes.ok) {
+    const me = await meRes.json();
+    if (me.id) memberUrn = `urn:li:person:${me.id}`;
+  } else {
+    console.warn(`[linkedin-oauth] /v2/me ${meRes.status}: ${await meRes.text()}`);
+  }
+
   await supabase
     .from('mkt_linkedin_config')
     .update({
       linkedin_org_id: orgId,
+      ...(memberUrn
+        ? {
+            member_urn: memberUrn,
+            member_access_token: accessToken,
+            member_token_expires_at: new Date(Date.now() + expiresInSec * 1000).toISOString(),
+          }
+        : {}),
       org_access_token: accessToken,
       org_token_expires_at: new Date(Date.now() + expiresInSec * 1000).toISOString(),
       org_refresh_token: refreshToken,
@@ -128,6 +154,7 @@ async function handleOrgCallback(code: string) {
   return html(
     `<h2>Company page connected</h2>` +
     `<p>Posting as: ${orgUrn}</p>` +
+    `<p>Member profile: ${memberUrn ?? '(not resolved — legacy member connection stays in use)'}</p>` +
     `<p>Access token valid until ${new Date(Date.now() + expiresInSec * 1000).toDateString()}.</p>` +
     (refreshToken
       ? `<p>Refresh token stored — renews automatically${refreshExpiresInSec ? ` until ${new Date(Date.now() + refreshExpiresInSec * 1000).toDateString()}` : ''}.</p>`

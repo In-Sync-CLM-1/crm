@@ -69,6 +69,12 @@ async function refreshOrgToken(
     org_access_token: accessToken,
     org_token_expires_at: new Date(Date.now() + expiresInSec * 1000).toISOString(),
   };
+  // Single-app mode: when the member connection shares this app's token
+  // (set together during the org consent), keep the mirror in sync.
+  if (config.member_access_token && config.member_access_token === config.org_access_token) {
+    update.member_access_token = accessToken;
+    update.member_token_expires_at = update.org_token_expires_at;
+  }
   // LinkedIn may rotate the refresh token; keep whichever we were given last.
   if (data.refresh_token) {
     update.org_refresh_token = data.refresh_token;
