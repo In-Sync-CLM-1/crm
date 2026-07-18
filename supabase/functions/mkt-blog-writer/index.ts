@@ -335,6 +335,79 @@ function styleFor(postSeq: number): ImageStyle {
   return IMAGE_STYLES[postSeq % IMAGE_STYLES.length];
 }
 
+// ── Persona stream (2026-07-18) ──────────────────────────────────────────────
+// One first-person post per day on Amit's own LinkedIn profile (channel=
+// 'member', day_seq=4, fixed 08:30 slot). Company page = what In-Sync knows;
+// Amit's feed = what Amit thinks. Never selling.
+
+const PERSONA_DAY_SEQ = 4;      // company posts use 0-3
+const PERSONA_SLOT_INDEX = 1;   // 08:30 IST — LinkedIn's morning window
+
+// The only approved biographical facts (Amit's own write-up, 2026-07-18).
+// NEVER invent facts beyond these. Money figures were volunteered by him.
+const PERSONA_BACKSTORY = `WHO IS WRITING: Amit, founder of In-Sync.
+FACTS (the only permitted biography — never invent others):
+- Started career as an Air Traffic Control officer in the Indian Air Force. "Precision and clarity weren't luxuries — they were survival."
+- ~15 years in sales, business development, and strategy across two major insurance companies and a tech firm. Built products, managed teams, watched organizations fracture as they scaled: multiple tools, data silos, people saying different things, efficiency collapsing before anyone noticed.
+- 2015: left employment to become an entrepreneur.
+- 2019: launched a multichannel CRM venture (WhatsApp, SMS, email synchronized). Real market, won customers — but couldn't retain them. Root cause he owns openly: he wasn't a technologist, and his dev team built what THEY wanted, not what customers needed. Lost customers year after year; even COVID's digital push couldn't save that model.
+- 2025: stopped hiring traditional developers, taught himself to build with AI (Claude Code specifically), rebuilt everything himself.
+- The economics: used to burn ₹6-7 lakh/month — and 80-90% of his own time went into managing team conflicts and politics, not the product. Today: ~₹30,000/month in licenses. ~95% cost reduction, and he got his time back.
+- Reliability transformed after the rebuild: real-time audits, no production firefighting. (Express as lived specifics — never absolute claims like "zero bugs".)
+- Today: In-Sync, a suite of ~10 synchronized products (CRM, applicant tracking, event management, email broadcasting, WhatsApp broadcasting, expense management, field force tracking, vendor verification and management, inventory).
+- Who he solves for: organizations in the scaling transition — not enterprise yet, growing fast, more people, more departments, more chaos. "Two people, two versions of truth. By the time they see the damage, it's already done."
+- His AI-economics conviction: a report in an hour instead of next week; a feature the same day instead of three days; businesses shouldn't have to pick two of cost, speed, and flexibility.
+- He genuinely runs In-Sync's own marketing, content pipeline, and operations on AI automation he built — this very post was drafted by that system and reviewed by him.`;
+
+// Five persona pillars — rotate daily, one per post.
+const PERSONA_PILLARS = [
+  'founder journey: a real decision, trade-off, or mistake from the story above and what it taught him',
+  'business run by AI: a concrete, honest look at what it is like to run a company where AI does the building and the operating — real incidents, real numbers, no hype',
+  'opinion: a conviction about how Indian SMBs buy and use software that most people get wrong — argued from his 15 years in the field',
+  'operator advice: one practical, immediately usable lesson for founders/ops heads of scaling businesses, drawn from patterns he has lived',
+  'market observation: an anonymized pattern he sees across growing Indian businesses — what separates the ones that scale cleanly from the ones that fracture',
+];
+
+interface PersonaDraft {
+  title: string;
+  post_text: string;
+}
+
+async function generatePersonaPost(dayIndex: number, recentTitles: string[]): Promise<PersonaDraft> {
+  const pillar = PERSONA_PILLARS[dayIndex % PERSONA_PILLARS.length];
+  const isOpinionDay = pillar.startsWith('opinion');
+
+  const prompt = `Write today's LinkedIn post for Amit's PERSONAL profile.
+
+${PERSONA_BACKSTORY}
+
+TODAY'S PILLAR: ${pillar}
+
+VOICE (match exactly):
+- Story-led and reflective at the core: open inside a moment or decision, not with a thesis. Honesty about failure reads as strength.
+- Land at least one hard number early (₹ figures, years, percentages from the FACTS) — numbers are punches, not decoration.
+${isOpinionDay ? '- Today is an opinion day: take ONE clear position and argue it with conviction. Disagreement is welcome; wishy-washy is not.' : '- Conviction stays warm, not combative.'}
+- Short declarative sentences. Occasional em-dash asides. A rhetorical question answered immediately ("Why? Because...") is on-voice.
+- Plain vocabulary. No emoji, no hashtags, no corporate phrases ("thrilled to share", "game-changer", "journey" as filler).
+- 700-1300 characters. First person throughout.
+- End with ONE genuine question to the reader that invites stories, not yes/no.
+- NEVER sell: In-Sync may appear only if the story is about building it, and never with a link or call-to-action. No product pitches.
+- Absolute claims are banned ("zero bugs", "bulletproof") — use lived specifics instead ("no production incident since the rebuild").
+- Stay strictly inside the FACTS for anything biographical or numeric. The connective tissue (feelings, scenes, lessons) is yours to write; the facts are not.
+
+RECENTLY USED TITLES (do not repeat these stories or angles): ${recentTitles.length ? recentTitles.join(' | ') : '(none yet)'}
+
+Return JSON: {"title": "<short internal label for the calendar, max 60 chars>", "post_text": "<the complete post>"}`;
+
+  const { data } = await callLLMJson<PersonaDraft>(prompt, {
+    model: 'sonnet',
+    max_tokens: 1200,
+    temperature: 0.8,
+  });
+  if (!data?.post_text) throw new Error('Persona generation returned no post_text');
+  return data;
+}
+
 async function generateBlogPost(
   product: { product_name: string; product_url: string },
   icp: Record<string, unknown> | null,
@@ -640,6 +713,8 @@ Deno.serve(async (req) => {
         for (let j = 0; j < POSTS_PER_DAY; j++) {
           if (!filled.has(`${date}#${j}`)) gaps.push({ date, seq: j });
         }
+        // Persona post (Amit's profile) — one per day at day_seq=4
+        if (!filled.has(`${date}#${PERSONA_DAY_SEQ}`)) gaps.push({ date, seq: PERSONA_DAY_SEQ });
       }
       if (!gaps.length) {
         return ok({ skip: 'buffer full', buffer_days: BUFFER_DAYS, posts_per_day: POSTS_PER_DAY });
@@ -647,6 +722,59 @@ Deno.serve(async (req) => {
       targetDate = gaps[0].date;
       daySeq = gaps[0].seq;
       gapsRemaining = gaps.length - 1;
+    }
+
+    // 3b. Persona draft (channel='member') — text-only, no media, no product
+    // rotation; grounded exclusively in the approved backstory facts.
+    if (daySeq === PERSONA_DAY_SEQ) {
+      const personaDayIndex = daysSince(config.start_date, targetDate);
+      const { data: recent } = await supabase
+        .from('blog_posts')
+        .select('blog_title')
+        .eq('org_id', config.org_id)
+        .eq('channel', 'member')
+        .order('publish_date', { ascending: false })
+        .limit(14);
+      const recentTitles = (recent || []).map((r) => r.blog_title as string).filter(Boolean);
+
+      const draft = await generatePersonaPost(personaDayIndex, recentTitles);
+      const pillar = PERSONA_PILLARS[personaDayIndex % PERSONA_PILLARS.length];
+
+      const { error: personaInsertErr } = await supabase.from('blog_posts').insert({
+        org_id: config.org_id,
+        channel: 'member',
+        blog_url: `draft://member/${targetDate}/persona`,
+        product_key: null,
+        publish_date: targetDate,
+        day_seq: PERSONA_DAY_SEQ,
+        status: 'pending',
+        social_posted: false,
+        posted_timestamp: new Date().toISOString(),
+        linkedin_slot_index: PERSONA_SLOT_INDEX,
+        linkedin_cycle: Math.floor(personaDayIndex / SLOT_COUNT) + 1,
+        post_format: 'text',
+        content_angle: 'persona: first-person, story-led, never selling',
+        content_theme: pillar,
+        blog_title: draft.title,
+        blog_excerpt: draft.post_text.slice(0, 280),
+        linkedin_draft_text: draft.post_text,
+      });
+
+      if (personaInsertErr) {
+        if (personaInsertErr.code === '23505') {
+          return ok({ skip: `persona gap ${targetDate} filled by concurrent run` });
+        }
+        return err(500, personaInsertErr.message);
+      }
+
+      console.log(`[blog-writer] persona draft saved for ${targetDate} (pillar: ${pillar.split(':')[0]}), ${gapsRemaining} gaps left`);
+      return ok({
+        success: true,
+        channel: 'member',
+        publish_date: targetDate,
+        pillar: pillar.split(':')[0],
+        gaps_remaining: gapsRemaining,
+      });
     }
 
     // 4. Rotation is keyed on the global post sequence so product, format,

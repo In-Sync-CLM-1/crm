@@ -167,7 +167,7 @@ Deno.serve(async (req) => {
     // go out per day, each row carrying its own slot.
     const { data: drafts, error: draftErr } = await supabase
       .from('blog_posts')
-      .select('id, blog_title, linkedin_draft_text, linkedin_short_caption, post_format, image_url, video_url, carousel_slide_urls, product_key, linkedin_slot_index, linkedin_cycle, day_seq')
+      .select('id, channel, blog_title, linkedin_draft_text, linkedin_short_caption, post_format, image_url, video_url, carousel_slide_urls, product_key, linkedin_slot_index, linkedin_cycle, day_seq')
       .eq('org_id', config.org_id)
       .eq('publish_date', ist.date)
       .eq('status', 'pending')
@@ -177,18 +177,19 @@ Deno.serve(async (req) => {
     if (draftErr) return err(500, `Draft load error: ${draftErr.message}`);
     if (!drafts?.length) return ok({ skip: `no pending drafts for today (${ist.date})` });
 
-    // 3. Pick the draft whose assigned slot matches NOW (±20 min). Slot times
-    // are ≥60 min apart so at most one draft can match. force=true posts the
-    // earliest pending draft regardless of time.
+    // 3. Pick the drafts whose assigned slot matches NOW (±20 min). Company
+    // slots are ≥60 min apart so at most one company draft matches — but the
+    // persona draft (channel='member', fixed slot) can share a window with a
+    // company draft, so this handles a list. force=true posts the earliest.
     const bySlotTime = [...drafts].sort((a, b) =>
       slotMinutes(slots[a.linkedin_slot_index % slots.length]) - slotMinutes(slots[b.linkedin_slot_index % slots.length]));
 
-    const draft = force
-      ? bySlotTime[0]
-      : bySlotTime.find((d) =>
+    const matches = force
+      ? bySlotTime.slice(0, 1)
+      : bySlotTime.filter((d) =>
           Math.abs(ist.totalMinutes - slotMinutes(slots[d.linkedin_slot_index % slots.length])) <= 20);
 
-    if (!draft) {
+    if (!matches.length) {
       return ok({
         skip: 'no draft scheduled for this time',
         now_ist: ist.hhmm,
@@ -196,88 +197,113 @@ Deno.serve(async (req) => {
       });
     }
 
-    const targetSlot = slots[draft.linkedin_slot_index % slots.length];
-    const days = daysSince(config.start_date, ist.date);
-    const todaySlotIdx = draft.linkedin_slot_index % slots.length;
+    const results: Record<string, unknown>[] = [];
 
-    const format = (draft.post_format as string) || 'text';
-    console.log(`[blog-poster] posting draft for ${ist.date} seq=${draft.day_seq} slot=${targetSlot} product=${draft.product_key} format=${format}`);
+    for (const draft of matches) {
+      const isPersona = draft.channel === 'member';
+      const targetSlot = slots[draft.linkedin_slot_index % slots.length];
+      const days = daysSince(config.start_date, ist.date);
+      const todaySlotIdx = draft.linkedin_slot_index % slots.length;
 
-    // 6. Upload media (if any) and post to LinkedIn
-    const commentary = format === 'text' ? draft.linkedin_draft_text : draft.linkedin_short_caption;
-    let media: LinkedInMedia | undefined;
+      // Persona posts publish as Amit himself; company posts as the page.
+      // Single-app mode: one token carries both w_organization_social and
+      // w_member_social, so only the author URN changes.
+      if (isPersona && !config.member_urn) {
+        results.push({ id: draft.id, error: 'persona draft skipped — no member_urn on config' });
+        continue;
+      }
+      const authorUrn = isPersona ? (config.member_urn as string) : identity.authorUrn;
 
-    if (format === 'image' && draft.image_url) {
-      const id = await uploadImageToLinkedIn(identity.token, identity.authorUrn, draft.image_url as string);
-      media = { id };
-    } else if (format === 'video' && draft.video_url) {
-      const id = await uploadVideoToLinkedIn(identity.token, identity.authorUrn, draft.video_url as string);
-      media = { id };
-    } else if (format === 'carousel' && Array.isArray(draft.carousel_slide_urls) && draft.carousel_slide_urls.length) {
-      const pdfBytes = await buildCarouselPdf(draft.carousel_slide_urls as string[]);
-      const id = await uploadDocumentToLinkedIn(identity.token, identity.authorUrn, pdfBytes);
-      media = { id, title: draft.blog_title as string };
+      const format = (draft.post_format as string) || 'text';
+      console.log(`[blog-poster] posting ${isPersona ? 'PERSONA' : 'company'} draft for ${ist.date} seq=${draft.day_seq} slot=${targetSlot} format=${format}`);
+
+      // Upload media (if any) and post to LinkedIn
+      const commentary = format === 'text' ? draft.linkedin_draft_text : draft.linkedin_short_caption;
+      let media: LinkedInMedia | undefined;
+
+      if (format === 'image' && draft.image_url) {
+        const id = await uploadImageToLinkedIn(identity.token, authorUrn, draft.image_url as string);
+        media = { id };
+      } else if (format === 'video' && draft.video_url) {
+        const id = await uploadVideoToLinkedIn(identity.token, authorUrn, draft.video_url as string);
+        media = { id };
+      } else if (format === 'carousel' && Array.isArray(draft.carousel_slide_urls) && draft.carousel_slide_urls.length) {
+        const pdfBytes = await buildCarouselPdf(draft.carousel_slide_urls as string[]);
+        const id = await uploadDocumentToLinkedIn(identity.token, authorUrn, pdfBytes);
+        media = { id, title: draft.blog_title as string };
+      }
+
+      const { postUrn, postUrl } = await postToLinkedIn(commentary, identity.token, authorUrn, media);
+      console.log(`[blog-poster] posted as ${isPersona ? 'member (persona)' : identity.isOrg ? 'company page' : 'member'}: ${postUrn} (format=${format})`);
+
+      // Update blog_post — replace placeholder URL with real LinkedIn URL
+      await supabase
+        .from('blog_posts')
+        .update({
+          blog_url: postUrl,
+          status: 'posted',
+          social_posted: true,
+          linkedin_url: postUrl,
+          linkedin_post_urn: postUrn || null,
+          posted_timestamp: new Date().toISOString(),
+        })
+        .eq('id', draft.id);
+
+      if (!isPersona) {
+        // Update config (company stream bookkeeping only)
+        const experimentComplete = !config.experiment_complete && (days + 1) >= 27;
+        await supabase
+          .from('mkt_linkedin_config')
+          .update({
+            last_posted_date: ist.date,
+            last_posted_slot_index: todaySlotIdx,
+            last_posted_product_key: draft.product_key,
+            ...(experimentComplete ? { experiment_complete: true } : {}),
+          })
+          .eq('id', config.id);
+      }
+
+      // Fan-out: company posts go to FB+IG+YouTube. Persona posts cross-post
+      // ONLY to the Facebook Page (with founder attribution — no personal-
+      // profile API exists on Meta); no Instagram/YouTube.
+      const supaUrl = Deno.env.get('SUPABASE_URL');
+      const svcKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+      const socialBody = JSON.stringify({ blog_post_id: draft.id });
+      const socialHeaders = {
+        'Authorization': `Bearer ${svcKey}`,
+        'Content-Type': 'application/json',
+      };
+      let socialResult: Record<string, unknown> | null = null;
+      if (isPersona) {
+        const fbRes = await fetch(`${supaUrl}/functions/v1/mkt-social-facebook`, { method: 'POST', headers: socialHeaders, body: socialBody, signal: AbortSignal.timeout(30_000) })
+          .then((r) => r.json()).catch((e) => ({ error: e?.message }));
+        socialResult = { facebook: fbRes };
+      } else {
+        const [fbRes, igRes, ytRes] = await Promise.allSettled([
+          fetch(`${supaUrl}/functions/v1/mkt-social-facebook`, { method: 'POST', headers: socialHeaders, body: socialBody, signal: AbortSignal.timeout(30_000) }),
+          fetch(`${supaUrl}/functions/v1/mkt-social-instagram`, { method: 'POST', headers: socialHeaders, body: socialBody, signal: AbortSignal.timeout(90_000) }),
+          fetch(`${supaUrl}/functions/v1/mkt-social-youtube`, { method: 'POST', headers: socialHeaders, body: socialBody, signal: AbortSignal.timeout(120_000) }),
+        ]);
+        socialResult = {
+          facebook: fbRes.status === 'fulfilled' ? await fbRes.value.json().catch(() => null) : { error: fbRes.reason?.message },
+          instagram: igRes.status === 'fulfilled' ? await igRes.value.json().catch(() => null) : { error: igRes.reason?.message },
+          youtube: ytRes.status === 'fulfilled' ? await ytRes.value.json().catch(() => null) : { error: ytRes.reason?.message },
+        };
+      }
+
+      results.push({
+        id: draft.id,
+        channel: draft.channel ?? 'company',
+        product: draft.product_key,
+        slot: targetSlot,
+        post_urn: postUrn,
+        post_url: postUrl,
+        posted_as: isPersona ? 'member (persona)' : identity.isOrg ? 'organization' : 'member',
+        ...(socialResult ? { social: socialResult } : {}),
+      });
     }
 
-    const { postUrn, postUrl } = await postToLinkedIn(commentary, identity.token, identity.authorUrn, media);
-    console.log(`[blog-poster] posted as ${identity.isOrg ? 'company page' : 'member'}: ${postUrn} (format=${format})`);
-
-    // 7. Update blog_post — replace placeholder URL with real LinkedIn URL
-    await supabase
-      .from('blog_posts')
-      .update({
-        blog_url: postUrl,
-        status: 'posted',
-        social_posted: true,
-        linkedin_url: postUrl,
-        linkedin_post_urn: postUrn || null,
-        posted_timestamp: new Date().toISOString(),
-      })
-      .eq('id', draft.id);
-
-    // 8. Update config
-    const experimentComplete = !config.experiment_complete && (days + 1) >= 27;
-    await supabase
-      .from('mkt_linkedin_config')
-      .update({
-        last_posted_date: ist.date,
-        last_posted_slot_index: todaySlotIdx,
-        last_posted_product_key: draft.product_key,
-        ...(experimentComplete ? { experiment_complete: true } : {}),
-      })
-      .eq('id', config.id);
-
-    // Fire Facebook, Instagram, and YouTube in parallel (don't block LinkedIn response)
-    // Each function handles its own auth check and gracefully skips if not configured.
-    const supaUrl = Deno.env.get('SUPABASE_URL');
-    const svcKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    const socialBody = JSON.stringify({ blog_post_id: draft.id });
-    const socialHeaders = {
-      'Authorization': `Bearer ${svcKey}`,
-      'Content-Type': 'application/json',
-    };
-    const [fbRes, igRes, ytRes] = await Promise.allSettled([
-      fetch(`${supaUrl}/functions/v1/mkt-social-facebook`, { method: 'POST', headers: socialHeaders, body: socialBody, signal: AbortSignal.timeout(30_000) }),
-      fetch(`${supaUrl}/functions/v1/mkt-social-instagram`, { method: 'POST', headers: socialHeaders, body: socialBody, signal: AbortSignal.timeout(90_000) }),
-      fetch(`${supaUrl}/functions/v1/mkt-social-youtube`, { method: 'POST', headers: socialHeaders, body: socialBody, signal: AbortSignal.timeout(120_000) }),
-    ]);
-
-    const socialResult = {
-      facebook: fbRes.status === 'fulfilled' ? await fbRes.value.json().catch(() => null) : { error: fbRes.reason?.message },
-      instagram: igRes.status === 'fulfilled' ? await igRes.value.json().catch(() => null) : { error: igRes.reason?.message },
-      youtube: ytRes.status === 'fulfilled' ? await ytRes.value.json().catch(() => null) : { error: ytRes.reason?.message },
-    };
-
-    return ok({
-      success: true,
-      product: draft.product_key,
-      slot: targetSlot,
-      slot_index: todaySlotIdx,
-      post_urn: postUrn,
-      post_url: postUrl,
-      posted_as: identity.isOrg ? 'organization' : 'member',
-      social: socialResult,
-    });
+    return ok({ success: true, posted: results.length, results });
 
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

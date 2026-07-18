@@ -127,7 +127,7 @@ Deno.serve(async (req) => {
 
     const { data: post, error: postErr } = await supabase
       .from('blog_posts')
-      .select('id, blog_title, blog_excerpt, linkedin_short_caption, post_format, image_url, video_url, carousel_slide_urls')
+      .select('id, channel, blog_title, blog_excerpt, linkedin_draft_text, linkedin_short_caption, post_format, image_url, video_url, carousel_slide_urls')
       .eq('id', blog_post_id)
       .maybeSingle();
 
@@ -136,7 +136,13 @@ Deno.serve(async (req) => {
 
     // Facebook always gets the short caption — long LinkedIn text collapses
     // behind "See more" and reads out of place there.
-    const message = ((post.linkedin_short_caption || post.blog_excerpt || post.blog_title) as string || '').slice(0, 63_000);
+    // Persona posts (founder's first-person stream) cross-post to the Page
+    // with explicit founder attribution, and use the full post text.
+    const isPersona = post.channel === 'member';
+    const rawMessage = isPersona
+      ? `From our founder, Amit:\n\n${(post.linkedin_draft_text || post.blog_excerpt || '') as string}`
+      : ((post.linkedin_short_caption || post.blog_excerpt || post.blog_title) as string || '');
+    const message = rawMessage.slice(0, 63_000);
     const slides = Array.isArray(post.carousel_slide_urls)
       ? (post.carousel_slide_urls as string[]).filter(Boolean)
       : [];
