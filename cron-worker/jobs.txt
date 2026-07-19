@@ -6,6 +6,7 @@ process-scheduled-messages-and-reminders|scheduled-messages-processor||*/5 * * *
 linkedin-engagement-tracker|mkt-linkedin-engagement-tracker||30 17 * * *
 member-engagement|mkt-member-engagement||30 7 * * 1,4
 social-engagement-tracker|mkt-social-engagement-tracker||0 17 * * *
+social-boost-weekly|mkt-social-boost||0 4 * * 1
 linkedin-blog-writer|mkt-blog-writer||*/30 * * * *
 linkedin-slot-0|mkt-blog-poster||0 2 * * *
 linkedin-slot-1|mkt-blog-poster||0 3 * * *
