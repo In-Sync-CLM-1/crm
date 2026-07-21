@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 import { logEdgeError, logStep, logBatchProgress, logValidationError } from '../_shared/errorLogger.ts';
+import { downloadFromFilesR2, deleteFromFilesR2 } from '../_shared/r2Files.ts';
 
 const OPERATION_TIMEOUT = 20 * 60 * 1000; // 20 minutes
 const MAX_RETRIES = 3;
@@ -156,19 +157,10 @@ serve(async (req) => {
       message: 'Downloading file...'
     });
 
-    const { data: fileData, error: downloadError } = await supabase.storage
-      .from('import-files')
-      .download(importJob.file_path);
+    const fileRes = await downloadFromFilesR2(`import-files/${importJob.file_path}`);
+    const csvText = await fileRes.text();
+    console.log('[STORAGE] File downloaded:', Math.round(csvText.length / 1024), 'KB');
 
-    if (downloadError || !fileData) {
-      throw new Error(`Failed to download file: ${downloadError?.message}`);
-    }
-
-    const fileSizeKB = Math.round(fileData.size / 1024);
-    console.log('[STORAGE] File downloaded:', fileSizeKB, 'KB');
-
-    // Convert blob to text
-    const csvText = await fileData.text();
     const lines = csvText.split('\n').filter((line: string) => line.trim());
 
     if (lines.length === 0) {
@@ -468,14 +460,11 @@ serve(async (req) => {
     });
 
     // Cleanup file
-    const { error: deleteError } = await supabase.storage
-      .from('bulk-imports')
-      .remove([importJob.file_path]);
-
-    if (deleteError) {
-      console.error('[CLEANUP] Failed to delete file:', deleteError);
-    } else {
+    try {
+      await deleteFromFilesR2(`import-files/${importJob.file_path}`);
       console.log('[CLEANUP] File deleted successfully');
+    } catch (deleteError) {
+      console.error('[CLEANUP] Failed to delete file:', deleteError);
     }
 
     // Update final status

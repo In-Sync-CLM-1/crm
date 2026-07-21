@@ -46,25 +46,24 @@ export const AttachmentManager = ({ attachments, onChange, orgId }: AttachmentMa
     setUploading(true);
 
     try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${orgId}/${crypto.randomUUID()}.${fileExt}`;
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("orgId", orgId);
 
-      const { error: uploadError, data } = await supabase.storage
-        .from('email-attachments')
-        .upload(fileName, file);
+      const { data: uploadData, error: uploadError } = await supabase.functions.invoke(
+        "upload-email-attachment",
+        { body: formData }
+      );
 
       if (uploadError) throw uploadError;
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('email-attachments')
-        .getPublicUrl(fileName);
+      if (uploadData?.error) throw new Error(uploadData.error);
 
       const fileType = file.type.startsWith('video/') ? 'video' : 'image';
 
       const newAttachment: Attachment = {
         id: crypto.randomUUID(),
         type: fileType,
-        url: publicUrl,
+        url: uploadData.url,
         name: file.name,
         size: fileSize,
       };
@@ -85,7 +84,10 @@ export const AttachmentManager = ({ attachments, onChange, orgId }: AttachmentMa
     try {
       const path = attachment.url.split('/email-attachments/')[1];
       if (path) {
-        await supabase.storage.from('email-attachments').remove([path]);
+        await supabase.functions.invoke('upload-email-attachment', {
+          method: 'DELETE',
+          body: { path },
+        });
       }
       onChange(attachments.filter(att => att.id !== attachment.id));
       notify.success("Attachment removed", `${attachment.name} has been removed`);

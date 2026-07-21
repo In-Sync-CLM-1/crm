@@ -15,15 +15,17 @@ serve(async (req) => {
     const form     = await req.formData();
     const file     = form.get("file") as File | null;
     const clientId = form.get("clientId") as string | null;
+    const path     = form.get("path") as string | null;
 
-    if (!file || !clientId) {
-      return new Response(JSON.stringify({ error: "file and clientId required" }), {
+    if (!file || (!clientId && !path)) {
+      return new Response(JSON.stringify({ error: "file and (clientId or path) required" }), {
         status: 400, headers: { ...cors, "Content-Type": "application/json" },
       });
     }
 
     const ext = file.name.split(".").pop()?.toLowerCase() ?? "bin";
-    const key = `client-documents/${clientId}/${Date.now()}.${ext}`;
+    const safePath = path?.replace(/^\/+/, "").replace(/\.\.+/g, "");
+    const key = `client-documents/${safePath || `${clientId}/${Date.now()}.${ext}`}`;
     const buf = await file.arrayBuffer();
     const mimeType = file.type || "application/octet-stream";
 

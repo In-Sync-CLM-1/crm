@@ -196,5 +196,20 @@ verify_jwt = true
 [functions.upload-client-document]
 verify_jwt = true
 
+[functions.upload-email-attachment]
+verify_jwt = true
+
+[functions.upload-whatsapp-template-media]
+verify_jwt = true
+
+[functions.upload-import-file]
+verify_jwt = true
+
+[functions.upload-ticket-attachment]
+verify_jwt = true
+
+[functions.upload-ticket-escalation-attachment]
+verify_jwt = true
+
 [functions.backfill-invoice-meta]
 verify_jwt = false

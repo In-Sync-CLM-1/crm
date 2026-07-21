@@ -73,17 +73,19 @@ export function useTicketEscalations(ticketId: string | null) {
       // Upload files
       const attachments: { name: string; url: string; size: number }[] = [];
       for (const file of files) {
-        const filePath = `${orgId}/${ticketId}/${Date.now()}_${file.name}`;
-        const { error: uploadError } = await supabase.storage
-          .from("ticket-escalation-attachments")
-          .upload(filePath, file);
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("orgId", orgId);
+        formData.append("ticketId", ticketId);
+
+        const { data: uploadData, error: uploadError } = await supabase.functions.invoke(
+          "upload-ticket-escalation-attachment",
+          { body: formData }
+        );
         if (uploadError) throw uploadError;
+        if (uploadData?.error) throw new Error(uploadData.error);
 
-        const { data: urlData } = supabase.storage
-          .from("ticket-escalation-attachments")
-          .getPublicUrl(filePath);
-
-        attachments.push({ name: file.name, url: urlData.publicUrl, size: file.size });
+        attachments.push({ name: file.name, url: uploadData.url, size: file.size });
       }
 
       // Insert escalation record

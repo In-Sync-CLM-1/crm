@@ -69,22 +69,20 @@ async function uploadTicketAttachments(orgId: string, ticketId: string, files: F
     const ext = file.name.split(".").pop()?.toLowerCase() || "";
     const isImage = ["jpg", "jpeg", "png", "gif", "webp"].includes(ext);
     const fileType = isImage ? "image" : "video";
-    const filePath = `${orgId}/${ticketId}/${Date.now()}_${file.name}`;
 
-    const { error } = await supabase.storage
-      .from("ticket-attachments")
-      .upload(filePath, file, { contentType: file.type, upsert: false });
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("orgId", orgId);
+    formData.append("ticketId", ticketId);
 
-    if (error) {
-      console.error("Upload error:", error);
+    const { data, error } = await supabase.functions.invoke("upload-ticket-attachment", { body: formData });
+
+    if (error || data?.error) {
+      console.error("Upload error:", error || data.error);
       continue;
     }
 
-    const { data: urlData } = supabase.storage
-      .from("ticket-attachments")
-      .getPublicUrl(filePath);
-
-    uploaded.push({ name: file.name, url: urlData.publicUrl, type: fileType, size: file.size });
+    uploaded.push({ name: file.name, url: data.url, type: fileType, size: file.size });
   }
   return uploaded;
 }

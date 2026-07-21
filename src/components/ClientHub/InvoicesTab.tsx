@@ -207,19 +207,21 @@ export function InvoicesTab() {
     try {
       const fileExt = uploadedFile.name.split(".").pop();
       const tempFileName = `temp/${Date.now()}.${fileExt}`;
-      
-      const { error: uploadError } = await supabase.storage
-        .from("client-documents")
-        .upload(tempFileName, uploadedFile);
+
+      const tempFormData = new FormData();
+      tempFormData.append("file", uploadedFile);
+      tempFormData.append("path", tempFileName);
+
+      const { data: uploadData, error: uploadError } = await supabase.functions.invoke(
+        "upload-client-document",
+        { body: tempFormData }
+      );
 
       if (uploadError) throw uploadError;
-
-      const { data: urlData } = supabase.storage
-        .from("client-documents")
-        .getPublicUrl(tempFileName);
+      if (uploadData?.error) throw new Error(uploadData.error);
 
       const { data, error } = await supabase.functions.invoke("extract-document-data", {
-        body: { fileUrl: urlData.publicUrl, documentType: "invoice" },
+        body: { fileUrl: uploadData.url, documentType: "invoice" },
       });
 
       if (error) throw error;
@@ -262,18 +264,20 @@ export function InvoicesTab() {
       if (file) {
         const fileExt = file.name.split(".").pop();
         const fileName = `${selectedEntity.type}/${selectedEntity.id}/invoices/${Date.now()}.${fileExt}`;
-        
-        const { error: uploadError } = await supabase.storage
-          .from("client-documents")
-          .upload(fileName, file);
+
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("path", fileName);
+
+        const { data: uploadData, error: uploadError } = await supabase.functions.invoke(
+          "upload-client-document",
+          { body: formData }
+        );
 
         if (uploadError) throw uploadError;
+        if (uploadData?.error) throw new Error(uploadData.error);
 
-        const { data: urlData } = supabase.storage
-          .from("client-documents")
-          .getPublicUrl(fileName);
-
-        fileUrl = urlData.publicUrl;
+        fileUrl = uploadData.url;
       }
 
       const insertData: any = {

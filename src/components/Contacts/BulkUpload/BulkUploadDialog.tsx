@@ -170,17 +170,22 @@ export function BulkUploadDialog({ open, onOpenChange, orgId, onUploadStarted }:
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("User not authenticated");
 
-      // Upload file to storage
+      // Upload file to R2
       const fileName = `${Date.now()}-${file.name}`;
       const filePath = `${orgId}/bulk-imports/${fileName}`;
 
-      const { error: uploadError } = await supabase.storage
-        .from('import-files')
-        .upload(filePath, file);
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("path", filePath);
 
-      if (uploadError) {
-        console.error('Storage upload error:', uploadError);
-        throw new Error(`Failed to upload file: ${uploadError.message}`);
+      const { data: uploadData, error: uploadError } = await supabase.functions.invoke(
+        "upload-import-file",
+        { body: formData }
+      );
+
+      if (uploadError || uploadData?.error) {
+        console.error('Storage upload error:', uploadError || uploadData.error);
+        throw new Error(`Failed to upload file: ${uploadError?.message || uploadData.error}`);
       }
 
       // Verify user profile has org_id

@@ -148,24 +148,19 @@ export default function TemplateBuilder() {
     setUploading(true);
 
     try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${effectiveOrgId}/${Date.now()}.${fileExt}`;
-      const filePath = `template-media/${fileName}`;
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("orgId", effectiveOrgId);
 
-      const { error: uploadError } = await supabase.storage
-        .from('whatsapp-templates')
-        .upload(filePath, file, {
-          cacheControl: '3600',
-          upsert: false
-        });
+      const { data: uploadData, error: uploadError } = await supabase.functions.invoke(
+        "upload-whatsapp-template-media",
+        { body: formData }
+      );
 
       if (uploadError) throw uploadError;
+      if (uploadData?.error) throw new Error(uploadData.error);
 
-      const { data: { publicUrl } } = supabase.storage
-        .from('whatsapp-templates')
-        .getPublicUrl(filePath);
-
-      setMediaUrl(publicUrl);
+      setMediaUrl(uploadData.url);
 
       notify.success("Upload Successful", "File uploaded successfully");
     } catch (error: any) {

@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { uploadToFilesR2 } from "../_shared/r2Files.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -340,22 +341,17 @@ Deno.serve(async (req) => {
         const filePath = `${mainOrgId}/${ticket.id}/${Date.now()}_${att.name}`;
         const mimeType = getMimeType(att.name);
 
-        const { error: uploadError } = await supabase.storage
-          .from("ticket-attachments")
-          .upload(filePath, binaryData, { contentType: mimeType, upsert: false });
-
-        if (uploadError) {
+        let url: string;
+        try {
+          url = await uploadToFilesR2(`ticket-attachments/${filePath}`, binaryData, mimeType);
+        } catch (uploadError) {
           console.error("Upload error:", uploadError);
           continue;
         }
 
-        const { data: urlData } = supabase.storage
-          .from("ticket-attachments")
-          .getPublicUrl(filePath);
-
         uploadedAttachments.push({
           name: att.name,
-          url: urlData.publicUrl,
+          url,
           type: att.type,
           size: att.size,
         });

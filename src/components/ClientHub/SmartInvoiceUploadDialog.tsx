@@ -140,22 +140,24 @@ export function SmartInvoiceUploadDialog({ open, onOpenChange }: SmartInvoiceUpl
       // Upload file to storage
       const fileExt = selectedFile.name.split('.').pop();
       const tempFileName = `temp/${Date.now()}.${fileExt}`;
-      
-      const { error: uploadError } = await supabase.storage
-        .from('client-documents')
-        .upload(tempFileName, selectedFile);
+
+      const tempFormData = new FormData();
+      tempFormData.append("file", selectedFile);
+      tempFormData.append("path", tempFileName);
+
+      const { data: uploadData, error: uploadError } = await supabase.functions.invoke(
+        "upload-client-document",
+        { body: tempFormData }
+      );
 
       if (uploadError) throw uploadError;
+      if (uploadData?.error) throw new Error(uploadData.error);
 
-      const { data: urlData } = supabase.storage
-        .from('client-documents')
-        .getPublicUrl(tempFileName);
-
-      setFileUrl(urlData.publicUrl);
+      setFileUrl(uploadData.url);
 
       // Extract data using AI
       const { data, error } = await supabase.functions.invoke('extract-invoice-client-data', {
-        body: { fileUrl: urlData.publicUrl }
+        body: { fileUrl: uploadData.url }
       });
 
       if (error) throw error;

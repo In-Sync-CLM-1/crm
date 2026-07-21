@@ -126,18 +126,20 @@ export function DocumentsTab() {
       if (file) {
         const fileExt = file.name.split(".").pop();
         const fileName = `${selectedEntity.type}/${selectedEntity.id}/${Date.now()}.${fileExt}`;
-        
-        const { error: uploadError } = await supabase.storage
-          .from("client-documents")
-          .upload(fileName, file);
+
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("path", fileName);
+
+        const { data: uploadData, error: uploadError } = await supabase.functions.invoke(
+          "upload-client-document",
+          { body: formData }
+        );
 
         if (uploadError) throw uploadError;
+        if (uploadData?.error) throw new Error(uploadData.error);
 
-        const { data: urlData } = supabase.storage
-          .from("client-documents")
-          .getPublicUrl(fileName);
-
-        fileUrl = urlData.publicUrl;
+        fileUrl = uploadData.url;
       }
 
       const insertData: any = {
