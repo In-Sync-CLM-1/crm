@@ -193,5 +193,8 @@ verify_jwt = false
 [functions.upload-invoice]
 verify_jwt = true
 
+[functions.upload-client-document]
+verify_jwt = true
+
 [functions.backfill-invoice-meta]
 verify_jwt = false
