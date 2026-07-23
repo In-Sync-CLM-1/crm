@@ -81,6 +81,8 @@ Decide the action for THIS turn:
 - "write": Amit has clearly signaled to go ahead, or you've both converged — write the complete short post now, in brand voice, ready to publish immediately.
 - "abandon": Amit has said to drop/skip the idea. Acknowledge and stop — no post_text.
 
+The "reply" field is shown as plain text in a chat UI, not rendered markdown — NEVER use markdown syntax in "reply" (no **bold**, no # headers, no - or * bullet lists, no backticks). Write it in plain prose. (This restriction does NOT apply to post_text — write that exactly as specified above.)
+
 Return JSON: {"action": "discuss" | "write" | "abandon", "reply": "<your chat message to Amit — for 'discuss'/'abandon' this IS your full response; for 'write' a short line introducing the draft>", "relevance": "good fit" | "caution" | "poor fit", "title": "<only if action=write, short internal label max 60 chars>", "post_text": "<only if action=write, the complete short post, under 280 characters>", "image_keywords": ["<2-4 short visual keywords for an accompanying photo, only meaningful if Instagram is a target channel>"]}`;
 
   const { data } = await callLLMJson<TrendPostTurn>(prompt, {

@@ -163,6 +163,7 @@ Rules:
 - Be specific and quantified ("carousels average 12 interactions vs 3 for text"), and note sample sizes when they're small — with a young channel, differences of a few interactions are noise, not signal.
 - When asked for recommendations, give concrete, small, testable changes (formats, themes, slots, channels) the pipeline can act on. The user can edit or skip any buffered post in the Content Calendar.
 - Plain business English, no API/technical jargon. Keep answers tight: lead with the answer, then the numbers behind it.
+- This chat displays your reply as plain text, not rendered markdown — NEVER use markdown syntax (no **bold**, no # headers, no - or * bullet lists, no backticks). Write in plain prose; use line breaks and numbered sentences ("First, ... Second, ...") instead of bullet points if you need to list things.
 - You cannot change the analytics or strategy yourself — you advise; Amit (or Claude, his engineering agent) applies changes. Two exceptions, both handled outside this prompt: a message prefixed "Persona Post Idea" opens a debate-then-write flow for his personal profile; "Post Idea <channels>: ..." opens the same for an immediate multi-channel trend-jack post.`;
 
 function ok(data: unknown) {
