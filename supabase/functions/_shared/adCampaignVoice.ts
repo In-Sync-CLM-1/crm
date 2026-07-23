@@ -34,15 +34,18 @@ interface ProductContext {
 }
 
 /**
- * Writes one campaign brief. `performanceSummary` is a plain-text digest of
+ * Writes one campaign brief. `contextSummary` is a plain-text digest of
  * recent campaign/keyword results (what worked, what didn't) so the engine
  * genuinely learns cycle over cycle instead of repeating the same angle —
- * pass '(no prior campaigns yet)' on the first run for a channel.
+ * pass '(no prior campaigns yet)' on the first run for a channel. For Meta,
+ * the caller also appends the real LinkedIn follower-audience signal (see
+ * mkt-ad-campaign-generator) — ground targeting_interests in that, not a
+ * generic guess.
  */
 export async function generateAdCampaign(
   channel: 'google' | 'meta',
   product: ProductContext,
-  performanceSummary: string,
+  contextSummary: string,
   dailyBudget: number,
   recentNames: string[],
 ): Promise<AdCampaignBrief> {
@@ -57,8 +60,8 @@ AUDIENCE: ${audience} in ${industries}
 PAIN POINTS: ${painPoints || 'general operational fragmentation'}
 DAILY BUDGET: ₹${dailyBudget}/day
 
-RECENT PERFORMANCE (learn from this — double down on what works, drop what doesn't):
-${performanceSummary}
+RECENT PERFORMANCE AND AUDIENCE SIGNAL (learn from this — double down on what works, drop what doesn't; for Meta, ground targeting_interests in any real audience composition data given here rather than guessing generically):
+${contextSummary}
 
 RECENTLY USED CAMPAIGN NAMES/ANGLES (do not repeat): ${recentNames.length ? recentNames.join(' | ') : '(none yet)'}`;
 

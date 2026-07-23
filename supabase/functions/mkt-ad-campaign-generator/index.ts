@@ -128,6 +128,27 @@ Deno.serve(async (req) => {
         const chBudget = budget[channel];
         if (!chBudget?.active || !chBudget.daily_budget) continue;
 
+        // Real execution gate (2026-07-23, Arohan brief): no Meta campaign
+        // launches until at least one LinkedIn follower-audience snapshot
+        // exists — that is the real signal responsible Facebook targeting
+        // needs. Budget-on is not sufficient by itself for this channel.
+        let audienceSummary: string | null = null;
+        if (channel === 'meta') {
+          const { data: snapshot } = await supabase
+            .from('mkt_linkedin_follower_demographics')
+            .select('snapshot_date, by_seniority, by_function, by_industry, by_country')
+            .eq('org_id', orgId)
+            .order('snapshot_date', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (!snapshot) {
+            results.push({ org_id: orgId, channel, skip: 'blocked pending LinkedIn audience data (see Arohan brief 2026-07-23) — waiting on first weekly follower-demographics sync' });
+            continue;
+          }
+          const top = (arr: unknown, n = 4) => Array.isArray(arr) ? (arr as { label: string; count: number }[]).slice(0, n).map((r) => r.label).join(', ') : '';
+          audienceSummary = `LinkedIn follower audience (${snapshot.snapshot_date}) — seniority: ${top(snapshot.by_seniority)}; function: ${top(snapshot.by_function)}; industry: ${top(snapshot.by_industry)}; country: ${top(snapshot.by_country)}.`;
+        }
+
         await retireCompleted(supabase, orgId, channel, today);
 
         const { data: active } = await supabase
@@ -167,12 +188,13 @@ Deno.serve(async (req) => {
         const recentNames = (recentRows ?? []).map((r: Record<string, unknown>) => r.name as string);
 
         const summary = await performanceSummary(supabase, orgId, channel, product.product_key as string);
+        const fullSummary = audienceSummary ? `${summary}\n\n${audienceSummary}` : summary;
 
         try {
           const brief = await generateAdCampaign(
             channel,
             { ...product, ...icp } as never,
-            summary,
+            fullSummary,
             chBudget.daily_budget,
             recentNames,
           );

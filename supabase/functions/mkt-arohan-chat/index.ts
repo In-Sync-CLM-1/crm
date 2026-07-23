@@ -58,7 +58,7 @@ function isoDaysAgo(days: number): string {
 
 // deno-lint-ignore no-explicit-any
 async function buildContext(supabase: any, orgId: string): Promise<string> {
-  const [postedRes, upcomingRes, followersRes, configRes] = await Promise.all([
+  const [postedRes, upcomingRes, followersRes, configRes, audienceRes] = await Promise.all([
     supabase
       .from('blog_posts')
       .select('publish_date, post_format, content_theme, product_key, blog_title, linkedin_impressions, linkedin_likes, linkedin_comments, linkedin_reposts, fb_likes, fb_comments, fb_shares, fb_clicks, ig_reach, ig_likes, ig_comments, ig_saves, ig_shares, yt_views, yt_likes, yt_comments, x_impressions, x_likes, x_replies, x_reposts, linkedin_url')
@@ -86,12 +86,20 @@ async function buildContext(supabase: any, orgId: string): Promise<string> {
       .eq('org_id', orgId)
       .eq('active', true)
       .maybeSingle(),
+    supabase
+      .from('mkt_linkedin_follower_demographics')
+      .select('*')
+      .eq('org_id', orgId)
+      .order('snapshot_date', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
 
   const posted: Row[] = postedRes.data ?? [];
   const upcoming: Row[] = upcomingRes.data ?? [];
   const followers: Row[] = followersRes.data ?? [];
   const slots: string[] = (configRes.data?.experiment_slots as string[]) ?? [];
+  const audience: Row | null = audienceRes.data ?? null;
 
   const lines: string[] = [];
 
@@ -144,6 +152,20 @@ async function buildContext(supabase: any, orgId: string): Promise<string> {
   if (!byChannel.size) lines.push('(snapshots start tonight — no rows yet)');
 
   lines.push('');
+  lines.push('== LINKEDIN AUDIENCE COMPOSITION (aggregate follower demographics, weekly snapshot) ==');
+  lines.push('IMPORTANT: this is the demographic makeup of the WHOLE follower base, not per-post engagers. LinkedIn\'s API does not expose who specifically interacted with a given post (job title/seniority/industry/geo of individual engagers) at any access tier — verified against the official docs. This aggregate follower composition is the closest real signal available, and is what any Facebook targeting decision should be grounded in. There is also no API data on whether post impressions come from followers vs. non-followers — that split is not exposed either.');
+  if (audience) {
+    const top = (arr: unknown, n = 5) => Array.isArray(arr) ? (arr as { label: string; count: number }[]).slice(0, n).map((r) => `${r.label} (${r.count})`).join(', ') : '(none)';
+    lines.push(`Snapshot: ${audience.snapshot_date}, ${audience.total_followers ?? '?'} followers`);
+    lines.push(`Top seniority: ${top(audience.by_seniority)}`);
+    lines.push(`Top job function: ${top(audience.by_function)}`);
+    lines.push(`Top industry: ${top(audience.by_industry)}`);
+    lines.push(`Top country: ${top(audience.by_country)}`);
+  } else {
+    lines.push('(no snapshot yet — syncs weekly; until one exists, do NOT recommend turning on a Meta/Facebook ad budget, there is no real audience signal to ground targeting in)');
+  }
+
+  lines.push('');
   lines.push('== UPCOMING BUFFER (next 7 days, prewritten, user can edit in Content Calendar) ==');
   for (const p of upcoming) {
     const slotTime = slots.length && p.linkedin_slot_index != null ? slots[p.linkedin_slot_index % slots.length] + ' IST' : '';
@@ -163,6 +185,7 @@ Rules:
 - Be specific and quantified ("carousels average 12 interactions vs 3 for text"), and note sample sizes when they're small — with a young channel, differences of a few interactions are noise, not signal.
 - When asked for recommendations, give concrete, small, testable changes (formats, themes, slots, channels) the pipeline can act on. The user can edit or skip any buffered post in the Content Calendar.
 - Plain business English, no API/technical jargon. Keep answers tight: lead with the answer, then the numbers behind it.
+- If Amit asks about Facebook ad targeting, who the audience is, or whether to turn on Meta ad spend, ground your answer in the LINKEDIN AUDIENCE COMPOSITION section (aggregate follower demographics — top seniority/function/industry/country). Be explicit that this is follower-base composition, not per-post engager data (LinkedIn's API does not expose that at any tier). If no snapshot exists yet, say so plainly and advise against turning on a Meta budget until one lands.
 - This chat displays your reply as plain text, not rendered markdown — NEVER use markdown syntax (no **bold**, no # headers, no - or * bullet lists, no backticks). Write in plain prose; use line breaks and numbered sentences ("First, ... Second, ...") instead of bullet points if you need to list things.
 - You cannot change the analytics or strategy yourself — you advise; Amit (or Claude, his engineering agent) applies changes. Two exceptions, both handled outside this prompt: a message prefixed "Persona Post Idea" opens a debate-then-write flow for his personal profile; "Post Idea <channels>: ..." opens the same for an immediate multi-channel trend-jack post.`;
 
