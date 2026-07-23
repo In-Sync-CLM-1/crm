@@ -27,6 +27,7 @@ import { renderSlideImage } from '../_shared/slideImage.ts';
 import { uploadToMarketingR2 } from '../_shared/r2Marketing.ts';
 import { buildImagePrompt, generateGeminiImage, GeminiAspect, ImageStyle, IMAGE_STYLES } from '../_shared/geminiImage.ts';
 import { brandImageUrl, LOGO_MARK_URL } from '../_shared/brandLogo.ts';
+import { PERSONA_DAY_SEQ, PERSONA_SLOT_INDEX, PERSONA_PILLARS, generatePersonaPost } from '../_shared/personaVoice.ts';
 
 const LINKEDIN_ORG_ID = Deno.env.get('LINKEDIN_ORG_ID') || '35932282';
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000; // UTC+5:30
@@ -338,75 +339,9 @@ function styleFor(postSeq: number): ImageStyle {
 // ── Persona stream (2026-07-18) ──────────────────────────────────────────────
 // One first-person post per day on Amit's own LinkedIn profile (channel=
 // 'member', day_seq=4, fixed 08:30 slot). Company page = what In-Sync knows;
-// Amit's feed = what Amit thinks. Never selling.
-
-const PERSONA_DAY_SEQ = 4;      // company posts use 0-3
-const PERSONA_SLOT_INDEX = 1;   // 08:30 IST — LinkedIn's morning window
-
-// The only approved biographical facts (Amit's own write-up, 2026-07-18).
-// NEVER invent facts beyond these. Money figures were volunteered by him.
-const PERSONA_BACKSTORY = `WHO IS WRITING: Amit, founder of In-Sync.
-FACTS (the only permitted biography — never invent others):
-- Started career as an Air Traffic Control officer in the Indian Air Force. "Precision and clarity weren't luxuries — they were survival."
-- ~15 years in sales, business development, and strategy across two major insurance companies and a tech firm. Built products, managed teams, watched organizations fracture as they scaled: multiple tools, data silos, people saying different things, efficiency collapsing before anyone noticed.
-- 2015: left employment to become an entrepreneur.
-- 2019: launched a multichannel CRM venture (WhatsApp, SMS, email synchronized). Real market, won customers — but couldn't retain them. Root cause he owns openly: he wasn't a technologist, and his dev team built what THEY wanted, not what customers needed. Lost customers year after year; even COVID's digital push couldn't save that model.
-- 2025: stopped hiring traditional developers, taught himself to build with AI (Claude Code specifically), rebuilt everything himself.
-- The economics: used to burn ₹6-7 lakh/month — and 80-90% of his own time went into managing team conflicts and politics, not the product. Today: ~₹30,000/month in licenses. ~95% cost reduction, and he got his time back.
-- Reliability transformed after the rebuild: real-time audits, no production firefighting. (Express as lived specifics — never absolute claims like "zero bugs".)
-- Today: In-Sync, a suite of ~10 synchronized products (CRM, applicant tracking, event management, email broadcasting, WhatsApp broadcasting, expense management, field force tracking, vendor verification and management, inventory).
-- Who he solves for: organizations in the scaling transition — not enterprise yet, growing fast, more people, more departments, more chaos. "Two people, two versions of truth. By the time they see the damage, it's already done."
-- His AI-economics conviction: a report in an hour instead of next week; a feature the same day instead of three days; businesses shouldn't have to pick two of cost, speed, and flexibility.
-- He genuinely runs In-Sync's own marketing, content pipeline, and operations on AI automation he built — this very post was drafted by that system and reviewed by him.`;
-
-// Five persona pillars — rotate daily, one per post.
-const PERSONA_PILLARS = [
-  'founder journey: a real decision, trade-off, or mistake from the story above and what it taught him',
-  'business run by AI: a concrete, honest look at what it is like to run a company where AI does the building and the operating — real incidents, real numbers, no hype',
-  'opinion: a conviction about how Indian SMBs buy and use software that most people get wrong — argued from his 15 years in the field',
-  'operator advice: one practical, immediately usable lesson for founders/ops heads of scaling businesses, drawn from patterns he has lived',
-  'market observation: an anonymized pattern he sees across growing Indian businesses — what separates the ones that scale cleanly from the ones that fracture',
-];
-
-interface PersonaDraft {
-  title: string;
-  post_text: string;
-}
-
-async function generatePersonaPost(dayIndex: number, recentTitles: string[]): Promise<PersonaDraft> {
-  const pillar = PERSONA_PILLARS[dayIndex % PERSONA_PILLARS.length];
-  const isOpinionDay = pillar.startsWith('opinion');
-
-  const prompt = `Write today's LinkedIn post for Amit's PERSONAL profile.
-
-${PERSONA_BACKSTORY}
-
-TODAY'S PILLAR: ${pillar}
-
-VOICE (match exactly):
-- Story-led and reflective at the core: open inside a moment or decision, not with a thesis. Honesty about failure reads as strength.
-- Land at least one hard number early (₹ figures, years, percentages from the FACTS) — numbers are punches, not decoration.
-${isOpinionDay ? '- Today is an opinion day: take ONE clear position and argue it with conviction. Disagreement is welcome; wishy-washy is not.' : '- Conviction stays warm, not combative.'}
-- Short declarative sentences. Occasional em-dash asides. A rhetorical question answered immediately ("Why? Because...") is on-voice.
-- Plain vocabulary. No emoji, no hashtags, no corporate phrases ("thrilled to share", "game-changer", "journey" as filler).
-- 700-1300 characters. First person throughout.
-- End with ONE genuine question to the reader that invites stories, not yes/no.
-- NEVER sell: In-Sync may appear only if the story is about building it, and never with a link or call-to-action. No product pitches.
-- Absolute claims are banned ("zero bugs", "bulletproof") — use lived specifics instead ("no production incident since the rebuild").
-- Stay strictly inside the FACTS for anything biographical or numeric. The connective tissue (feelings, scenes, lessons) is yours to write; the facts are not.
-
-RECENTLY USED TITLES (do not repeat these stories or angles): ${recentTitles.length ? recentTitles.join(' | ') : '(none yet)'}
-
-Return JSON: {"title": "<short internal label for the calendar, max 60 chars>", "post_text": "<the complete post>"}`;
-
-  const { data } = await callLLMJson<PersonaDraft>(prompt, {
-    model: 'sonnet',
-    max_tokens: 1200,
-    temperature: 0.8,
-  });
-  if (!data?.post_text) throw new Error('Persona generation returned no post_text');
-  return data;
-}
+// Amit's feed = what Amit thinks. Never selling. Backstory, pillars, and the
+// generator live in _shared/personaVoice.ts (shared with mkt-arohan-chat's
+// "Persona Post Idea" flow) — single source of truth, don't duplicate here.
 
 async function generateBlogPost(
   product: { product_name: string; product_url: string },

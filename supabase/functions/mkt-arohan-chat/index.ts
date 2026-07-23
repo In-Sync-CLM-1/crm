@@ -11,10 +11,20 @@
  *   POST { org_id, thread_id, message } →
  *   { reply, is_suggestion, actions_triggered }
  * Conversations persist in mkt_arohan_conversations per thread.
+ *
+ * "Persona Post Idea" (2026-07-23): a message prefixed "Persona Post Idea"
+ * (colon/dash optional) is Amit handing over context for his OWN LinkedIn
+ * profile stream, not an analytics question. Arohan DEBATES the idea's fit
+ * with him first (personaIdeaTurn() in _shared/personaVoice.ts) — genuine
+ * pushback, not a rubber stamp — and only writes the post once the two of
+ * them converge. The finished draft still lands as a 'pending' row Amit can
+ * edit/skip in the Content Calendar, same "autonomous but human can
+ * watch/intervene" pattern as the rest of the pipeline.
  */
 import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 import { corsHeaders } from '../_shared/corsHeaders.ts';
 import { callLLM } from '../_shared/llmClient.ts';
+import { PERSONA_DAY_SEQ, PERSONA_SLOT_INDEX, personaIdeaTurn } from '../_shared/personaVoice.ts';
 
 interface ChatBody {
   org_id: string;
@@ -144,7 +154,7 @@ Rules:
 - Be specific and quantified ("carousels average 12 interactions vs 3 for text"), and note sample sizes when they're small — with a young channel, differences of a few interactions are noise, not signal.
 - When asked for recommendations, give concrete, small, testable changes (formats, themes, slots, channels) the pipeline can act on. The user can edit or skip any buffered post in the Content Calendar.
 - Plain business English, no API/technical jargon. Keep answers tight: lead with the answer, then the numbers behind it.
-- You cannot change anything yourself — you advise; Amit (or Claude, his engineering agent) applies changes.`;
+- You cannot change the analytics or strategy yourself — you advise; Amit (or Claude, his engineering agent) applies changes. The one exception: a message prefixed "Persona Post Idea" opens a separate debate-then-write flow for his personal profile — handled outside this prompt.`;
 
 function ok(data: unknown) {
   return new Response(JSON.stringify(data), {
@@ -160,6 +170,109 @@ function err(status: number, message: string) {
   });
 }
 
+// ── "Persona Post Idea" (2026-07-23) ────────────────────────────────────────
+// A message prefixed "Persona Post Idea" opens a debate thread (tracked via
+// suggestion_payload.mode on Arohan's own reply rows, so plain follow-up
+// messages with no prefix still continue the same debate). Arohan keeps
+// discussing until it decides to write (converged) or abandon (Amit drops
+// it) — see personaIdeaTurn() in _shared/personaVoice.ts for the judgment.
+
+const IDEA_PREFIX = /^persona\s*post\s*idea\s*[:\-–]?\s*/i;
+
+const SLOT_COUNT = 9; // mkt_linkedin_config.experiment_slots length — keep in sync with mkt-blog-writer
+
+// Mirrors mkt-blog-writer's own tiny date helpers — not worth a shared module
+// for two three-line functions used in one fallback path.
+function istDate(offsetDays = 0): string {
+  const ms = Date.now() + 5.5 * 3_600_000 + offsetDays * 86_400_000;
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+function daysSince(dateStr: string, referenceDate: string): number {
+  const start = new Date(dateStr + 'T00:00:00Z').getTime();
+  const ref = new Date(referenceDate + 'T00:00:00Z').getTime();
+  return Math.max(0, Math.floor((ref - start) / 86_400_000));
+}
+
+/**
+ * Slots a finalized draft into the next upcoming persona post (the earliest
+ * still-pending day_seq=4 row from today onward) so it posts at the very
+ * next opportunity instead of waiting for the rotation. Falls back to
+ * inserting a fresh row for tomorrow if the buffer somehow has no pending
+ * persona row (shouldn't happen — mkt-blog-writer keeps 7 days topped up).
+ */
+// deno-lint-ignore no-explicit-any
+async function queuePersonaDraft(
+  supabase: any,
+  orgId: string,
+  ideaText: string,
+  turn: { relevance: string; title?: string; post_text?: string },
+): Promise<string> {
+  const themeNote = `user idea: ${ideaText.slice(0, 80)}`;
+  const strategyNote = `${turn.relevance} — user-suggested idea via Arohan chat`;
+
+  const { data: target } = await supabase
+    .from('blog_posts')
+    .select('id, publish_date')
+    .eq('org_id', orgId)
+    .eq('channel', 'member')
+    .eq('day_seq', PERSONA_DAY_SEQ)
+    .eq('status', 'pending')
+    .gte('publish_date', istDate(0))
+    .order('publish_date', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (target) {
+    const { error: updErr } = await supabase
+      .from('blog_posts')
+      .update({
+        blog_title: turn.title,
+        blog_excerpt: (turn.post_text ?? '').slice(0, 280),
+        linkedin_draft_text: turn.post_text,
+        content_theme: themeNote,
+        content_angle: 'persona: user-suggested idea, first-person, never selling',
+        content_strategy_note: strategyNote,
+      })
+      .eq('id', target.id);
+    if (updErr) throw new Error(updErr.message);
+    return target.publish_date;
+  }
+
+  const { data: config } = await supabase
+    .from('mkt_linkedin_config')
+    .select('start_date')
+    .eq('org_id', orgId)
+    .eq('active', true)
+    .maybeSingle();
+  if (!config) throw new Error('No active LinkedIn config for this org');
+
+  const publishDate = istDate(1);
+  const dayIndex = daysSince(config.start_date, publishDate);
+  const { error: insErr } = await supabase.from('blog_posts').insert({
+    org_id: orgId,
+    channel: 'member',
+    blog_url: `draft://member/${publishDate}/persona-idea`,
+    product_key: null,
+    publish_date: publishDate,
+    day_seq: PERSONA_DAY_SEQ,
+    status: 'pending',
+    social_posted: false,
+    posted_timestamp: new Date().toISOString(),
+    linkedin_slot_index: PERSONA_SLOT_INDEX,
+    linkedin_cycle: Math.floor(dayIndex / SLOT_COUNT) + 1,
+    post_format: 'text',
+    content_angle: 'persona: user-suggested idea, first-person, never selling',
+    content_theme: themeNote,
+    content_strategy_note: strategyNote,
+    blog_title: turn.title,
+    blog_excerpt: (turn.post_text ?? '').slice(0, 280),
+    linkedin_draft_text: turn.post_text,
+  });
+  if (insErr) throw new Error(insErr.message);
+  return publishDate;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
   if (req.method !== 'POST') return err(405, 'POST only');
@@ -172,16 +285,19 @@ Deno.serve(async (req) => {
 
     const supabase = getSupabaseClient();
 
-    const [{ data: history }, context] = await Promise.all([
+    const [{ data: recentHistory }, context] = await Promise.all([
+      // Most recent 20 messages — fetched newest-first (so LIMIT actually
+      // keeps the tail of a long thread) then reversed back to chronological.
       supabase
         .from('mkt_arohan_conversations')
-        .select('role, message')
+        .select('role, message, suggestion_payload')
         .eq('org_id', org_id)
         .eq('thread_id', thread_id)
-        .order('created_at', { ascending: true })
+        .order('created_at', { ascending: false })
         .limit(20),
       buildContext(supabase, org_id),
     ]);
+    const history = (recentHistory ?? []).slice().reverse();
 
     await supabase.from('mkt_arohan_conversations').insert({
       org_id,
@@ -196,6 +312,68 @@ Deno.serve(async (req) => {
       .map((h: Row) => `${h.role === 'amit' ? 'Amit' : 'Arohan'}: ${h.message}`)
       .join('\n');
 
+    // Continue an open debate even without the prefix (natural back-and-forth);
+    // only a fresh prefixed message can START one.
+    const lastMsg: Row | null = history && history.length ? history[history.length - 1] : null;
+    const openDebate = lastMsg?.role === 'arohan' && lastMsg.suggestion_payload?.mode === 'persona_idea_debate'
+      ? (lastMsg.suggestion_payload as { idea_text: string })
+      : null;
+    const prefixMatch = IDEA_PREFIX.test(message);
+
+    if (openDebate || prefixMatch) {
+      const originalIdea = openDebate ? openDebate.idea_text : message.replace(IDEA_PREFIX, '').trim();
+
+      if (!originalIdea) {
+        const reply = "What's the idea or context you want on your profile? Give me the gist and I'll weigh in.";
+        await supabase.from('mkt_arohan_conversations').insert({
+          org_id, thread_id, role: 'arohan', message: reply, is_suggestion: false, suggestion_payload: null,
+        });
+        return ok({ reply, is_suggestion: false, actions_triggered: [] });
+      }
+
+      const { data: recent } = await supabase
+        .from('blog_posts')
+        .select('blog_title')
+        .eq('org_id', org_id)
+        .eq('channel', 'member')
+        .order('publish_date', { ascending: false })
+        .limit(14);
+      const recentTitles = (recent ?? []).map((r: Row) => r.blog_title as string).filter(Boolean);
+
+      const turn = await personaIdeaTurn(originalIdea, historyBlock, message, recentTitles);
+
+      if (turn.action === 'write') {
+        const publishDate = await queuePersonaDraft(supabase, org_id, originalIdea, turn);
+        const reply =
+          `${turn.reply}\n\n"${turn.post_text}"\n\n` +
+          `Queued for ${publishDate} (08:30 IST) — it's sitting as pending in your Content Calendar, edit or skip it there if you don't want it to go out.`;
+        await supabase.from('mkt_arohan_conversations').insert({
+          org_id, thread_id, role: 'arohan', message: reply, is_suggestion: true,
+          suggestion_payload: { mode: 'persona_idea_written', publish_date: publishDate, relevance: turn.relevance },
+        });
+        return ok({
+          reply,
+          is_suggestion: true,
+          actions_triggered: [{ type: 'persona_idea_draft_queued', details: { publish_date: publishDate, relevance: turn.relevance } }],
+        });
+      }
+
+      if (turn.action === 'abandon') {
+        await supabase.from('mkt_arohan_conversations').insert({
+          org_id, thread_id, role: 'arohan', message: turn.reply, is_suggestion: false, suggestion_payload: null,
+        });
+        return ok({ reply: turn.reply, is_suggestion: false, actions_triggered: [] });
+      }
+
+      // "discuss" — keep the debate open for the next message
+      await supabase.from('mkt_arohan_conversations').insert({
+        org_id, thread_id, role: 'arohan', message: turn.reply, is_suggestion: true,
+        suggestion_payload: { mode: 'persona_idea_debate', idea_text: originalIdea },
+      });
+      return ok({ reply: turn.reply, is_suggestion: true, actions_triggered: [] });
+    }
+
+    // ── Normal analytics chat ──────────────────────────────────────────────
     const prompt =
       `CURRENT DATA (IST date ${new Date(Date.now() + 5.5 * 3_600_000).toISOString().slice(0, 10)}):\n${context}\n\n` +
       (historyBlock ? `CONVERSATION SO FAR:\n${historyBlock}\n\n` : '') +
