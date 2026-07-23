@@ -28,6 +28,7 @@ import { uploadToMarketingR2 } from '../_shared/r2Marketing.ts';
 import { buildImagePrompt, generateGeminiImage, GeminiAspect, ImageStyle, IMAGE_STYLES } from '../_shared/geminiImage.ts';
 import { brandImageUrl, LOGO_MARK_URL } from '../_shared/brandLogo.ts';
 import { PERSONA_DAY_SEQ, PERSONA_SLOT_INDEX, PERSONA_PILLARS, generatePersonaPost } from '../_shared/personaVoice.ts';
+import { BRAND_STORY } from '../_shared/brandVoice.ts';
 
 const LINKEDIN_ORG_ID = Deno.env.get('LINKEDIN_ORG_ID') || '35932282';
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000; // UTC+5:30
@@ -287,16 +288,8 @@ async function verifiedSourceLines(sources: SourceRef[] | undefined): Promise<st
 // ── Brand-led strategy (2026-07-15) ─────────────────────────────────────────
 // Every post promotes the In-Sync PLATFORM story; individual products appear
 // only as proof points inside the narrative, never as standalone offerings.
-// Narrative and proof points are lifted from the website home page — keep in
-// sync with in-sync.co.in if the positioning there changes.
-const BRAND_STORY = `BRAND: In-Sync (in-sync.co.in) — "Run your entire business on one platform."
-CORE NARRATIVE: Growing Indian businesses run on spreadsheets, WhatsApp groups, and ten disconnected tools. Every gap between those tools leaks money, time, customers, and reputation. In-Sync replaces them with focused apps that share one backbone — your contacts, your channels, your data.
-PROOF POINTS:
-- One platform, ten products — start with the one that hurts most, the others plug straight in
-- Built for India from day one: WhatsApp Business API, Aadhaar/PAN verification, Razorpay payments, Indian telephony built in, not bolted on
-- AI where it earns its keep: AI calling agents, lead scoring, document analysis woven into the workflows, not sold as an add-on
-- Live in days, not months: CSV imports, guided setup, per-user pricing that makes sense for growing teams
-- Trusted across 8+ industries and 60+ cities in India`;
+// BRAND_STORY now lives in _shared/brandVoice.ts (also used by the "Post
+// Idea" trend-jack flow in mkt-arohan-chat) — single source of truth.
 
 // The five brand story pillars. Rotates per post (like angle/format) so the
 // week covers the whole story; stored on the row as content_theme for review.

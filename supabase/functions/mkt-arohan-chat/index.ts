@@ -20,11 +20,20 @@
  * them converge. The finished draft still lands as a 'pending' row Amit can
  * edit/skip in the Content Calendar, same "autonomous but human can
  * watch/intervene" pattern as the rest of the pipeline.
+ *
+ * "Post Idea <channels>: <context>" (2026-07-23): the multi-channel sibling
+ * — a trend-jack in BRAND voice on a named subset of Facebook/Instagram/X
+ * (never LinkedIn's stream, that's a separate concern). Same debate-then-
+ * write pattern (trendPostTurn() in _shared/trendPost.ts), but per Amit's
+ * explicit instruction this one publishes IMMEDIATELY once finalized —
+ * no Content Calendar queue — because trend content stales out fast.
  */
 import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 import { corsHeaders } from '../_shared/corsHeaders.ts';
 import { callLLM } from '../_shared/llmClient.ts';
 import { PERSONA_DAY_SEQ, PERSONA_SLOT_INDEX, personaIdeaTurn } from '../_shared/personaVoice.ts';
+import { CHANNEL_ALIASES, CHANNEL_LABEL, TrendChannel, trendPostTurn } from '../_shared/trendPost.ts';
+import { buildImagePrompt, generateGeminiImage } from '../_shared/geminiImage.ts';
 
 interface ChatBody {
   org_id: string;
@@ -154,7 +163,7 @@ Rules:
 - Be specific and quantified ("carousels average 12 interactions vs 3 for text"), and note sample sizes when they're small — with a young channel, differences of a few interactions are noise, not signal.
 - When asked for recommendations, give concrete, small, testable changes (formats, themes, slots, channels) the pipeline can act on. The user can edit or skip any buffered post in the Content Calendar.
 - Plain business English, no API/technical jargon. Keep answers tight: lead with the answer, then the numbers behind it.
-- You cannot change the analytics or strategy yourself — you advise; Amit (or Claude, his engineering agent) applies changes. The one exception: a message prefixed "Persona Post Idea" opens a separate debate-then-write flow for his personal profile — handled outside this prompt.`;
+- You cannot change the analytics or strategy yourself — you advise; Amit (or Claude, his engineering agent) applies changes. Two exceptions, both handled outside this prompt: a message prefixed "Persona Post Idea" opens a debate-then-write flow for his personal profile; "Post Idea <channels>: ..." opens the same for an immediate multi-channel trend-jack post.`;
 
 function ok(data: unknown) {
   return new Response(JSON.stringify(data), {
@@ -273,6 +282,112 @@ async function queuePersonaDraft(
   return publishDate;
 }
 
+// ── "Post Idea <channels>: <context>" (2026-07-23) ──────────────────────────
+// Multi-channel trend-jack, same debate-continuation tracking pattern as
+// Persona Post Idea (suggestion_payload.mode='trend_idea_debate'), but posts
+// IMMEDIATELY on write — no Content Calendar queue.
+
+const TREND_PREFIX = /^post\s*idea\b\s*/i;
+
+function parseTrendChannels(text: string): TrendChannel[] {
+  const tokens = text.toLowerCase().split(/[,/&]|(?:\band\b)/i).map((t) => t.trim()).filter(Boolean);
+  const found = new Set<TrendChannel>();
+  for (const t of tokens) {
+    const canon = CHANNEL_ALIASES[t];
+    if (canon) found.add(canon);
+  }
+  return Array.from(found);
+}
+
+/**
+ * Creates the blog_posts record (so it shows up in the Content Calendar /
+ * Social Performance dashboard / analytics like every other post) and posts
+ * to each target channel directly, bypassing mkt-blog-poster's LinkedIn-
+ * first slot-scheduled flow entirely — trend content has no LinkedIn leg and
+ * no wait for a slot. Instagram is dropped (with a note) if image generation
+ * fails, since IG cannot publish text-only.
+ */
+// deno-lint-ignore no-explicit-any
+async function postTrendNow(
+  supabase: any,
+  orgId: string,
+  channels: TrendChannel[],
+  ideaText: string,
+  turn: { relevance: string; title?: string; post_text?: string; image_keywords?: string[] },
+): Promise<{ results: Record<string, string> }> {
+  let imageUrl: string | null = null;
+
+  if (channels.includes('instagram')) {
+    try {
+      const keywords = turn.image_keywords?.length ? turn.image_keywords : ['Indian business', 'growth', 'momentum'];
+      const prompt = buildImagePrompt(keywords, 'Indian SMBs');
+      imageUrl = await generateGeminiImage(prompt, '4:5', `trend/${orgId}/${Date.now()}`);
+    } catch (e) {
+      console.warn('[arohan-chat] trend image gen failed:', e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  const { data: row, error: insErr } = await supabase
+    .from('blog_posts')
+    .insert({
+      org_id: orgId,
+      channel: 'company',
+      blog_url: `draft://trend/${istDate(0)}/${crypto.randomUUID()}`,
+      product_key: null,
+      publish_date: istDate(0),
+      day_seq: null,
+      status: 'pending',
+      social_posted: false,
+      posted_timestamp: new Date().toISOString(),
+      post_format: imageUrl ? 'image' : 'text',
+      content_angle: 'trend-jack: user-suggested via Arohan chat, immediate post',
+      content_theme: `trend: ${ideaText.slice(0, 80)}`,
+      content_strategy_note: `${turn.relevance} — trend-jack, channels: ${channels.map((c) => CHANNEL_LABEL[c]).join(', ')}`,
+      blog_title: turn.title,
+      blog_excerpt: (turn.post_text ?? '').slice(0, 280),
+      linkedin_draft_text: turn.post_text,
+      linkedin_short_caption: turn.post_text,
+      image_url: imageUrl,
+    })
+    .select('id')
+    .single();
+  if (insErr) throw new Error(insErr.message);
+
+  const FN_FOR: Record<TrendChannel, string> = {
+    facebook: 'mkt-social-facebook',
+    instagram: 'mkt-social-instagram',
+    x: 'mkt-social-x',
+  };
+  const supaUrl = Deno.env.get('SUPABASE_URL');
+  const svcKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  const headers = { Authorization: `Bearer ${svcKey}`, 'Content-Type': 'application/json' };
+  const body = JSON.stringify({ blog_post_id: row.id });
+
+  const results: Record<string, string> = {};
+  for (const c of channels) {
+    if (c === 'instagram' && !imageUrl) { results[c] = 'skipped (no image)'; continue; }
+    try {
+      const res = await fetch(`${supaUrl}/functions/v1/${FN_FOR[c]}`, { method: 'POST', headers, body, signal: AbortSignal.timeout(90_000) });
+      const json = await res.json().catch(() => ({} as Record<string, unknown>));
+      results[c] = res.ok && !json.error ? 'posted' : `failed (${String(json.error ?? res.status)})`;
+    } catch (e) {
+      results[c] = `failed (${e instanceof Error ? e.message : String(e)})`;
+    }
+  }
+
+  const anyPosted = Object.values(results).some((v) => v === 'posted');
+  await supabase
+    .from('blog_posts')
+    .update({
+      status: anyPosted ? 'posted' : 'pending',
+      social_posted: anyPosted,
+      error_message: anyPosted ? null : JSON.stringify(results),
+    })
+    .eq('id', row.id);
+
+  return { results };
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
   if (req.method !== 'POST') return err(405, 'POST only');
@@ -369,6 +484,68 @@ Deno.serve(async (req) => {
       await supabase.from('mkt_arohan_conversations').insert({
         org_id, thread_id, role: 'arohan', message: turn.reply, is_suggestion: true,
         suggestion_payload: { mode: 'persona_idea_debate', idea_text: originalIdea },
+      });
+      return ok({ reply: turn.reply, is_suggestion: true, actions_triggered: [] });
+    }
+
+    // ── "Post Idea <channels>: <context>" — multi-channel trend-jack ───────
+    const trendOpenDebate = lastMsg?.role === 'arohan' && lastMsg.suggestion_payload?.mode === 'trend_idea_debate'
+      ? (lastMsg.suggestion_payload as { idea_text: string; channels: TrendChannel[] })
+      : null;
+    const trendPrefixMatch = TREND_PREFIX.test(message);
+
+    if (trendOpenDebate || trendPrefixMatch) {
+      let channels: TrendChannel[];
+      let originalIdea: string;
+
+      if (trendOpenDebate) {
+        channels = trendOpenDebate.channels;
+        originalIdea = trendOpenDebate.idea_text;
+      } else {
+        const rest = message.replace(TREND_PREFIX, '');
+        const colonIdx = rest.indexOf(':');
+        const channelPart = colonIdx === -1 ? rest : rest.slice(0, colonIdx);
+        channels = parseTrendChannels(channelPart);
+        originalIdea = (colonIdx === -1 ? '' : rest.slice(colonIdx + 1)).trim();
+
+        if (!channels.length || !originalIdea) {
+          const reply = 'Tell me which channels and the idea, like: "Post Idea Facebook, Instagram, X: <what\'s the trend/context>". Supported channels right now: Facebook, Instagram, X (LinkedIn stays on its own stream).';
+          await supabase.from('mkt_arohan_conversations').insert({
+            org_id, thread_id, role: 'arohan', message: reply, is_suggestion: false, suggestion_payload: null,
+          });
+          return ok({ reply, is_suggestion: false, actions_triggered: [] });
+        }
+      }
+
+      const turn = await trendPostTurn(channels, originalIdea, historyBlock, message);
+      const channelLabels = channels.map((c) => CHANNEL_LABEL[c]).join(', ');
+
+      if (turn.action === 'write') {
+        const { results } = await postTrendNow(supabase, org_id, channels, originalIdea, turn);
+        const resultLines = channels.map((c) => `${CHANNEL_LABEL[c]}: ${results[c] ?? 'skipped'}`).join('\n');
+        const reply = `${turn.reply}\n\n"${turn.post_text}"\n\nPosted now (${channelLabels}) —\n${resultLines}`;
+        await supabase.from('mkt_arohan_conversations').insert({
+          org_id, thread_id, role: 'arohan', message: reply, is_suggestion: true,
+          suggestion_payload: { mode: 'trend_idea_posted', channels, relevance: turn.relevance, results },
+        });
+        return ok({
+          reply,
+          is_suggestion: true,
+          actions_triggered: [{ type: 'trend_post_published', details: { channels, relevance: turn.relevance, results } }],
+        });
+      }
+
+      if (turn.action === 'abandon') {
+        await supabase.from('mkt_arohan_conversations').insert({
+          org_id, thread_id, role: 'arohan', message: turn.reply, is_suggestion: false, suggestion_payload: null,
+        });
+        return ok({ reply: turn.reply, is_suggestion: false, actions_triggered: [] });
+      }
+
+      // "discuss" — keep the debate open for the next message
+      await supabase.from('mkt_arohan_conversations').insert({
+        org_id, thread_id, role: 'arohan', message: turn.reply, is_suggestion: true,
+        suggestion_payload: { mode: 'trend_idea_debate', idea_text: originalIdea, channels },
       });
       return ok({ reply: turn.reply, is_suggestion: true, actions_triggered: [] });
     }
