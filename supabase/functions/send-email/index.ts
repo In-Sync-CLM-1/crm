@@ -21,7 +21,7 @@ const sendEmail = async (to: string, subject: string, html: string, fromEmail: s
   if (cc && cc.length > 0) {
     emailPayload.cc = cc;
   }
-  
+
   // Add reply_to if provided and different from sender
   if (replyToEmail && replyToEmail !== fromEmail) {
     emailPayload.reply_to = [replyToEmail];
@@ -56,11 +56,27 @@ interface SendEmailRequest {
   to: string;
   subject: string;
   htmlContent?: string;
+  html?: string;
   contactId?: string;
   conversationId?: string;
   trackingPixelId?: string;
   unsubscribeToken?: string;
   cc?: string[];
+}
+
+// Decodes a JWT payload without verifying the signature (the gateway already
+// verified it before this function ran). Returns null if the token isn't a
+// JWT at all -- true for the newer sb_secret_/sb_publishable_ key formats,
+// which are opaque API keys, not JWTs.
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  try {
+    const part = token.split('.')[1];
+    if (!part) return null;
+    const json = atob(part.replace(/-/g, '+').replace(/_/g, '/'));
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
 }
 
 serve(async (req) => {
@@ -90,54 +106,24 @@ serve(async (req) => {
     const token = authHeader.replace('Bearer ', '');
     console.log('Extracted JWT token (length):', token.length);
 
-    // Create Supabase client
-    console.log('Creating Supabase client with ANON_KEY...');
-    const supabaseClient = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_ANON_KEY") ?? "",
-      {
-        global: {
-          headers: { Authorization: authHeader },
-        },
-        auth: {
-          persistSession: false,
-        },
-      }
-    );
-    console.log('✓ Supabase client created successfully');
-
-    // Authenticate user by passing token directly to getUser()
-    console.log('Attempting user authentication with JWT token...');
-    const {
-      data: { user },
-      error: authError,
-    } = await supabaseClient.auth.getUser(token);
-
-    console.log('User Auth Result:', {
-      success: !!user,
-      userId: user?.id || 'N/A',
-      userEmail: user?.email || 'N/A',
-      hasError: !!authError,
-      errorCode: authError?.code || 'N/A',
-      errorMessage: authError?.message || 'N/A',
-      errorStatus: authError?.status || 'N/A',
-    });
-
-    if (authError) {
-      console.error('Auth Error Details:', JSON.stringify(authError, null, 2));
-      throw new Error(`Authentication failed: ${authError.message}`);
-    }
-
-    if (!user) {
-      throw new Error('No user found in session');
-    }
-
-    console.log('✓ User authenticated:', user.email);
+    // Cron/automation callers (automation-email-sender, scheduled-messages-
+    // processor) authenticate with the service-role key (either the legacy
+    // JWT, which decodes with role:"service_role", or the newer sb_secret_
+    // opaque key, which isn't a JWT at all) -- there's no logged-in user to
+    // run getUser() against, so that call always 401'd with "invalid claim:
+    // missing sub claim" for them. Route those through an org-derived-from-
+    // contactId path instead of failing every automated send. Same fix
+    // shipped in globalcrm's send-email 2026-07-22/23 -- see
+    // project_globalcrm_native_worker_migration memory.
+    const jwtPayload = decodeJwtPayload(token);
+    const isServiceCaller = !jwtPayload || jwtPayload.role === 'service_role';
+    console.log('Caller type:', isServiceCaller ? 'service-role (automation)' : 'user session');
 
     const {
       to,
       subject,
       htmlContent,
+      html,
       contactId,
       conversationId,
       trackingPixelId,
@@ -145,43 +131,141 @@ serve(async (req) => {
       cc,
     }: SendEmailRequest = await req.json();
 
-    const emailHtml = htmlContent || '';
+    // automation-email-sender sends the field as `html`, scheduled-messages-
+    // processor sends `htmlContent` -- accept both (found alongside the auth
+    // fix: automation-email-sender's calls were ALSO silently sending empty
+    // email bodies, since only `htmlContent` was ever read here).
+    const emailHtml = htmlContent || html || '';
 
     if (!emailHtml) {
       throw new Error('Email content is required');
     }
 
-    // Fetch user profile and org_id
-    console.log('Fetching user profile and org_id...');
-    const { data: profile, error: profileError } = await supabaseClient
-      .from("profiles")
-      .select("org_id, first_name, last_name")
-      .eq("id", user.id)
-      .single();
+    // dbClient is the client used for every read/write below. For a real
+    // user it's their own session client (RLS-scoped); for a service caller
+    // it's the shared service-role client (bypasses RLS -- safe, since
+    // holding the actual service-role secret is what got them here).
+    let dbClient: ReturnType<typeof createClient>;
+    let orgId: string;
+    let userId: string | null;
+    let fromName: string;
+    let replyToEmail: string | undefined;
 
-    console.log('Profile Lookup Result:', {
-      found: !!profile,
-      orgId: profile?.org_id || 'N/A',
-      hasError: !!profileError,
-      errorMessage: profileError?.message || 'N/A'
-    });
+    if (isServiceCaller) {
+      if (!contactId) {
+        throw new Error('contactId is required when calling send-email with a service-role key (used to resolve the organization)');
+      }
 
-    if (profileError) {
-      console.error('Profile Error:', profileError);
-      throw new Error(`Failed to fetch user profile: ${profileError.message}`);
+      dbClient = getSupabaseClient();
+
+      const { data: contact, error: contactError } = await dbClient
+        .from('contacts')
+        .select('org_id')
+        .eq('id', contactId)
+        .maybeSingle();
+
+      if (contactError || !contact?.org_id) {
+        console.error('Contact lookup failed for service-role send:', contactError);
+        throw new Error('Could not resolve organization from contactId');
+      }
+
+      orgId = contact.org_id as string;
+      userId = null;
+
+      const { data: org } = await dbClient
+        .from('organizations')
+        .select('name')
+        .eq('id', orgId)
+        .maybeSingle();
+      fromName = (org?.name as string) || 'In-Sync';
+      replyToEmail = undefined; // resolved to fromEmail once the sending domain is known
+
+      console.log('✓ Service-role caller resolved to org:', orgId);
+    } else {
+      // Create Supabase client
+      console.log('Creating Supabase client with ANON_KEY...');
+      const supabaseClient = createClient(
+        Deno.env.get("SUPABASE_URL") ?? "",
+        Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+        {
+          global: {
+            headers: { Authorization: authHeader },
+          },
+          auth: {
+            persistSession: false,
+          },
+        }
+      );
+      console.log('✓ Supabase client created successfully');
+
+      // Authenticate user by passing token directly to getUser()
+      console.log('Attempting user authentication with JWT token...');
+      const {
+        data: { user },
+        error: authError,
+      } = await supabaseClient.auth.getUser(token);
+
+      console.log('User Auth Result:', {
+        success: !!user,
+        userId: user?.id || 'N/A',
+        userEmail: user?.email || 'N/A',
+        hasError: !!authError,
+        errorCode: authError?.code || 'N/A',
+        errorMessage: authError?.message || 'N/A',
+        errorStatus: authError?.status || 'N/A',
+      });
+
+      if (authError) {
+        console.error('Auth Error Details:', JSON.stringify(authError, null, 2));
+        throw new Error(`Authentication failed: ${authError.message}`);
+      }
+
+      if (!user) {
+        throw new Error('No user found in session');
+      }
+
+      console.log('✓ User authenticated:', user.email);
+
+      // Fetch user profile and org_id
+      console.log('Fetching user profile and org_id...');
+      const { data: profile, error: profileError } = await supabaseClient
+        .from("profiles")
+        .select("org_id, first_name, last_name")
+        .eq("id", user.id)
+        .single();
+
+      console.log('Profile Lookup Result:', {
+        found: !!profile,
+        orgId: profile?.org_id || 'N/A',
+        hasError: !!profileError,
+        errorMessage: profileError?.message || 'N/A'
+      });
+
+      if (profileError) {
+        console.error('Profile Error:', profileError);
+        throw new Error(`Failed to fetch user profile: ${profileError.message}`);
+      }
+
+      if (!profile?.org_id) {
+        throw new Error("User organization not found");
+      }
+
+      console.log('✓ Organization verified:', profile.org_id);
+
+      dbClient = supabaseClient;
+      orgId = profile.org_id as string;
+      userId = user.id;
+      fromName = profile.first_name
+        ? `${profile.first_name} ${profile.last_name || ''}`.trim()
+        : (user.email || "User");
+      replyToEmail = user.email || undefined;
     }
-
-    if (!profile?.org_id) {
-      throw new Error("User organization not found");
-    }
-
-    console.log('✓ Organization verified:', profile.org_id);
 
     // Get email settings and verify domain
-    const { data: emailSettings, error: settingsError } = await supabaseClient
+    const { data: emailSettings, error: settingsError } = await dbClient
       .from("email_settings")
       .select("sending_domain, verification_status, is_active, resend_domain_id")
-      .eq("org_id", profile.org_id)
+      .eq("org_id", orgId)
       .maybeSingle();
 
     if (!emailSettings || !emailSettings.is_active) {
@@ -206,24 +290,22 @@ serve(async (req) => {
     if (domainCheckResponse.ok) {
       const domainStatus = await domainCheckResponse.json();
       console.log('Current Resend domain status:', domainStatus.status);
-      
+
       if (domainStatus.status !== 'verified') {
         // Update database with actual status
-        await supabaseClient
+        await dbClient
           .from('email_settings')
           .update({ verification_status: 'pending' })
-          .eq('org_id', profile.org_id);
-        
+          .eq('org_id', orgId);
+
         throw new Error(`Domain verification incomplete. Status: ${domainStatus.status}. Please verify all DNS records in Email Settings.`);
       }
     }
 
-    // Use verified domain as sender, user's email as reply-to
+    // Use verified domain as sender, user's email as reply-to (service-role
+    // callers have no user email, so they reply-to themselves)
     const fromEmail = `noreply@${emailSettings.sending_domain}`;
-    const replyToEmail = user.email || fromEmail;
-    const fromName = profile.first_name 
-      ? `${profile.first_name} ${profile.last_name || ''}`.trim()
-      : (user.email || "User");
+    if (!replyToEmail) replyToEmail = fromEmail;
 
     console.log("Sending email to:", to, "from:", fromEmail, "reply-to:", replyToEmail);
 
@@ -241,7 +323,7 @@ serve(async (req) => {
         </p>
       </div>
     `;
-    const finalHtml = emailHtml.includes('</body>') 
+    const finalHtml = emailHtml.includes('</body>')
       ? emailHtml.replace('</body>', `${unsubscribeFooter}</body>`)
       : emailHtml + unsubscribeFooter;
 
@@ -252,10 +334,10 @@ serve(async (req) => {
 
     // Log email to email_conversations table
     console.log('[send-email] Logging email to database...');
-    const { error: logError } = await supabaseClient
+    const { error: logError } = await dbClient
       .from("email_conversations")
       .insert({
-        org_id: profile.org_id,
+        org_id: orgId,
         contact_id: contactId,
         conversation_id: conversationId || emailData?.id || crypto.randomUUID(),
         from_email: fromEmail,
@@ -266,7 +348,7 @@ serve(async (req) => {
         email_content: emailHtml,
         html_content: emailHtml,
         direction: "outbound",
-        sent_by: user.id,
+        sent_by: userId,
         status: "sent",
         sent_at: new Date().toISOString(),
         tracking_pixel_id: trackingPixelId,
@@ -293,9 +375,9 @@ serve(async (req) => {
     console.error('Error Message:', error.message);
     console.error('Error Stack:', error.stack);
     console.error('Timestamp:', new Date().toISOString());
-    
+
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         error: error.message,
         timestamp: new Date().toISOString()
       }),
