@@ -5,7 +5,7 @@ import DashboardLayout from "@/components/Layout/DashboardLayout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ChevronLeft, ChevronRight, ImageIcon, LayoutGrid, Type, Video } from "lucide-react";
+import { ChevronLeft, ChevronRight, ImageIcon, LayoutGrid, Type, Video, Vote } from "lucide-react";
 import {
   startOfMonth,
   endOfMonth,
@@ -38,6 +38,7 @@ const formatIcon: Record<string, React.ComponentType<{ className?: string }>> = 
   image: ImageIcon,
   video: Video,
   carousel: LayoutGrid,
+  poll: Vote,
 };
 
 // Visual style rotation — a colored dot per style so the pattern (which

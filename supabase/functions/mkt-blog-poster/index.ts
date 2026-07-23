@@ -53,12 +53,25 @@ interface LinkedInMedia {
   title?: string;         // shown under the media for document (carousel) posts
 }
 
+interface LinkedInPoll {
+  question: string;
+  options: string[];
+  duration: 'ONE_DAY' | 'THREE_DAYS' | 'SEVEN_DAYS' | 'FOURTEEN_DAYS';
+}
+
 async function postToLinkedIn(
   text: string,
   token: string,
   authorUrn: string,
   media?: LinkedInMedia,
+  poll?: LinkedInPoll,
 ): Promise<{ postUrn: string; postUrl: string }> {
+  const content = poll
+    ? { poll: { question: poll.question, options: poll.options.map((text) => ({ text })), settings: { duration: poll.duration } } }
+    : media
+      ? { media: { id: media.id, ...(media.title ? { title: media.title } : {}) } }
+      : undefined;
+
   const res = await fetch('https://api.linkedin.com/rest/posts', {
     method: 'POST',
     headers: {
@@ -78,7 +91,7 @@ async function postToLinkedIn(
       },
       lifecycleState: 'PUBLISHED',
       isReshareDisabledByAuthor: false,
-      ...(media ? { content: { media: { id: media.id, ...(media.title ? { title: media.title } : {}) } } } : {}),
+      ...(content ? { content } : {}),
     }),
     signal: AbortSignal.timeout(30_000),
   });
@@ -167,7 +180,7 @@ Deno.serve(async (req) => {
     // go out per day, each row carrying its own slot.
     const { data: drafts, error: draftErr } = await supabase
       .from('blog_posts')
-      .select('id, channel, blog_title, linkedin_draft_text, linkedin_short_caption, post_format, image_url, video_url, carousel_slide_urls, product_key, linkedin_slot_index, linkedin_cycle, day_seq')
+      .select('id, channel, blog_title, linkedin_draft_text, linkedin_short_caption, post_format, image_url, video_url, carousel_slide_urls, poll_question, poll_options, poll_duration, product_key, linkedin_slot_index, linkedin_cycle, day_seq')
       .eq('org_id', config.org_id)
       .eq('publish_date', ist.date)
       .eq('status', 'pending')
@@ -218,8 +231,9 @@ Deno.serve(async (req) => {
       console.log(`[blog-poster] posting ${isPersona ? 'PERSONA' : 'company'} draft for ${ist.date} seq=${draft.day_seq} slot=${targetSlot} format=${format}`);
 
       // Upload media (if any) and post to LinkedIn
-      const commentary = format === 'text' ? draft.linkedin_draft_text : draft.linkedin_short_caption;
+      const commentary = format === 'text' || format === 'poll' ? draft.linkedin_draft_text : draft.linkedin_short_caption;
       let media: LinkedInMedia | undefined;
+      let poll: LinkedInPoll | undefined;
 
       if (format === 'image' && draft.image_url) {
         const id = await uploadImageToLinkedIn(identity.token, authorUrn, draft.image_url as string);
@@ -231,9 +245,15 @@ Deno.serve(async (req) => {
         const pdfBytes = await buildCarouselPdf(draft.carousel_slide_urls as string[]);
         const id = await uploadDocumentToLinkedIn(identity.token, authorUrn, pdfBytes);
         media = { id, title: draft.blog_title as string };
+      } else if (format === 'poll' && draft.poll_question && Array.isArray(draft.poll_options) && draft.poll_options.length) {
+        poll = {
+          question: draft.poll_question as string,
+          options: draft.poll_options as string[],
+          duration: (draft.poll_duration as LinkedInPoll['duration']) || 'THREE_DAYS',
+        };
       }
 
-      const { postUrn, postUrl } = await postToLinkedIn(commentary, identity.token, authorUrn, media);
+      const { postUrn, postUrl } = await postToLinkedIn(commentary, identity.token, authorUrn, media, poll);
       console.log(`[blog-poster] posted as ${isPersona ? 'member (persona)' : identity.isOrg ? 'company page' : 'member'}: ${postUrn} (format=${format})`);
 
       // Update blog_post — replace placeholder URL with real LinkedIn URL
@@ -265,7 +285,9 @@ Deno.serve(async (req) => {
 
       // Fan-out: company posts go to FB+IG+YouTube. Persona posts cross-post
       // ONLY to the Facebook Page (with founder attribution — no personal-
-      // profile API exists on Meta); no Instagram/YouTube.
+      // profile API exists on Meta); no Instagram/YouTube. Polls are
+      // LinkedIn-native only (2026-07-24) — no equivalent object on any of
+      // FB/IG/X/YouTube, so they never fan out.
       const supaUrl = Deno.env.get('SUPABASE_URL');
       const svcKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
       const socialBody = JSON.stringify({ blog_post_id: draft.id });
@@ -274,7 +296,9 @@ Deno.serve(async (req) => {
         'Content-Type': 'application/json',
       };
       let socialResult: Record<string, unknown> | null = null;
-      if (isPersona) {
+      if (format === 'poll') {
+        socialResult = { skipped: 'poll format is LinkedIn-native only, no fan-out' };
+      } else if (isPersona) {
         const fbRes = await fetch(`${supaUrl}/functions/v1/mkt-social-facebook`, { method: 'POST', headers: socialHeaders, body: socialBody, signal: AbortSignal.timeout(30_000) })
           .then((r) => r.json()).catch((e) => ({ error: e?.message }));
         socialResult = { facebook: fbRes };

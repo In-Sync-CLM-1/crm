@@ -27,8 +27,9 @@ import { renderSlideImage } from '../_shared/slideImage.ts';
 import { uploadToMarketingR2 } from '../_shared/r2Marketing.ts';
 import { buildImagePrompt, generateGeminiImage, GeminiAspect, ImageStyle, IMAGE_STYLES } from '../_shared/geminiImage.ts';
 import { brandImageUrl, LOGO_MARK_URL } from '../_shared/brandLogo.ts';
-import { PERSONA_DAY_SEQ, PERSONA_SLOT_INDEX, generatePersonaPost } from '../_shared/personaVoice.ts';
+import { PERSONA_DAY_SEQ, PERSONA_SLOT_INDEX, PERSONA_BACKSTORY, generatePersonaPost } from '../_shared/personaVoice.ts';
 import { BRAND_STORY } from '../_shared/brandVoice.ts';
+import { generatePoll } from '../_shared/pollVoice.ts';
 
 const LINKEDIN_ORG_ID = Deno.env.get('LINKEDIN_ORG_ID') || '35932282';
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000; // UTC+5:30
@@ -41,7 +42,10 @@ const SLOT_COUNT = 9;      // mkt_linkedin_config.experiment_slots length
 // Every night's post used to be a single long text block; this spreads the
 // existing nightly image/video generation across LinkedIn post types instead
 // of letting it go unused (only Instagram/YouTube ever saw it).
-const FORMAT_CYCLE = ['text', 'image', 'carousel', 'video', 'image', 'carousel', 'video', 'carousel'] as const;
+// 2026-07-24: 'poll' added (engagement-quality feedback — "conduct a poll
+// sometimes"), replacing one 'video' slot so format diversity stays at 8
+// slots; appears roughly every 2 days at 4 posts/day.
+const FORMAT_CYCLE = ['text', 'image', 'carousel', 'poll', 'image', 'carousel', 'video', 'carousel'] as const;
 type PostFormat = typeof FORMAT_CYCLE[number];
 const CAROUSEL_SLIDE_COUNT = 8;
 
@@ -313,12 +317,17 @@ function themeFor(postSeq: number): string {
 
 // Rotating content angle, shared across every format so a reviewer can see the
 // same "why" regardless of whether that day's post is text/image/video/carousel.
+// 2026-07-24 (engagement-quality feedback — 30-day baseline was ~62 avg
+// impressions, ~0 comments; target is 200+ with real comment volume):
+// sharpened "story-focused" into an explicit case-study structure, and
+// "myth-busting" into something that actually risks disagreement rather
+// than a safe strawman.
 const CONTENT_ANGLES = [
   'problem-focused: expose a costly, specific operational pain the ICP lives with daily',
   'transformation-focused: show a before/after contrast with a concrete outcome metric',
   'insight-focused: share a counterintuitive industry data point that reframes the problem',
-  'story-focused: walk through a real scenario (anonymised) the ICP will recognise',
-  'myth-busting: challenge a common assumption the ICP holds about this problem',
+  'case-study: walk through ONE anonymized scenario start to finish — the state before (vivid and specific), the tension that made it unsustainable, what changed, the outcome. A scene with stakes, not a generic "imagine a company" — never name a real client, never invent a number that reads as a verified case-study metric, keep figures illustrative or omit them',
+  'myth-busting: name a belief the ICP genuinely holds and take a real position against it — not a strawman nobody actually believes. The disagreement should be real enough that some readers push back in the comments',
   'cost-of-inaction: quantify what doing nothing costs — time, money, reputation',
   'trend-focused: connect the product to a macro shift happening in the industry right now',
   'question-led: open with a question the ICP has asked themselves but never resolved',
@@ -369,7 +378,7 @@ ${ahaEvent ? `AHA MOMENT: ${ahaEvent}` : ''}
 
 Write a high-engagement LinkedIn thought leadership post promoting the In-Sync BRAND and platform story — NOT a pitch for any single product.
 
-PRIMARY OBJECTIVE: Make the reader recognise the cost of running their business on disconnected tools, and want to see how one platform changes that. Drive them toward in-sync.co.in and a demo. Engagement (likes, comments) is secondary.
+PRIMARY OBJECTIVE (2026-07-24, revised — engagement is now co-equal, not secondary): make the reader recognise the cost of running their business on disconnected tools AND actually stop scrolling to react — comment, share, or argue. A post nobody comments on doesn't get distributed by LinkedIn's own algorithm and doesn't build the brand either, so a technically-accurate post that reads as safe corporate thought-leadership has failed regardless of how well-sourced it is. Risk something in every post: a real position, a specific admission, a claim some readers will want to push back on. If a draft could have been posted by any competitor about any platform, it has failed.
 
 CONTENT STANDARDS:
 1. Every factual claim must be based on verifiable, real-world data. Use actual statistics from published research, government reports, or well-known analysts (Gartner, McKinsey, NASSCOM, RBI, Forrester, etc.). Cite the source inline naturally (e.g. "According to a 2024 NASSCOM report..."). Do NOT fabricate numbers. ${NUMERIC_CLAIMS_RULE}
@@ -386,7 +395,7 @@ BODY (8-12 paragraphs, ≤1900 chars total):
 - Build the argument through today's theme: the cost of fragmentation → why adding more disconnected tools fails → what running on one platform changes
 - Include at least 2 real data points with source attribution
 - One paragraph uses ${product.product_name} as the concrete proof point (see standard 3)
-- Final paragraph: a specific, direct question that makes the reader want to comment
+- Final paragraph: a question that costs the reader something to answer honestly — it should pull out their own number, their own disagreement, or a story from their own operation, not a comfortable "what do you think" anyone could nod at and scroll past
 
 CTA LINE (1 line):
 Natural, non-pushy. Directs to the In-Sync platform without including the actual URL in the post body (LinkedIn deprioritises posts with external links). Example: "This is exactly why we built In-Sync as one platform — link in comments."
@@ -666,6 +675,61 @@ Deno.serve(async (req) => {
     // rotation; grounded exclusively in the approved backstory facts.
     if (daySeq === PERSONA_DAY_SEQ) {
       const personaDayIndex = daysSince(config.start_date, targetDate);
+
+      // Weekly anchor post lands on Wednesday — one reliable reference-post
+      // slot a week (2026-07-24, Arohan recommendation), regardless of where
+      // the 5-way pillar rotation happens to be that day.
+      const isAnchorDay = istDayOfWeek(targetDate) === 3;
+      // Poll lands every OTHER Friday (2026-07-24: "conduct a poll
+      // sometimes") — distinct weekday from the anchor, so they never clash.
+      const isPollDay = istDayOfWeek(targetDate) === 5 && Math.floor(personaDayIndex / 7) % 2 === 0;
+
+      if (isPollDay) {
+        const { data: recentPolls } = await supabase
+          .from('blog_posts')
+          .select('poll_question')
+          .eq('org_id', config.org_id)
+          .eq('channel', 'member')
+          .not('poll_question', 'is', null)
+          .order('publish_date', { ascending: false })
+          .limit(10);
+        const recentQuestions = (recentPolls || []).map((r) => r.poll_question as string).filter(Boolean);
+        const poll = await generatePoll(PERSONA_BACKSTORY, 'a question Amit would genuinely be curious how his network answers, drawn from the scaling/operations/AI-building world he lives in', recentQuestions);
+
+        const { error: pollInsertErr } = await supabase.from('blog_posts').insert({
+          org_id: config.org_id,
+          channel: 'member',
+          blog_url: `draft://member/${targetDate}/persona-poll`,
+          product_key: null,
+          publish_date: targetDate,
+          day_seq: PERSONA_DAY_SEQ,
+          status: 'pending',
+          social_posted: false,
+          posted_timestamp: new Date().toISOString(),
+          linkedin_slot_index: PERSONA_SLOT_INDEX,
+          linkedin_cycle: Math.floor(personaDayIndex / SLOT_COUNT) + 1,
+          post_format: 'poll',
+          content_angle: 'persona: poll, never selling',
+          content_theme: 'poll',
+          blog_title: poll.title,
+          blog_excerpt: poll.question,
+          linkedin_draft_text: poll.question,
+          poll_question: poll.question,
+          poll_options: poll.options,
+          poll_duration: poll.duration,
+        });
+
+        if (pollInsertErr) {
+          if (pollInsertErr.code === '23505') {
+            return ok({ skip: `persona gap ${targetDate} filled by concurrent run` });
+          }
+          return err(500, pollInsertErr.message);
+        }
+
+        console.log(`[blog-writer] persona poll saved for ${targetDate}, ${gapsRemaining} gaps left`);
+        return ok({ success: true, channel: 'member', publish_date: targetDate, format: 'poll', gaps_remaining: gapsRemaining });
+      }
+
       const { data: recent } = await supabase
         .from('blog_posts')
         .select('blog_title')
@@ -675,10 +739,6 @@ Deno.serve(async (req) => {
         .limit(14);
       const recentTitles = (recent || []).map((r) => r.blog_title as string).filter(Boolean);
 
-      // Weekly anchor post lands on Wednesday — one reliable reference-post
-      // slot a week (2026-07-24, Arohan recommendation), regardless of where
-      // the 5-way pillar rotation happens to be that day.
-      const isAnchorDay = istDayOfWeek(targetDate) === 3;
       const draft = await generatePersonaPost(personaDayIndex, recentTitles, isAnchorDay);
 
       const { error: personaInsertErr } = await supabase.from('blog_posts').insert({
@@ -864,8 +924,35 @@ Deno.serve(async (req) => {
         content_strategy_note: draft.strategy_note || null,
       };
 
+    } else if (postFormat === 'poll') {
+      // 6d. Native LinkedIn poll (2026-07-24) — no media, no fan-out to
+      // FB/IG/X (no equivalent object there). Topic hint reuses the same
+      // theme/angle rotation as everything else so polls still track the
+      // week's story pillar instead of feeling disconnected.
+      const { data: recentPolls } = await supabase
+        .from('blog_posts')
+        .select('poll_question')
+        .eq('org_id', config.org_id)
+        .eq('channel', 'company')
+        .not('poll_question', 'is', null)
+        .order('publish_date', { ascending: false })
+        .limit(10);
+      const recentQuestions = (recentPolls || []).map((r) => r.poll_question as string).filter(Boolean);
+      const topicHint = `${themeFor(postSeq)} — audience: ${icp?.designations ?? 'B2B decision makers'} in ${icpIndustries}`;
+      const poll = await generatePoll(BRAND_STORY, topicHint, recentQuestions);
+
+      row = {
+        ...baseRow,
+        blog_title: poll.title,
+        blog_excerpt: poll.question,
+        linkedin_draft_text: poll.question,
+        poll_question: poll.question,
+        poll_options: poll.options,
+        poll_duration: poll.duration,
+      };
+
     } else {
-      // 6d. Carousel — 8 short slides rendered as branded still images, each
+      // 6e. Carousel — 8 short slides rendered as branded still images, each
       // over its OWN AI-generated background (visual break between slides —
       // user feedback 2026-07-15). The photo must read at full brightness: the
       // slide renderer only darkens the lower band where the text sits.

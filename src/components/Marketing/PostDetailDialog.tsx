@@ -31,6 +31,9 @@ export interface CalendarPost {
   video_url: string | null;
   carousel_slide_texts: string[] | null;
   carousel_slide_urls: string[] | null;
+  poll_question: string | null;
+  poll_options: string[] | null;
+  poll_duration: string | null;
   linkedin_url: string | null;
   fb_post_id: string | null;
   ig_post_id: string | null;
@@ -293,6 +296,24 @@ export function PostDetailDialog({
                 </div>
               </div>
             </>
+          )}
+
+          {post.post_format === "poll" && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Poll question</Label>
+                <CopyButton text={post.poll_question || ""} />
+              </div>
+              <p className="text-sm font-medium">{post.poll_question}</p>
+              <div className="flex flex-wrap gap-1.5">
+                {(post.poll_options || []).map((opt) => (
+                  <Badge key={opt} variant="outline">{opt}</Badge>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Native LinkedIn poll, open for {(post.poll_duration || "THREE_DAYS").replace("_", " ").toLowerCase()}. LinkedIn-only — doesn't cross-post to Facebook/Instagram/X. Not editable here — skip and let the next cycle write a new one if this angle isn't right.
+              </p>
+            </div>
           )}
 
           {post.status === "posted" && (
