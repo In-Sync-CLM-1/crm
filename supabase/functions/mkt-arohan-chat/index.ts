@@ -27,10 +27,17 @@
  * write pattern (trendPostTurn() in _shared/trendPost.ts), but per Amit's
  * explicit instruction this one publishes IMMEDIATELY once finalized —
  * no Content Calendar queue — because trend content stales out fast.
+ *
+ * "Weekly Outreach: ..." (2026-07-24): deterministic, LLM-extracted logging
+ * of the 4 numbers Arohan's own recommendation says actually matter for the
+ * persona stream (connection accepts from target titles, profile views, DMs
+ * sent to post viewers, replies received) — none available via LinkedIn's
+ * API, so Amit self-reports weekly. Stored in mkt_persona_outreach_metrics,
+ * fed back into buildContext().
  */
 import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 import { corsHeaders } from '../_shared/corsHeaders.ts';
-import { callLLM } from '../_shared/llmClient.ts';
+import { callLLM, callLLMJson } from '../_shared/llmClient.ts';
 import { PERSONA_DAY_SEQ, PERSONA_SLOT_INDEX, personaIdeaTurn } from '../_shared/personaVoice.ts';
 import { CHANNEL_ALIASES, CHANNEL_LABEL, TrendChannel, trendPostTurn } from '../_shared/trendPost.ts';
 import { buildImagePrompt, generateGeminiImage } from '../_shared/geminiImage.ts';
@@ -58,7 +65,7 @@ function isoDaysAgo(days: number): string {
 
 // deno-lint-ignore no-explicit-any
 async function buildContext(supabase: any, orgId: string): Promise<string> {
-  const [postedRes, upcomingRes, followersRes, configRes, audienceRes] = await Promise.all([
+  const [postedRes, upcomingRes, followersRes, configRes, audienceRes, outreachRes] = await Promise.all([
     supabase
       .from('blog_posts')
       .select('publish_date, post_format, content_theme, product_key, blog_title, linkedin_impressions, linkedin_likes, linkedin_comments, linkedin_reposts, fb_likes, fb_comments, fb_shares, fb_clicks, ig_reach, ig_likes, ig_comments, ig_saves, ig_shares, yt_views, yt_likes, yt_comments, x_impressions, x_likes, x_replies, x_reposts, linkedin_url')
@@ -93,6 +100,12 @@ async function buildContext(supabase: any, orgId: string): Promise<string> {
       .order('snapshot_date', { ascending: false })
       .limit(1)
       .maybeSingle(),
+    supabase
+      .from('mkt_persona_outreach_metrics')
+      .select('*')
+      .eq('org_id', orgId)
+      .order('week_start', { ascending: false })
+      .limit(6),
   ]);
 
   const posted: Row[] = postedRes.data ?? [];
@@ -100,6 +113,7 @@ async function buildContext(supabase: any, orgId: string): Promise<string> {
   const followers: Row[] = followersRes.data ?? [];
   const slots: string[] = (configRes.data?.experiment_slots as string[]) ?? [];
   const audience: Row | null = audienceRes.data ?? null;
+  const outreach: Row[] = outreachRes.data ?? [];
 
   const lines: string[] = [];
 
@@ -166,6 +180,18 @@ async function buildContext(supabase: any, orgId: string): Promise<string> {
   }
 
   lines.push('');
+  lines.push('== WEEKLY OUTREACH METRICS (self-reported by Amit via "Weekly Outreach: ..." in this chat) ==');
+  lines.push('These are the numbers that actually end in a demo — impressions do not. Not available via any API (LinkedIn does not expose connection-accept, profile-view, or DM data), so treat gaps as "not reported that week", never as zero.');
+  if (outreach.length) {
+    lines.push('week | connections accepted (target titles) | profile views | DMs sent to viewers | replies received');
+    for (const w of [...outreach].reverse()) {
+      lines.push(`${w.week_start} | ${w.connections_accepted_target_titles ?? '?'} | ${w.profile_views ?? '?'} | ${w.dms_sent_to_viewers ?? '?'} | ${w.replies_received ?? '?'}`);
+    }
+  } else {
+    lines.push('(none logged yet — prompt Amit to start with "Weekly Outreach: ..." if he asks how the persona stream is doing)');
+  }
+
+  lines.push('');
   lines.push('== UPCOMING BUFFER (next 7 days, prewritten, user can edit in Content Calendar) ==');
   for (const p of upcoming) {
     const slotTime = slots.length && p.linkedin_slot_index != null ? slots[p.linkedin_slot_index % slots.length] + ' IST' : '';
@@ -186,6 +212,7 @@ Rules:
 - When asked for recommendations, give concrete, small, testable changes (formats, themes, slots, channels) the pipeline can act on. The user can edit or skip any buffered post in the Content Calendar.
 - Plain business English, no API/technical jargon. Keep answers tight: lead with the answer, then the numbers behind it.
 - If Amit asks about Facebook ad targeting, who the audience is, or whether to turn on Meta ad spend, ground your answer in the LINKEDIN AUDIENCE COMPOSITION section (aggregate follower demographics — top seniority/function/industry/country). Be explicit that this is follower-base composition, not per-post engager data (LinkedIn's API does not expose that at any tier). If no snapshot exists yet, say so plainly and advise against turning on a Meta budget until one lands.
+- When discussing how the PERSONA stream (Amit's personal profile) is doing, lead with WEEKLY OUTREACH METRICS over impressions — connection accepts from target titles, profile views, DMs sent to viewers, and replies received are what actually end in a demo; impressions are noise and you should say so if Amit fixates on them. If no weeks are logged yet, suggest he start with "Weekly Outreach: ...".
 - This chat displays your reply as plain text, not rendered markdown — NEVER use markdown syntax (no **bold**, no # headers, no - or * bullet lists, no backticks). Write in plain prose; use line breaks and numbered sentences ("First, ... Second, ...") instead of bullet points if you need to list things.
 - You cannot change the analytics or strategy yourself — you advise; Amit (or Claude, his engineering agent) applies changes. Two exceptions, both handled outside this prompt: a message prefixed "Persona Post Idea" opens a debate-then-write flow for his personal profile; "Post Idea <channels>: ..." opens the same for an immediate multi-channel trend-jack post.`;
 
@@ -225,6 +252,16 @@ function daysSince(dateStr: string, referenceDate: string): number {
   const start = new Date(dateStr + 'T00:00:00Z').getTime();
   const ref = new Date(referenceDate + 'T00:00:00Z').getTime();
   return Math.max(0, Math.floor((ref - start) / 86_400_000));
+}
+
+// IST calendar week (Mon-Sun) — matches mkt-social-boost/
+// mkt-linkedin-follower-demographics's weekStartIST.
+function weekStartIST(): string {
+  const ist = new Date(Date.now() + 5.5 * 3_600_000);
+  const day = ist.getUTCDay();
+  const diffToMonday = day === 0 ? 6 : day - 1;
+  ist.setUTCDate(ist.getUTCDate() - diffToMonday);
+  return ist.toISOString().slice(0, 10);
 }
 
 /**
@@ -483,6 +520,57 @@ Deno.serve(async (req) => {
         is_suggestion: !cfgErr,
         actions_triggered: cfgErr ? [] : [{ type: 'ad_budget_updated', details: { channel, daily_budget: dailyBudget, active: !isOff } }],
       });
+    }
+
+    // ── "Weekly Outreach: ..." (2026-07-24, Arohan recommendation) ─────────
+    // None of these four numbers are available via LinkedIn's API — Amit
+    // self-reports them weekly, LLM-extracted from freeform phrasing so he
+    // doesn't need to match an exact format. "Change what you're tracking":
+    // connection accepts from target titles / profile views / DMs sent to
+    // post viewers / replies received are the numbers that end in a demo;
+    // impressions are noise. Stored one row per ISO week, fed into buildContext.
+    const outreachMatch = message.match(/^weekly\s*outreach\b\s*[:\-–]?\s*(.*)$/i);
+    if (outreachMatch) {
+      const rest = outreachMatch[1].trim();
+      if (!rest) {
+        const reply = 'What are this week\'s numbers? Connection requests accepted from your target titles, profile views, DMs sent to post viewers, and replies received — e.g. "Weekly Outreach: 8 connections, 40 profile views, 12 DMs, 3 replies". Leave any you don\'t have out, that\'s fine.';
+        await supabase.from('mkt_arohan_conversations').insert({ org_id, thread_id, role: 'amit', message, is_suggestion: false, suggestion_payload: null });
+        await supabase.from('mkt_arohan_conversations').insert({ org_id, thread_id, role: 'arohan', message: reply, is_suggestion: false, suggestion_payload: null });
+        return ok({ reply, is_suggestion: false, actions_triggered: [] });
+      }
+
+      const extractPrompt = `Extract weekly LinkedIn outreach numbers from this message. It may use casual phrasing or only mention some of the four numbers.
+
+MESSAGE: "${rest}"
+
+Fields: connections_accepted_target_titles (connection requests accepted, specifically from his target buyer titles — CFOs/finance controllers/AP/procurement), profile_views (his own profile views), dms_sent_to_viewers (DMs he sent to people who viewed/reacted to a post), replies_received (replies he got back from any outreach).
+
+Return JSON: {"connections_accepted_target_titles": <int or null if not mentioned>, "profile_views": <int or null>, "dms_sent_to_viewers": <int or null>, "replies_received": <int or null>}`;
+
+      try {
+        const { data: extracted } = await callLLMJson<Record<string, number | null>>(extractPrompt, { model: 'haiku', max_tokens: 200, temperature: 0 });
+        const weekStart = weekStartIST();
+
+        const { error: upsertErr } = await supabase.from('mkt_persona_outreach_metrics').upsert({
+          org_id,
+          week_start: weekStart,
+          connections_accepted_target_titles: extracted?.connections_accepted_target_titles ?? null,
+          profile_views: extracted?.profile_views ?? null,
+          dms_sent_to_viewers: extracted?.dms_sent_to_viewers ?? null,
+          replies_received: extracted?.replies_received ?? null,
+        }, { onConflict: 'org_id,week_start' });
+
+        const reply = upsertErr
+          ? `Couldn't save that: ${upsertErr.message}`
+          : `Logged for the week of ${weekStart}: ${extracted?.connections_accepted_target_titles ?? '—'} target-title connections accepted, ${extracted?.profile_views ?? '—'} profile views, ${extracted?.dms_sent_to_viewers ?? '—'} DMs sent to viewers, ${extracted?.replies_received ?? '—'} replies. I'll factor this into how I read the content performance from here.`;
+
+        await supabase.from('mkt_arohan_conversations').insert({ org_id, thread_id, role: 'amit', message, is_suggestion: false, suggestion_payload: null });
+        await supabase.from('mkt_arohan_conversations').insert({ org_id, thread_id, role: 'arohan', message: reply, is_suggestion: !upsertErr, suggestion_payload: null });
+        return ok({ reply, is_suggestion: !upsertErr, actions_triggered: upsertErr ? [] : [{ type: 'weekly_outreach_logged', details: { week_start: weekStart } }] });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return err(500, msg);
+      }
     }
 
     const [{ data: recentHistory }, context] = await Promise.all([

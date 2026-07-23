@@ -25,7 +25,7 @@ FACTS (the only permitted biography — never invent others):
 - His AI-economics conviction: a report in an hour instead of next week; a feature the same day instead of three days; businesses shouldn't have to pick two of cost, speed, and flexibility.
 - He genuinely runs In-Sync's own marketing, content pipeline, and operations on AI automation he built — this very post was drafted by that system and reviewed by him.`;
 
-// Five persona pillars — rotate daily, one per post.
+// Five persona pillars — rotate on non-anchor days, one per post.
 export const PERSONA_PILLARS = [
   'founder journey: a real decision, trade-off, or mistake from the story above and what it taught him',
   'business run by AI: a concrete, honest look at what it is like to run a company where AI does the building and the operating — real incidents, real numbers, no hype',
@@ -33,6 +33,17 @@ export const PERSONA_PILLARS = [
   'operator advice: one practical, immediately usable lesson for founders/ops heads of scaling businesses, drawn from patterns he has lived',
   'market observation: an anonymized pattern he sees across growing Indian businesses — what separates the ones that scale cleanly from the ones that fracture',
 ];
+
+// The weekly "anchor" pillar (2026-07-24, Arohan recommendation): one
+// reference-worthy post a week — a number + breakdown, built to be SAVED,
+// not just liked. Lands on a fixed weekday (mkt-blog-writer decides which)
+// so the cadence is reliable. Explicitly a worked illustrative example, never
+// a specific client claim — Amit's own domain math made visible, grounded in
+// the mechanics of the AP/vendor products he's actually built, not invented
+// "research". Also carries one genuinely debatable position, since agreeable
+// posts don't pull anyone into the comments.
+export const PERSONA_ANCHOR_PILLAR =
+  'anchor (reference post): pick ONE concrete operational breakdown from accounts-payable/vendor-management reality — e.g. what a slow invoice-approval cycle costs on a mid-size monthly payable run, the specific points where a TDS or GST mismatch gets caught too late, what a vendor payment query costs in staff hours when you count both sides of the exchange, the gap between "invoice received" and "invoice paid" and where it actually goes missing. Walk through the arithmetic step by step so a reader could redo it with their own numbers. Also stake out ONE defensible, slightly contrarian position along the way (e.g. "vendor onboarding SLAs are a vanity metric — nobody measures invoice-to-payment") stated plainly enough that someone who disagrees would want to say so in the comments.';
 
 export const VOICE_RULES = `VOICE (match exactly):
 - Story-led and reflective at the core: open inside a moment or decision, not with a thesis. Honesty about failure reads as strength.
@@ -49,11 +60,20 @@ export const VOICE_RULES = `VOICE (match exactly):
 export interface PersonaDraft {
   title: string;
   post_text: string;
+  pillar: string;
 }
 
-export async function generatePersonaPost(dayIndex: number, recentTitles: string[]): Promise<PersonaDraft> {
-  const pillar = PERSONA_PILLARS[dayIndex % PERSONA_PILLARS.length];
+/**
+ * `isAnchorDay` is decided by the caller (mkt-blog-writer, from the actual
+ * calendar date) — this module stays date-agnostic and just picks the
+ * anchor pillar instead of the normal rotation when true. Returns the
+ * resolved pillar name so the caller doesn't need to re-derive the same
+ * rotation index for content_theme bookkeeping.
+ */
+export async function generatePersonaPost(dayIndex: number, recentTitles: string[], isAnchorDay = false): Promise<PersonaDraft> {
+  const pillar = isAnchorDay ? PERSONA_ANCHOR_PILLAR : PERSONA_PILLARS[dayIndex % PERSONA_PILLARS.length];
   const isOpinionDay = pillar.startsWith('opinion');
+  const isAnchor = pillar.startsWith('anchor');
 
   const prompt = `Write today's LinkedIn post for Amit's PERSONAL profile.
 
@@ -63,18 +83,19 @@ TODAY'S PILLAR: ${pillar}
 
 ${VOICE_RULES}
 ${isOpinionDay ? '\nToday is an opinion day: take ONE clear position and argue it with conviction. Disagreement is welcome; wishy-washy is not.' : ''}
+${isAnchor ? '\nThis is the WEEKLY ANCHOR POST — the one post this week built to be saved and referenced, not just liked. Structure it around the concrete arithmetic (state the assumptions plainly, e.g. "say a business runs ₹50 lakh a month through payables" — clearly a worked illustrative example, never presented as a measured statistic or a real client\'s actual figures). End with the debatable position, not just a question — the question can invite people to push back on that position specifically.' : ''}
 
 RECENTLY USED TITLES (do not repeat these stories or angles): ${recentTitles.length ? recentTitles.join(' | ') : '(none yet)'}
 
 Return JSON: {"title": "<short internal label for the calendar, max 60 chars>", "post_text": "<the complete post>"}`;
 
-  const { data } = await callLLMJson<PersonaDraft>(prompt, {
+  const { data } = await callLLMJson<{ title: string; post_text: string }>(prompt, {
     model: 'sonnet',
     max_tokens: 1200,
     temperature: 0.8,
   });
   if (!data?.post_text) throw new Error('Persona generation returned no post_text');
-  return data;
+  return { ...data, pillar };
 }
 
 export interface PersonaIdeaTurn {

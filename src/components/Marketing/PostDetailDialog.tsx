@@ -8,10 +8,18 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { useNotification } from "@/hooks/useNotification";
 import { CopyButton } from "@/components/common/CopyButton";
-import { ExternalLink, Eye, ThumbsUp, MessageCircle, Repeat2 } from "lucide-react";
+import { ExternalLink, Eye, ThumbsUp, MessageCircle, Repeat2, Users, RefreshCw } from "lucide-react";
+
+interface Reactor {
+  urn: string;
+  name: string | null;
+  headline: string | null;
+  reaction_type: string;
+}
 
 export interface CalendarPost {
   id: string;
+  channel: string;
   publish_date: string;
   status: string;
   post_format: string;
@@ -81,12 +89,14 @@ export function PostDetailDialog({
   const [draftText, setDraftText] = useState("");
   const [caption, setCaption] = useState("");
   const [slideTexts, setSlideTexts] = useState<string[]>([]);
+  const [reactors, setReactors] = useState<Reactor[] | null>(null);
 
   useEffect(() => {
     if (post) {
       setDraftText(post.linkedin_draft_text || "");
       setCaption(post.linkedin_short_caption || "");
       setSlideTexts(post.carousel_slide_texts || []);
+      setReactors(null);
     }
   }, [post]);
 
@@ -139,6 +149,22 @@ export function PostDetailDialog({
       onOpenChange(false);
     },
     onError: (e: Error) => notify.error("Error", e.message),
+  });
+
+  // On-demand only — never auto-fetched (see mkt-linkedin-post-reactors:
+  // low-volume by design, and name resolution relies on an undocumented
+  // LinkedIn lookup that should stay a manual, occasional convenience).
+  const loadReactors = useMutation({
+    mutationFn: async (): Promise<Reactor[]> => {
+      if (!post) return [];
+      const { data, error } = await supabase.functions.invoke("mkt-linkedin-post-reactors", {
+        body: { blog_post_id: post.id },
+      });
+      if (error) throw new Error(error.message || "Couldn't load reactions");
+      return (data?.reactors ?? []) as Reactor[];
+    },
+    onSuccess: (data) => setReactors(data),
+    onError: (e: Error) => notify.error("Couldn't load who engaged", e.message),
   });
 
   if (!post) return null;
@@ -283,6 +309,42 @@ export function PostDetailDialog({
                   </a>
                 )}
               </div>
+
+              {post.channel === "member" && (
+                <div className="space-y-2 pt-1">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs gap-1.5"
+                    disabled={loadReactors.isPending}
+                    onClick={() => loadReactors.mutate()}
+                  >
+                    {loadReactors.isPending ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Users className="h-3.5 w-3.5" />}
+                    {reactors ? "Refresh who engaged" : "Show who engaged"}
+                  </Button>
+                  {reactors && (
+                    <div className="rounded border divide-y">
+                      {reactors.length === 0 ? (
+                        <p className="text-xs text-muted-foreground p-2">No reactions yet.</p>
+                      ) : (
+                        reactors.map((r) => (
+                          <div key={r.urn} className="flex items-center justify-between gap-2 p-2 text-xs">
+                            <div className="min-w-0">
+                              <div className="font-medium text-foreground truncate">{r.name ?? "(name unavailable)"}</div>
+                              {r.headline && <div className="text-muted-foreground truncate">{r.headline}</div>}
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <Badge variant="outline" className="text-[10px] capitalize">{r.reaction_type.toLowerCase()}</Badge>
+                              {r.name && <CopyButton text={r.name} size="icon" label="Copy name" />}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {post.fb_post_id && (
                 <div className="flex items-center gap-4">
                   <span className="w-20 text-xs font-medium">Facebook</span>

@@ -27,7 +27,7 @@ import { renderSlideImage } from '../_shared/slideImage.ts';
 import { uploadToMarketingR2 } from '../_shared/r2Marketing.ts';
 import { buildImagePrompt, generateGeminiImage, GeminiAspect, ImageStyle, IMAGE_STYLES } from '../_shared/geminiImage.ts';
 import { brandImageUrl, LOGO_MARK_URL } from '../_shared/brandLogo.ts';
-import { PERSONA_DAY_SEQ, PERSONA_SLOT_INDEX, PERSONA_PILLARS, generatePersonaPost } from '../_shared/personaVoice.ts';
+import { PERSONA_DAY_SEQ, PERSONA_SLOT_INDEX, generatePersonaPost } from '../_shared/personaVoice.ts';
 import { BRAND_STORY } from '../_shared/brandVoice.ts';
 
 const LINKEDIN_ORG_ID = Deno.env.get('LINKEDIN_ORG_ID') || '35932282';
@@ -51,6 +51,13 @@ function getIST(offsetDays = 0) {
   const ms = Date.now() + IST_OFFSET_MS + offsetDays * 86_400_000;
   const d = new Date(ms);
   return { date: d.toISOString().slice(0, 10) };
+}
+
+// 0=Sun..6=Sat, IST. Used to gate the persona stream to weekdays only
+// (2026-07-24, Arohan recommendation: daily posting is unsustainable at
+// save-worthy quality — drop to a 5-day business-week cadence).
+function istDayOfWeek(dateStr: string): number {
+  return new Date(dateStr + 'T00:00:00Z').getUTCDay();
 }
 
 function daysSince(dateStr: string, referenceDate: string): number {
@@ -641,8 +648,11 @@ Deno.serve(async (req) => {
         for (let j = 0; j < POSTS_PER_DAY; j++) {
           if (!filled.has(`${date}#${j}`)) gaps.push({ date, seq: j });
         }
-        // Persona post (Amit's profile) — one per day at day_seq=4
-        if (!filled.has(`${date}#${PERSONA_DAY_SEQ}`)) gaps.push({ date, seq: PERSONA_DAY_SEQ });
+        // Persona post (Amit's profile) — weekdays only, 5/week (2026-07-24:
+        // dropped from a daily streak per Arohan's recommendation).
+        const dow = istDayOfWeek(date);
+        const isWeekday = dow !== 0 && dow !== 6;
+        if (isWeekday && !filled.has(`${date}#${PERSONA_DAY_SEQ}`)) gaps.push({ date, seq: PERSONA_DAY_SEQ });
       }
       if (!gaps.length) {
         return ok({ skip: 'buffer full', buffer_days: BUFFER_DAYS, posts_per_day: POSTS_PER_DAY });
@@ -665,8 +675,11 @@ Deno.serve(async (req) => {
         .limit(14);
       const recentTitles = (recent || []).map((r) => r.blog_title as string).filter(Boolean);
 
-      const draft = await generatePersonaPost(personaDayIndex, recentTitles);
-      const pillar = PERSONA_PILLARS[personaDayIndex % PERSONA_PILLARS.length];
+      // Weekly anchor post lands on Wednesday — one reliable reference-post
+      // slot a week (2026-07-24, Arohan recommendation), regardless of where
+      // the 5-way pillar rotation happens to be that day.
+      const isAnchorDay = istDayOfWeek(targetDate) === 3;
+      const draft = await generatePersonaPost(personaDayIndex, recentTitles, isAnchorDay);
 
       const { error: personaInsertErr } = await supabase.from('blog_posts').insert({
         org_id: config.org_id,
@@ -682,7 +695,7 @@ Deno.serve(async (req) => {
         linkedin_cycle: Math.floor(personaDayIndex / SLOT_COUNT) + 1,
         post_format: 'text',
         content_angle: 'persona: first-person, story-led, never selling',
-        content_theme: pillar,
+        content_theme: draft.pillar,
         blog_title: draft.title,
         blog_excerpt: draft.post_text.slice(0, 280),
         linkedin_draft_text: draft.post_text,
@@ -695,12 +708,12 @@ Deno.serve(async (req) => {
         return err(500, personaInsertErr.message);
       }
 
-      console.log(`[blog-writer] persona draft saved for ${targetDate} (pillar: ${pillar.split(':')[0]}), ${gapsRemaining} gaps left`);
+      console.log(`[blog-writer] persona draft saved for ${targetDate} (pillar: ${draft.pillar.split(':')[0]}), ${gapsRemaining} gaps left`);
       return ok({
         success: true,
         channel: 'member',
         publish_date: targetDate,
-        pillar: pillar.split(':')[0],
+        pillar: draft.pillar.split(':')[0],
         gaps_remaining: gapsRemaining,
       });
     }
