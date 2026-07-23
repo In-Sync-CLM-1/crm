@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { LoadingState } from "@/components/common/LoadingState";
 import { useOrgContext } from "@/hooks/useOrgContext";
 import { useNotification } from "@/hooks/useNotification";
+import { CopyButton } from "@/components/common/CopyButton";
 import { Pause, IndianRupee, Megaphone } from "lucide-react";
 
 interface AdCampaign {
@@ -95,6 +96,20 @@ function BudgetPanel() {
   );
 }
 
+function briefText(c: AdCampaign): string {
+  if (c.channel === "google") {
+    const lines = [`Campaign: ${c.name}`];
+    if (c.headlines?.length) lines.push(`Headlines:\n${c.headlines.join("\n")}`);
+    if (c.descriptions?.length) lines.push(`Descriptions:\n${c.descriptions.join("\n")}`);
+    if (c.keywords?.length) lines.push(`Keywords:\n${c.keywords.map((k) => k.text).join(", ")}`);
+    return lines.join("\n\n");
+  }
+  const lines = [`Campaign: ${c.name}`];
+  if (c.meta_headline) lines.push(`Headline: ${c.meta_headline}`);
+  if (c.primary_text) lines.push(`Primary text:\n${c.primary_text}`);
+  return lines.join("\n\n");
+}
+
 function CampaignCard({ c }: { c: AdCampaign }) {
   const notify = useNotification();
   const queryClient = useQueryClient();
@@ -128,11 +143,14 @@ function CampaignCard({ c }: { c: AdCampaign }) {
               <p className="text-sm text-muted-foreground mt-1">{c.content_strategy_note}</p>
             )}
           </div>
-          {c.status === "active" && (
-            <Button size="sm" variant="outline" disabled={pause.isPending} onClick={() => pause.mutate()}>
-              <Pause className="h-3.5 w-3.5 mr-1" /> Pause
-            </Button>
-          )}
+          <div className="flex items-center gap-2 shrink-0">
+            <CopyButton text={briefText(c)} label="Copy brief" />
+            {c.status === "active" && (
+              <Button size="sm" variant="outline" disabled={pause.isPending} onClick={() => pause.mutate()}>
+                <Pause className="h-3.5 w-3.5 mr-1" /> Pause
+              </Button>
+            )}
+          </div>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">

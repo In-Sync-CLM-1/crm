@@ -12,6 +12,7 @@ import { useArohanChat, ChatMessage } from "@/hooks/useArohanChat";
 import { useOrgContext } from "@/hooks/useOrgContext";
 import { supabase } from "@/integrations/supabase/client";
 import { format, subDays } from "date-fns";
+import { CopyButton } from "@/components/common/CopyButton";
 import {
   Send,
   RefreshCw,
@@ -28,8 +29,17 @@ import { cn } from "@/lib/utils";
 // Message bubble
 // ---------------------------------------------------------------------------
 
+// Persona/trend "write" replies quote the finalized draft between the first
+// pair of double quotes — pull just that out so Copy grabs the post, not
+// Arohan's surrounding commentary. Falls back to the full message.
+function extractDraft(content: string): string {
+  const match = content.match(/"([^"]{20,})"/);
+  return match ? match[1] : content;
+}
+
 function MessageBubble({ msg }: { msg: ChatMessage }) {
   const isAmit = msg.role === "amit";
+  const hasDraft = !isAmit && msg.isSuggestion && /"[^"]{20,}"/.test(msg.content);
 
   return (
     <div className={cn("flex gap-2", isAmit ? "justify-end" : "justify-start")}>
@@ -53,7 +63,14 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
             Analysing…
           </span>
         ) : (
-          <p className="whitespace-pre-wrap">{msg.content}</p>
+          <>
+            <p className="whitespace-pre-wrap">{msg.content}</p>
+            {hasDraft && (
+              <div className="flex justify-end mt-1.5 -mb-1">
+                <CopyButton text={extractDraft(msg.content)} label="Copy draft" variant="outline" />
+              </div>
+            )}
+          </>
         )}
       </div>
 

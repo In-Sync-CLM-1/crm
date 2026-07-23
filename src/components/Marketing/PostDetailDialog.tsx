@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { useNotification } from "@/hooks/useNotification";
+import { CopyButton } from "@/components/common/CopyButton";
 import { ExternalLink, Eye, ThumbsUp, MessageCircle, Repeat2 } from "lucide-react";
 
 export interface CalendarPost {
@@ -186,7 +187,10 @@ export function PostDetailDialog({
 
           {post.post_format === "text" && (
             <div className="space-y-1">
-              <Label>Post text</Label>
+              <div className="flex items-center justify-between">
+                <Label>Post text</Label>
+                <CopyButton text={draftText} />
+              </div>
               <Textarea
                 rows={10}
                 value={draftText}
@@ -199,7 +203,10 @@ export function PostDetailDialog({
           {(post.post_format === "image" || post.post_format === "video") && (
             <>
               <div className="space-y-1">
-                <Label>Caption</Label>
+                <div className="flex items-center justify-between">
+                  <Label>Caption</Label>
+                  <CopyButton text={caption} />
+                </div>
                 <Textarea
                   rows={5}
                   value={caption}
@@ -219,7 +226,10 @@ export function PostDetailDialog({
           {post.post_format === "carousel" && (
             <>
               <div className="space-y-1">
-                <Label>Caption</Label>
+                <div className="flex items-center justify-between">
+                  <Label>Caption</Label>
+                  <CopyButton text={caption} />
+                </div>
                 <Textarea
                   rows={3}
                   value={caption}
@@ -228,24 +238,30 @@ export function PostDetailDialog({
                 />
               </div>
               <div className="space-y-2">
-                <Label>Slides ({slideTexts.length})</Label>
+                <div className="flex items-center justify-between">
+                  <Label>Slides ({slideTexts.length})</Label>
+                  <CopyButton text={slideTexts.join("\n\n")} label="Copy all slides" />
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   {slideTexts.map((text, i) => (
                     <div key={i} className="space-y-1">
                       {post.carousel_slide_urls?.[i] && (
                         <img src={post.carousel_slide_urls[i]} alt="" className="rounded border w-full aspect-square object-cover" />
                       )}
-                      <Textarea
-                        rows={2}
-                        value={text}
-                        onChange={(e) => {
-                          const next = [...slideTexts];
-                          next[i] = e.target.value;
-                          setSlideTexts(next);
-                        }}
-                        disabled={!isEditable}
-                        className="text-xs"
-                      />
+                      <div className="flex items-start gap-1">
+                        <Textarea
+                          rows={2}
+                          value={text}
+                          onChange={(e) => {
+                            const next = [...slideTexts];
+                            next[i] = e.target.value;
+                            setSlideTexts(next);
+                          }}
+                          disabled={!isEditable}
+                          className="text-xs"
+                        />
+                        <CopyButton text={text} size="icon" label="Copy slide" />
+                      </div>
                     </div>
                   ))}
                 </div>
