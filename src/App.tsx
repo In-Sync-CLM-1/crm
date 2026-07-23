@@ -47,6 +47,7 @@ const CampaignOverview = lazy(() => import("./pages/Campaigns/CampaignOverview")
 const AIInsightsDashboard = lazy(() => import("./pages/Campaigns/AIInsightsDashboard"));
 const SocialPerformance = lazy(() => import("./pages/SocialPerformance"));
 const MarketingAdAnalytics = lazy(() => import("./pages/MarketingAdAnalytics"));
+const AdCampaigns = lazy(() => import("./pages/AdCampaigns"));
 const TemplateEditor = lazy(() => import("./pages/TemplateEditor"));
 const ArohanChat = lazy(() => import("./pages/ArohanChat"));
 const EngineConfig = lazy(() => import("./pages/EngineConfig"));
@@ -212,6 +213,11 @@ const App = () => (
           <Route path="/marketing/ad-analytics" element={
             <ProtectedRoute>
               <MarketingAdAnalytics />
+            </ProtectedRoute>
+          } />
+          <Route path="/marketing/ad-campaigns" element={
+            <ProtectedRoute>
+              <AdCampaigns />
             </ProtectedRoute>
           } />
           <Route path="/marketing/templates" element={

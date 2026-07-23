@@ -400,6 +400,67 @@ Deno.serve(async (req) => {
 
     const supabase = getSupabaseClient();
 
+    // ── "Ad Budget <channel>: <amount>" — the one human-only lever for the
+    // autonomous paid-ads engine (mkt-ad-campaign-generator). Deterministic,
+    // no debate: budget is Amit's call, not something for Arohan to weigh in
+    // on. "off"/"pause"/"0" disables that channel without discarding the
+    // configured amount, so re-enabling later doesn't need the number again.
+    const adBudgetMatch = message.match(/^ad\s*budget\s+(google|meta)\b\s*[:\-–]?\s*(.*)$/i);
+    if (adBudgetMatch) {
+      const channel = adBudgetMatch[1].toLowerCase() as 'google' | 'meta';
+      const rest = adBudgetMatch[2].trim();
+      const isOff = /^(off|pause|stop|0)$/i.test(rest);
+      const numMatch = rest.match(/[\d,]+(\.\d+)?/);
+
+      if (!isOff && !numMatch) {
+        const reply = `What's the daily budget for ${channel === 'google' ? 'Google Ads' : 'Meta Ads'}? e.g. "Ad Budget ${channel === 'google' ? 'Google' : 'Meta'}: 500" (₹/day), or "off" to pause it.`;
+        await supabase.from('mkt_arohan_conversations').insert({
+          org_id, thread_id, role: 'amit', message, is_suggestion: false, suggestion_payload: null,
+        });
+        await supabase.from('mkt_arohan_conversations').insert({
+          org_id, thread_id, role: 'arohan', message: reply, is_suggestion: false, suggestion_payload: null,
+        });
+        return ok({ reply, is_suggestion: false, actions_triggered: [] });
+      }
+
+      const { data: existingRow } = await supabase
+        .from('mkt_engine_config')
+        .select('config_value')
+        .eq('org_id', org_id)
+        .eq('config_key', 'paid_ads_budget')
+        .maybeSingle();
+      const existing = (existingRow?.config_value as Record<string, { daily_budget: number; active: boolean }>) ?? {};
+
+      const dailyBudget = isOff
+        ? (existing[channel]?.daily_budget ?? 0)
+        : parseFloat(numMatch![0].replace(/,/g, ''));
+      const updated = { ...existing, [channel]: { daily_budget: dailyBudget, active: !isOff } };
+
+      const { error: cfgErr } = await supabase
+        .from('mkt_engine_config')
+        .upsert({ org_id, config_key: 'paid_ads_budget', config_value: updated }, { onConflict: 'org_id,config_key' });
+
+      const channelLabel = channel === 'google' ? 'Google Ads' : 'Meta Ads';
+      const reply = cfgErr
+        ? `Couldn't save that: ${cfgErr.message}`
+        : isOff
+          ? `${channelLabel} paused — the engine won't launch or continue any campaign there until you turn it back on.`
+          : `${channelLabel} budget set to ₹${dailyBudget}/day. The engine will pick up from here on its own — I'll launch, run, and retire campaigns within that budget, and let you know here if anything needs your attention.`;
+
+      await supabase.from('mkt_arohan_conversations').insert({
+        org_id, thread_id, role: 'amit', message, is_suggestion: false, suggestion_payload: null,
+      });
+      await supabase.from('mkt_arohan_conversations').insert({
+        org_id, thread_id, role: 'arohan', message: reply, is_suggestion: !cfgErr,
+        suggestion_payload: cfgErr ? null : { mode: 'ad_budget_set', channel, daily_budget: dailyBudget, active: !isOff },
+      });
+      return ok({
+        reply,
+        is_suggestion: !cfgErr,
+        actions_triggered: cfgErr ? [] : [{ type: 'ad_budget_updated', details: { channel, daily_budget: dailyBudget, active: !isOff } }],
+      });
+    }
+
     const [{ data: recentHistory }, context] = await Promise.all([
       // Most recent 20 messages — fetched newest-first (so LIMIT actually
       // keeps the tail of a long thread) then reversed back to chronological.
