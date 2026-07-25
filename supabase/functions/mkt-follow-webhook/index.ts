@@ -51,7 +51,10 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 });
 
   const raw = await req.text();
-  const secret = Deno.env.get('RESEND_WEBHOOK_SECRET');
+  // Deliberately its OWN secret, not the shared RESEND_WEBHOOK_SECRET —
+  // that one belongs to the inbound-email webhook and each Resend endpoint is
+  // signed with a different key, so reusing the name would break both.
+  const secret = Deno.env.get('FOLLOW_RESEND_WEBHOOK_SECRET');
   const id = req.headers.get('svix-id');
   const ts = req.headers.get('svix-timestamp');
   const sig = req.headers.get('svix-signature');
