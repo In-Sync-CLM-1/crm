@@ -1,0 +1,8 @@
+{
+  "name": "synthetic-monitor",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Headless logged-in click-through probe for the In-Sync fleet (Health Sentinel front-of-house).",
+  "dependencies": { "playwright": "^1.48.0" }
+}
