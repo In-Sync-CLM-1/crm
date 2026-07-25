@@ -23,17 +23,31 @@
  */
 
 const LINKEDIN_PAGE = 'https://www.linkedin.com/company/insyncclm/';
-const PROOF_POST =
+const LINKEDIN_POST =
   'https://www.linkedin.com/posts/trgxtrainingexchange_6-7-lakh-a-month-thats-what-building-activity-7486190600501813248-9QKW';
 const FACEBOOK_PAGE = 'https://www.facebook.com/122129596563175408';
+const FACEBOOK_POST = 'https://www.facebook.com/122129596563175408/posts/122130149805175408';
 const TABLE = 'mkt_follow_campaign';
 
-// Which destination each route sends to, and which columns it stamps.
+// Which columns each route stamps, and whether it counts as the conversion.
+//
+// Both follow routes convert, because each tier is only ever asked for one of
+// them: decision-makers get the LinkedIn page, practitioners get Facebook and
+// are deliberately never pointed at LinkedIn.
 const CLICK_ROUTES = {
   f: { url: LINKEDIN_PAGE, at: 'clicked_at', count: 'click_count', converts: true },
-  p: { url: PROOF_POST, at: 'post_clicked_at', count: 'post_click_count', converts: false },
-  b: { url: FACEBOOK_PAGE, at: 'fb_clicked_at', count: 'fb_click_count', converts: false },
+  b: { url: FACEBOOK_PAGE, at: 'fb_clicked_at', count: 'fb_click_count', converts: true },
+  p: { url: LINKEDIN_POST, at: 'post_clicked_at', count: 'post_click_count', converts: false },
 };
+
+/**
+ * The proof post exists on both networks. Practitioners must land on the
+ * Facebook copy — sending them to the LinkedIn one would put them a single
+ * click from the page that tier is being kept off.
+ */
+function postUrlFor(segment) {
+  return segment === 'individual' ? FACEBOOK_POST : LINKEDIN_POST;
+}
 
 // Link scanners in mail gateways fetch every URL before the human sees it.
 // Counting those as clicks would make the campaign look successful when nobody
@@ -56,7 +70,7 @@ async function loadRow(env, token) {
   const r = await rest(
     env,
     `${TABLE}?token=eq.${encodeURIComponent(token)}` +
-      `&select=id,org_id,email,status,click_count,clicked_at,post_click_count,post_clicked_at,fb_click_count,fb_clicked_at&limit=1`,
+      `&select=id,org_id,email,segment,status,click_count,clicked_at,post_click_count,post_clicked_at,fb_click_count,fb_clicked_at&limit=1`,
   );
   if (!r.ok) return null;
   const rows = await r.json();
@@ -87,6 +101,9 @@ function page(title, message) {
 async function handleClick(env, kind, token, req) {
   const route = CLICK_ROUTES[kind];
   const row = await loadRow(env, token);
+  // The post lives on both networks; which copy the reader gets depends on
+  // which tier they are in.
+  let destination = kind === 'p' ? postUrlFor(row?.segment) : route.url;
   if (row) {
     const isBot = BOT_UA.test(req.headers.get('user-agent') || '');
     if (!isBot) {
@@ -102,7 +119,7 @@ async function handleClick(env, kind, token, req) {
       });
     }
   }
-  return Response.redirect(route.url, 302);
+  return Response.redirect(destination, 302);
 }
 
 async function handleUnsubscribe(env, token, oneClick) {

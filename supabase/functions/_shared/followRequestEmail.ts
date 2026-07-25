@@ -58,11 +58,21 @@ export const PROOF_POST_URL =
   'https://www.linkedin.com/posts/trgxtrainingexchange_6-7-lakh-a-month-thats-what-building-activity-7486190600501813248-9QKW';
 
 /**
- * Facebook page. Asked of the practitioner tier only — that group is far more
- * likely to actually be on Facebook, and adding a second network to the
- * decision-maker email would dilute a single clean ask for no gain.
+ * Facebook page — the ONLY ask made of the practitioner tier.
+ *
+ * Deliberate audience split (Amit, 2026-07-25): the LinkedIn company page is
+ * being kept for decision-makers. Practitioners following it would be largely
+ * noise on the channel that matters commercially, so that tier is pointed at
+ * Facebook instead and never asked to follow on LinkedIn. Their whole email
+ * therefore stays on Facebook, proof post included — sending them to a
+ * LinkedIn post to read would put them one click from the page we are trying
+ * to keep clean.
  */
 export const FACEBOOK_PAGE_URL = 'https://www.facebook.com/122129596563175408';
+
+/** The same founder post, as cross-posted to the In-Sync Facebook page. */
+export const FACEBOOK_POST_URL =
+  'https://www.facebook.com/122129596563175408/posts/122130149805175408';
 
 export interface FollowEmailInput {
   firstName: string | null;
@@ -137,7 +147,7 @@ function pitchLines(segment: FollowSegment): string[] {
     "I'm Amit, founder of In-Sync. Nothing to sell here.",
     "We're an AI-first company building for Indian SMBs — the work is making the same output take less time and less money.",
     'I post about how that plays out in practice, not in theory. The last one was about running a full dev team for years, then rebuilding the whole product alone with AI — what got faster, what broke, and what it costs to run now — POST_LINK.',
-    "If that's worth having in your feed, that's the whole ask.",
+    "If that's worth having in your feed, following our Facebook page is the whole ask.",
   ];
 }
 
@@ -149,7 +159,7 @@ function reminderLines(segment: FollowSegment): string[] {
     ];
   }
   return [
-    "I wrote last week asking if you'd follow In-Sync — we're an AI-first company building for Indian SMBs, and I post about how the work actually gets done.",
+    "I wrote last week asking if you'd follow In-Sync on Facebook — we're an AI-first company building for Indian SMBs, and I post about how the work actually gets done.",
     "This is the second and last time I'll ask.",
   ];
 }
@@ -158,16 +168,14 @@ function reminderLines(segment: FollowSegment): string[] {
  * Bulletproof email button. Table-based with a VML fallback so it renders as a
  * real button in Outlook's Word engine, which ignores padding on <a>.
  *
- * `secondary` renders an outlined button. The practitioner email asks for two
- * follows, and two identical buttons would read as a template and split the
- * decision; one filled and one outlined keeps a single obvious primary action
- * while still making the second ask properly clickable.
+ * Exactly one button per email — each tier is asked for a single follow on a
+ * single network, so there is never a second action competing with it.
  */
-function button(url: string, label: string, secondary = false): string {
-  const brand = secondary ? '#1877F2' : '#0A66C2';
-  const fill = secondary ? '#ffffff' : brand;
-  const text = secondary ? brand : '#ffffff';
-  const margin = secondary ? '0 0 22px' : '26px 0 10px';
+function button(url: string, label: string, network: 'linkedin' | 'facebook' = 'linkedin'): string {
+  const brand = network === 'facebook' ? '#1877F2' : '#0A66C2';
+  const fill = brand;
+  const text = '#ffffff';
+  const margin = '26px 0 16px';
   return `
   <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:${margin};">
     <tr>
@@ -194,11 +202,12 @@ export function buildFollowEmail(input: FollowEmailInput): BuiltEmail {
   const { firstName, segment, followUrl, postUrl, facebookUrl, unsubscribeUrl, isReminder } = input;
   const subject = isReminder ? SUBJECTS[segment].reminder : SUBJECTS[segment].first;
   const rawBody = isReminder ? reminderLines(segment) : pitchLines(segment);
-  const liLabel = 'Follow In-Sync on LinkedIn';
-  const fbLabel = 'Follow on Facebook';
 
-  // Facebook is asked of the practitioner tier only, and only on the first send.
-  const askFacebook = segment === 'individual' && !isReminder && !!facebookUrl;
+  // One network per tier. Decision-makers are asked for the LinkedIn company
+  // page; practitioners are asked for Facebook and are never sent to LinkedIn.
+  const onFacebook = segment === 'individual';
+  const ctaUrl = onFacebook ? (facebookUrl ?? followUrl) : followUrl;
+  const ctaLabel = onFacebook ? 'Follow In-Sync on Facebook' : 'Follow In-Sync on LinkedIn';
 
   const closing = isReminder
     ? 'Thanks either way,'
@@ -216,11 +225,6 @@ export function buildFollowEmail(input: FollowEmailInput): BuiltEmail {
     .map((p) => `<p style="margin:0 0 15px;">${p}</p>`)
     .join('\n        ');
 
-  const fbLine = askFacebook
-    ? `<p style="margin:0 0 8px;font-size:14px;color:#4b5563;">Same posts go up on Facebook, if that's more where you are:</p>
-          ${button(facebookUrl!, fbLabel, true)}`
-    : '';
-
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -237,8 +241,7 @@ export function buildFollowEmail(input: FollowEmailInput): BuiltEmail {
                     font-size:15px;line-height:1.6;color:#1f2937;">
           <p style="margin:0 0 15px;">${greeting(firstName)},</p>
           ${paras}
-          ${button(followUrl, liLabel)}
-          ${fbLine}
+          ${button(ctaUrl, ctaLabel, onFacebook ? 'facebook' : 'linkedin')}
           <p style="margin:0 0 15px;">${closing}</p>
           <p style="margin:0;">Amit<br><span style="color:#6b7280;">In-Sync</span></p>
           <div style="margin-top:30px;padding-top:14px;border-top:1px solid #e5e7eb;font-size:12px;color:#9ca3af;line-height:1.5;">
@@ -256,8 +259,7 @@ export function buildFollowEmail(input: FollowEmailInput): BuiltEmail {
     `${greeting(firstName)},`,
     '',
     ...textBody.flatMap((p) => [p, '']),
-    `${liLabel}: ${followUrl}`,
-    ...(askFacebook ? ['', `${fbLabel}: ${facebookUrl}`] : []),
+    `${ctaLabel}: ${ctaUrl}`,
     '',
     closing,
     '',

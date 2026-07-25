@@ -76,6 +76,13 @@ function Metric({
 }
 
 function CampaignCard({ c }: { c: CampaignStats }) {
+  // Each tier is asked for exactly one network: decision-makers for the
+  // LinkedIn page, practitioners for Facebook. So "follows" means a different
+  // column per campaign, and only that one is the conversion.
+  const onFacebook = c.segment === "individual";
+  const follows = onFacebook ? c.facebook_clicks : c.follow_clicks;
+  const network = onFacebook ? "Facebook" : "LinkedIn";
+
   const deliveryRate = c.sent > 0 ? c.delivered / c.sent : 0;
   const bounceRate = c.sent > 0 ? c.bounced / c.sent : 0;
   // Under ~95% delivery the list needs attention; over 2% bounce is a
@@ -90,6 +97,7 @@ function CampaignCard({ c }: { c: CampaignStats }) {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <CardTitle className="text-base">{c.campaign_name}</CardTitle>
           <div className="flex items-center gap-2">
+            <Badge variant="outline">asks for {network}</Badge>
             <Badge variant={targetMet ? "default" : "secondary"}>
               {c.delivered_today} / {DAILY_DELIVERY_TARGET} delivered today
             </Badge>
@@ -100,9 +108,9 @@ function CampaignCard({ c }: { c: CampaignStats }) {
       <CardContent className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Metric
-            label="Follow clicks"
-            value={num(c.follow_clicks)}
-            sub={`${pct(c.follow_clicks, c.delivered)} of delivered`}
+            label={`${network} follow clicks`}
+            value={num(follows)}
+            sub={`${pct(follows, c.delivered)} of delivered`}
             tone="good"
           />
           <Metric
@@ -116,9 +124,6 @@ function CampaignCard({ c }: { c: CampaignStats }) {
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {c.segment === "individual" && (
-            <Metric label="Facebook clicks" value={num(c.facebook_clicks)} sub={`${pct(c.facebook_clicks, c.delivered)} of delivered`} />
-          )}
           <Metric label="Reminders sent" value={num(c.reminders_sent)} />
           <Metric label="Bounced" value={num(c.bounced)} sub={pct(c.bounced, c.sent)} tone={bounceTone} />
           <Metric
@@ -162,7 +167,9 @@ export default function FollowCampaigns() {
   const totals = (data ?? []).reduce(
     (a, c) => ({
       delivered: a.delivered + c.delivered,
-      follows: a.follows + c.follow_clicks,
+      // Count each campaign's own network — practitioners are asked for
+      // Facebook, decision-makers for LinkedIn.
+      follows: a.follows + (c.segment === "individual" ? c.facebook_clicks : c.follow_clicks),
       queued: a.queued + c.queued,
     }),
     { delivered: 0, follows: 0, queued: 0 },
@@ -216,8 +223,13 @@ export default function FollowCampaigns() {
               </CardHeader>
               <CardContent className="space-y-1.5 text-xs text-muted-foreground">
                 <p>
+                  <strong className="text-foreground">Each campaign asks for one network only.</strong>{" "}
+                  Decision makers are asked for the LinkedIn page; practitioners are asked for Facebook
+                  and are never pointed at LinkedIn, to keep that page's audience commercially useful.
+                </p>
+                <p>
                   <strong className="text-foreground">Follow clicks</strong> is the conversion metric.
-                  LinkedIn does not report who followed because of an email, so a click on the follow
+                  Neither network reports who followed because of an email, so a click on the follow
                   button is the closest we can observe — actual page follower growth shows on the
                   Performance page.
                 </p>
