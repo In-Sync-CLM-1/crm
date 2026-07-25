@@ -1,0 +1,10 @@
+name = "crm-follow-link"
+main = "index.js"
+compatibility_date = "2026-05-01"
+workers_dev = false
+
+# Custom domain so every link in the campaign sits on in-sync.co.in — the same
+# domain the mail is DKIM-signed by. Cloudflare manages the DNS record for this.
+routes = [
+  { pattern = "go.in-sync.co.in", custom_domain = true }
+]

@@ -40,6 +40,13 @@ verify_jwt = false
 [functions.mkt-ad-conversion-upload]
 verify_jwt = false
 
+# Resend delivery events for the founder follow-request campaign. Svix-signed,
+# no Supabase JWT — with verification on, the gateway 401s every bounce and
+# complaint notice before the signature check runs, and the campaign loses the
+# only signal that protects the shared sending domain.
+[functions.mkt-follow-webhook]
+verify_jwt = false
+
 [functions.mkt-ad-funnel]
 verify_jwt = false
 

@@ -25,3 +25,5 @@ accounting-director-salary-close|accounting-director-salary-close||30 1 1 * *
 arohan-archive|mkt-arohan-archive||0 20 * * *
 ad-campaign-generator|mkt-ad-campaign-generator||0 4 * * *
 linkedin-follower-demographics|mkt-linkedin-follower-demographics||0 5 * * 1
+follow-topup|mkt-follow-topup||0 17 * * *
+follow-sender|mkt-follow-sender||30 4 * * 1-5

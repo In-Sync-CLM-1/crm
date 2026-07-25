@@ -8,6 +8,11 @@ export interface ResendEmailPayload {
   to: string[];
   subject: string;
   html: string;
+  /**
+   * Plain-text alternative. Optional, but supply it for anything sent to a
+   * cold or external audience — an HTML-only message is itself a spam signal.
+   */
+  text?: string;
   reply_to?: string[];
   cc?: string[];
   headers?: Record<string, string>;
