@@ -17,6 +17,15 @@ export interface ResendEmailPayload {
   cc?: string[];
   headers?: Record<string, string>;
   tags?: Array<{ name: string; value: string }>;
+  /**
+   * Send through a specific Resend account instead of the fleet's default.
+   *
+   * Only cold/bulk marketing should ever set this. The default key carries
+   * invoices, password resets and system alerts for every product, and the
+   * whole point of overriding it is to keep a campaign's sending quota and
+   * bounce record off that account.
+   */
+  apiKeyOverride?: string;
 }
 
 export interface ResendResult {
@@ -29,7 +38,8 @@ export interface ResendResult {
  * Send an email via the Resend API.
  */
 export async function sendViaResend(payload: ResendEmailPayload): Promise<ResendResult> {
-  const apiKey = Deno.env.get('RESEND_API_KEY');
+  const { apiKeyOverride, ...body } = payload;
+  const apiKey = apiKeyOverride || Deno.env.get('RESEND_API_KEY');
   if (!apiKey) {
     return { success: false, error: 'RESEND_API_KEY not configured' };
   }
@@ -40,7 +50,7 @@ export async function sendViaResend(payload: ResendEmailPayload): Promise<Resend
       'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(body),
   });
 
   const result = await response.json();

@@ -54,14 +54,29 @@ Deno.serve(async (req) => {
   // Deliberately its OWN secret, not the shared RESEND_WEBHOOK_SECRET —
   // that one belongs to the inbound-email webhook and each Resend endpoint is
   // signed with a different key, so reusing the name would break both.
-  const secret = Deno.env.get('FOLLOW_RESEND_WEBHOOK_SECRET');
+  //
+  // TWO secrets are accepted because the campaign's sending moved between
+  // Resend accounts. Each account signs with its own key, and mail sent before
+  // the move keeps reporting deliveries, bounces and complaints from the old
+  // one for days afterwards. Accepting only the new key would silently 401
+  // every event still in flight for messages already out — and a bounce that
+  // never lands is worse than useless, because the delivery-rate maths reads
+  // the gap as undelivered and inflates tomorrow's send.
+  const secrets = [
+    Deno.env.get('FOLLOW_RESEND_WEBHOOK_SECRET'),
+    Deno.env.get('FOLLOW_RESEND_WEBHOOK_SECRET_ALT'),
+  ].filter((s): s is string => !!s);
+
   const id = req.headers.get('svix-id');
   const ts = req.headers.get('svix-timestamp');
   const sig = req.headers.get('svix-signature');
 
-  if (secret) {
+  if (secrets.length) {
     if (!id || !ts || !sig) return new Response('Missing signature headers', { status: 401 });
-    const valid = await verifySvix(secret, id, ts, raw, sig).catch(() => false);
+    let valid = false;
+    for (const secret of secrets) {
+      if (await verifySvix(secret, id, ts, raw, sig).catch(() => false)) { valid = true; break; }
+    }
     if (!valid) return new Response('Invalid signature', { status: 401 });
   }
 

@@ -66,6 +66,26 @@ const SEND_INTERVAL_MS = 600;
  */
 const DEADLINE_MS = 110_000;
 
+/**
+ * Send this campaign through its own Resend account.
+ *
+ * The fleet's default account is on a free plan whose daily quota this campaign
+ * alone exhausts — the first real run had its last 19 sends rejected outright
+ * with "you have reached your daily email sending quota", which is a silent cap
+ * on the campaign and, worse, a cap shared with the invoices and password
+ * resets that go out from the same account.
+ *
+ * Splitting the accounts fixes both halves: the campaign gets a paid quota, and
+ * a bad day of cold-email bounces is recorded against an account that carries
+ * nothing else. The sending DOMAIN is unchanged — in-sync.co.in is verified on
+ * both accounts, so the mail still comes from amit@in-sync.co.in exactly as
+ * before, with no DNS change and no difference to the recipient.
+ *
+ * Falls back to the fleet key if unset, so a missing secret degrades to the old
+ * behaviour rather than halting the campaign.
+ */
+const FOLLOW_RESEND_KEY = Deno.env.get('FOLLOW_RESEND_API_KEY') || undefined;
+
 function ok(data: unknown) {
   return new Response(JSON.stringify(data), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 }
@@ -171,6 +191,7 @@ Deno.serve(async (req) => {
             text: mail.text,
             reply_to: [REPLY_TO],
             headers: buildUnsubscribeHeaders(`${LINK_BASE}/u/TESTTOKEN0000000`),
+            apiKeyOverride: FOLLOW_RESEND_KEY,
           });
           out.push({ segment, isReminder, sent: r.success, id: r.id, error: r.error });
           await sleep(SEND_INTERVAL_MS);
@@ -217,6 +238,7 @@ Deno.serve(async (req) => {
         { name: 'campaign', value: FOLLOW_CAMPAIGNS[row.segment].key },
         { name: 'stage', value: isReminder ? 'reminder' : 'first' },
       ],
+      apiKeyOverride: FOLLOW_RESEND_KEY,
     });
 
     const now = new Date().toISOString();
