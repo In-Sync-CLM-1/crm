@@ -48,8 +48,32 @@ const BIG_HEADCOUNT_BANDS = new Set([
   '501-1000', '1001-5000', '5001-10000', '10001-100000', '100001+',
 ]);
 const MAX_TURNOVER_USD_M = 30;
-const BATCH_TARGET = 150;        // queued per segment per run — a 1.5-day cushion
 const SOURCE_PAGE = 1500;        // candidates pulled per segment per run
+
+/**
+ * Keep a full week of audience standing ready in front of the sender.
+ *
+ * This is a queue DEPTH to maintain, not an amount to add per run: each run
+ * tops the segment back up to WEEK_TARGET and does nothing once it is there.
+ * Sizing it against the sender's real appetite (~109 a day per tier, which is
+ * the 100 delivery target plus its bounce overshoot) puts a week at ~770.
+ *
+ * A week of buffer is what makes the source list's yield problem harmless. The
+ * screens reject the large majority of candidates, so a night that scans badly
+ * can easily return less than a day's worth — with a shallow queue that is an
+ * empty send tomorrow, whereas against a week of cover it is invisible.
+ */
+const DAILY_SEND_PER_SEGMENT = 109;
+const WEEK_TARGET = DAILY_SEND_PER_SEGMENT * 7;   // ~770 queued per segment
+
+/**
+ * Stop scanning before the platform's 150s idle kill — same failure the sender
+ * hit. Building a week of buffer scans far more of the source than a 150-row
+ * top-up ever did, so this function is now genuinely capable of running long.
+ * The cursor is saved on the way out, so a run that stops early simply resumes
+ * where it left off rather than re-screening the same rows tomorrow.
+ */
+const DEADLINE_MS = 110_000;
 
 function ok(data: unknown) {
   return new Response(JSON.stringify(data), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -185,8 +209,12 @@ Deno.serve(async (req) => {
   const rmpl = createClient(RMPL_URL, rmplKey);
 
   const body = await req.json().catch(() => ({}));
-  const target: number = Math.min(Number(body.target) || BATCH_TARGET, 500);
+  const depthTarget: number = Math.min(Number(body.target) || WEEK_TARGET, 2000);
   const dryRun = body.dry_run === true;
+
+  const startedAt = Date.now();
+  const outOfTime = () => Date.now() - startedAt > DEADLINE_MS;
+  let ranOutOfTime = false;
 
   const { data: org } = await supabase.from('organizations').select('id').limit(1).single();
   if (!org) return err(500, 'no organization');
@@ -237,6 +265,7 @@ Deno.serve(async (req) => {
 
   const mxCache = new Map<string, boolean>();
   const queued: Record<string, number> = { leader: 0, individual: 0 };
+  const depth: Record<string, { before: number; target: number }> = {};
   const rejected: Record<string, number> = {};
   const bump = (k: string) => { rejected[k] = (rejected[k] || 0) + 1; };
 
@@ -251,10 +280,23 @@ Deno.serve(async (req) => {
       .maybeSingle();
     let offset = Number((cursorRow?.config_value as { offset?: number })?.offset || 0);
 
+    // Only make up the shortfall against a week of cover — a segment already
+    // deep enough is skipped rather than grown without limit.
+    const { count: alreadyQueued } = await supabase
+      .from('mkt_follow_campaign')
+      .select('id', { count: 'exact', head: true })
+      .eq('org_id', orgId).eq('segment', segment).eq('status', 'queued');
+
+    const standing = alreadyQueued ?? 0;
+    const target = Math.max(0, depthTarget - standing);
+    depth[segment] = { before: standing, target: depthTarget };
+    if (target === 0) { queued[segment] = 0; continue; }
+
     const toInsert: Record<string, unknown>[] = [];
     let scanned = 0;
 
-    while (toInsert.length < target && scanned < SOURCE_PAGE * 4) {
+    while (toInsert.length < target && scanned < SOURCE_PAGE * 20) {
+      if (outOfTime()) { ranOutOfTime = true; break; }
       const { data: rows, error } = await rmpl
         .from('master')
         .select('id,name,salutation,designation,job_level_updated,official,personal_email_id,company_name,city,state,emp_size_bucket,turnover_usd_million')
@@ -347,5 +389,14 @@ Deno.serve(async (req) => {
     queued[segment] = toInsert.length;
   }
 
-  return ok({ success: true, dry_run: dryRun, queued, rejected, mx_domains_checked: mxCache.size });
+  return ok({
+    success: true,
+    dry_run: dryRun,
+    queued,
+    depth,
+    stopped_early_on_time: ranOutOfTime,
+    elapsed_ms: Date.now() - startedAt,
+    rejected,
+    mx_domains_checked: mxCache.size,
+  });
 });

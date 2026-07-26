@@ -49,6 +49,23 @@ const LINK_BASE = 'https://go.in-sync.co.in';
 // Resend's published rate limit is 2 requests/second. Stay under it.
 const SEND_INTERVAL_MS = 600;
 
+/**
+ * Stop sending and return normally before the platform kills the request.
+ *
+ * Edge functions are terminated at 150s of no response bytes, and this function
+ * writes nothing until the very end — so a run is "idle" for its entire length
+ * however much work it is doing. At SEND_INTERVAL_MS a full two-tier run is
+ * ~131s of pure sleeping plus query overhead, which sails straight past that
+ * limit: the first real run died mid-way through the second tier.
+ *
+ * A kill is not silent data loss (every row is marked the instant its own send
+ * returns, so nothing double-sends on the next run) but it does mean the reply
+ * is an error page instead of the stats, which is how a partial run looks
+ * identical to a total failure. Finishing early and saying so is strictly
+ * better than being killed.
+ */
+const DEADLINE_MS = 110_000;
+
 function ok(data: unknown) {
   return new Response(JSON.stringify(data), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 }
@@ -166,6 +183,16 @@ Deno.serve(async (req) => {
   const stats: Record<string, Record<string, number>> = {};
   const errors: string[] = [];
 
+  const startedAt = Date.now();
+  const outOfTime = () => Date.now() - startedAt > DEADLINE_MS;
+  let ranOutOfTime = false;
+
+  // One tier per invocation keeps a run inside the platform's window. The two
+  // tiers are scheduled as separate cron workers; passing no segment still does
+  // both, which is what a manual catch-up run wants.
+  const only = body.segment === 'leader' || body.segment === 'individual' ? body.segment : null;
+  const segments = (only ? [only] : ['leader', 'individual']) as readonly FollowSegment[];
+
   async function deliver(row: Row, isReminder: boolean): Promise<boolean> {
     const mail = buildFollowEmail({
       firstName: row.first_name,
@@ -209,7 +236,7 @@ Deno.serve(async (req) => {
     return true;
   }
 
-  for (const segment of ['leader', 'individual'] as const) {
+  for (const segment of segments) {
     stats[segment] = { new_sent: 0, reminders_sent: 0, failed: 0 };
 
     // Measure this tier's own delivered/sent ratio over the recent window,
@@ -245,6 +272,7 @@ Deno.serve(async (req) => {
 
     for (const row of (fresh || []) as Row[]) {
       if (dryRun) { stats[segment].new_sent++; continue; }
+      if (outOfTime()) { ranOutOfTime = true; break; }
       const sent = await deliver(row, false);
       sent ? stats[segment].new_sent++ : stats[segment].failed++;
       await sleep(SEND_INTERVAL_MS);
@@ -265,6 +293,7 @@ Deno.serve(async (req) => {
 
     for (const row of (due || []) as Row[]) {
       if (dryRun) { stats[segment].reminders_sent++; continue; }
+      if (outOfTime()) { ranOutOfTime = true; break; }
       const sent = await deliver(row, true);
       sent ? stats[segment].reminders_sent++ : stats[segment].failed++;
       await sleep(SEND_INTERVAL_MS);
@@ -278,5 +307,16 @@ Deno.serve(async (req) => {
     .eq('org_id', orgId)
     .eq('status', 'queued');
 
-  return ok({ success: true, dry_run: dryRun, stats, queue_remaining: remaining ?? null, errors: errors.slice(0, 10) });
+  return ok({
+    success: true,
+    dry_run: dryRun,
+    segments,
+    stats,
+    // True means the run stopped short of its own plan; the leftovers stay
+    // queued and the next run picks them up. Silence here is the normal case.
+    stopped_early_on_time: ranOutOfTime,
+    elapsed_ms: Date.now() - startedAt,
+    queue_remaining: remaining ?? null,
+    errors: errors.slice(0, 10),
+  });
 });
