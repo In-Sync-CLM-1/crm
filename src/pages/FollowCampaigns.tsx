@@ -194,7 +194,7 @@ export default function FollowCampaigns() {
           <Card>
             <CardContent className="py-10 text-center text-sm text-muted-foreground">
               No campaign activity yet. The queue fills overnight and the first emails go out on the
-              next weekday send.
+              next daily send.
             </CardContent>
           </Card>
         ) : (
