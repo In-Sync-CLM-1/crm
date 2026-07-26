@@ -295,7 +295,12 @@ Deno.serve(async (req) => {
     const toInsert: Record<string, unknown>[] = [];
     let scanned = 0;
 
-    while (toInsert.length < target && scanned < SOURCE_PAGE * 20) {
+    // The screens are severe — roughly three usable contacts per thousand rows
+    // scanned — so the scan budget has to be enormous relative to the target or
+    // it, rather than the clock, becomes the thing that ends the run. Measured
+    // at ~30k rows in 20s, this is about as far as the deadline can carry it;
+    // the deadline is the real limit and this is only a backstop.
+    while (toInsert.length < target && scanned < SOURCE_PAGE * 120) {
       if (outOfTime()) { ranOutOfTime = true; break; }
       const { data: rows, error } = await rmpl
         .from('master')
