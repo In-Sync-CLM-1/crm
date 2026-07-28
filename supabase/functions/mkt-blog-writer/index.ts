@@ -43,16 +43,23 @@ const POSTS_PER_DAY = 1;   // one considered post/day beats several competing wi
 const BUFFER_DAYS = 7;     // content prewritten at least a week ahead
 const SLOT_COUNT = 9;      // mkt_linkedin_config.experiment_slots length
 
-// Format rotation — 1 text : 2 image : 3 carousel : 2 video across 8 days.
-// Every night's post used to be a single long text block; this spreads the
-// existing nightly image/video generation across LinkedIn post types instead
-// of letting it go unused (only Instagram/YouTube ever saw it).
-// 2026-07-24: 'poll' added (engagement-quality feedback — "conduct a poll
-// sometimes"), replacing one 'video' slot so format diversity stays at 8
-// slots; appears roughly every 2 days at 4 posts/day.
-const FORMAT_CYCLE = ['text', 'image', 'carousel', 'poll', 'image', 'carousel', 'video', 'carousel'] as const;
+// Format rotation across days. 'product' added 2026-07-28: every other format
+// here is brand-story thought-leadership where the product gets one soft
+// mention — this is the one slot per cycle that actually shows the real,
+// live product screen and names a specific feature, so the feed isn't 100%
+// "flexing" with nothing concrete behind it.
+const FORMAT_CYCLE = ['text', 'image', 'carousel', 'poll', 'product', 'image', 'carousel', 'video', 'carousel'] as const;
 type PostFormat = typeof FORMAT_CYCLE[number];
 const CAROUSEL_SLIDE_COUNT = 8;
+
+// Real, live screenshots of each product's own site (captured by
+// synthetic-monitor/capture-product-screenshots.mjs, refresh periodically as
+// the products' UIs change) — never an AI-generated stock photo standing in
+// for the actual app.
+const PRODUCT_SCREENSHOT_BASE = 'https://crm-marketing-store.echocommunicator.workers.dev/product-screenshots';
+function productScreenshotUrl(productKey: string): string {
+  return `${PRODUCT_SCREENSHOT_BASE}/${productKey}.jpg`;
+}
 
 // ── Time helpers ──────────────────────────────────────────────────────────────
 
@@ -564,6 +571,71 @@ Return JSON only:
   return data;
 }
 
+// ── Product showcase (2026-07-28) ───────────────────────────────────────────
+// Every other format treats the product as a one-line proof point inside a
+// brand-story narrative. This is the one slot per cycle that does the
+// opposite: names ONE real, specific, concrete feature — pulled from the
+// product's own notes when available — against the REAL screenshot of that
+// product's live site (see productScreenshotUrl), instead of another
+// AI-generated stock photo. The point is to show something true and
+// checkable, not to make another argument.
+
+interface ProductShowcaseCaption {
+  title: string;
+  caption: string;
+  strategy_note: string;
+  sources?: SourceRef[];
+}
+
+async function generateProductShowcase(
+  product: { product_name: string; product_url: string; product_notes?: string | null; aha_event?: string | null },
+  icp: Record<string, unknown> | null,
+  dayIndex: number,
+): Promise<ProductShowcaseCaption> {
+  const industries = Array.isArray(icp?.industries) ? (icp.industries as string[]).slice(0, 3).join(', ') : 'B2B';
+  const designations = Array.isArray(icp?.designations) ? (icp.designations as string[]).slice(0, 3).join(', ') : 'decision makers';
+  const painPoints = Array.isArray(icp?.pain_points) ? (icp.pain_points as string[]).slice(0, 3).join('; ') : '';
+  const hasNotes = typeof product.product_notes === 'string' && product.product_notes.trim().length > 0;
+
+  const prompt = `You are Arohan, the autonomous marketing AI for In-Sync, a B2B SaaS platform company.
+
+${BRAND_STORY}
+
+AUDIENCE: ${designations} in ${industries}
+THEIR PAIN POINTS: ${painPoints}
+${product.aha_event ? `AHA MOMENT: ${product.aha_event}` : ''}
+
+${hasNotes ? `REAL FEATURE NOTES for ${product.product_name} (use these — do not invent capabilities not listed here):\n${product.product_notes}` : `No detailed feature notes are on file for ${product.product_name} yet — write generally about what the screenshot shows (a real screen from ${product.product_url}) without inventing specific feature names or numbers that aren't visible in it.`}
+
+This post is different from your usual brand-story posts: it is a PRODUCT SHOWCASE. The image is a REAL, live screenshot of ${product.product_name}'s own site — not an AI-generated photo. Your job is to write the caption that goes with it.
+
+RULES:
+- Name ONE specific, concrete feature or capability — the more literal and checkable, the better (e.g. "AI resume parsing that fills the candidate profile from a dropped PDF" beats "powerful AI features").
+${hasNotes ? '- If the notes above include a real, specific number (time saved, % improvement, count), use it — that is the whole point of this format: real, not vague.' : ''}
+- Write as an honest, specific claim a competitor could not casually copy-paste, not generic praise ("game-changing", "revolutionary", "seamless").
+- 2-4 short lines, 250-450 characters total.
+- End with 3-4 relevant hashtags on their own line (include one naming ${product.product_name} directly).
+- No markdown, no bullet points, no raw URL (say "link in comments" if you need a CTA).
+
+strategy_note: 1-2 sentences for a human reviewer explaining which specific feature/claim you picked and why it fits this audience.
+
+Return JSON only:
+{
+  "title": "internal tracking title, max 120 chars",
+  "caption": "the full caption as described above",
+  "strategy_note": "explanation as described above",
+  ${SOURCE_JSON_FIELD}
+}`;
+
+  const { data } = await callLLMJson<ProductShowcaseCaption>(prompt, {
+    model: 'sonnet',
+    max_tokens: 600,
+    temperature: 0.7,
+  });
+
+  return data;
+}
+
 // ── Carousel content (8-slide swipe deck) ──────────────────────────────────────
 
 interface CarouselContent {
@@ -692,7 +764,7 @@ Deno.serve(async (req) => {
     // 2. Load products (needed for rotation before picking the gap)
     const { data: products, error: prodErr } = await supabase
       .from('mkt_products')
-      .select('product_key, product_name, product_url')
+      .select('product_key, product_name, product_url, product_notes, aha_event')
       .eq('org_id', config.org_id)
       .eq('active', true)
       .order('product_key');
@@ -964,6 +1036,23 @@ Deno.serve(async (req) => {
         blog_excerpt: draft.caption + sourceLines,
         linkedin_short_caption: draft.caption + sourceLines,
         image_url: imageUrl || null,
+        content_strategy_note: draft.strategy_note || null,
+      };
+
+    } else if (postFormat === 'product') {
+      // 6b2. Product showcase (2026-07-28) — the one slot per cycle that shows
+      // the real, live product screen (captured by
+      // synthetic-monitor/capture-product-screenshots.mjs) and names one
+      // specific, concrete feature — not another brand-story mention.
+      const draft = await generateProductShowcase(product, icp, postSeq);
+      const sourceLines = await verifiedSourceLines(draft.sources);
+
+      row = {
+        ...baseRow,
+        blog_title: draft.title,
+        blog_excerpt: draft.caption + sourceLines,
+        linkedin_short_caption: draft.caption + sourceLines,
+        image_url: productScreenshotUrl(product.product_key),
         content_strategy_note: draft.strategy_note || null,
       };
 

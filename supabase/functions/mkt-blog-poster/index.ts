@@ -235,7 +235,7 @@ Deno.serve(async (req) => {
       let media: LinkedInMedia | undefined;
       let poll: LinkedInPoll | undefined;
 
-      if (format === 'image' && draft.image_url) {
+      if ((format === 'image' || format === 'product') && draft.image_url) {
         const id = await uploadImageToLinkedIn(identity.token, authorUrn, draft.image_url as string);
         media = { id };
       } else if (format === 'video' && draft.video_url) {
