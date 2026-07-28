@@ -1,12 +1,17 @@
 /**
  * mkt-blog-writer — Arohan's content generation step.
  *
- * Maintains a PREWRITTEN BUFFER: 4 posts per day for every day in the next
- * 7 days (28 drafts), so a human can review and intervene well before
+ * Maintains a PREWRITTEN BUFFER: 1 post per day for every day in the next
+ * 7 days (7 drafts), so a human can review and intervene well before
  * anything goes live. Runs every 30 minutes (cron: star-slash-30 UTC) and tops the
  * buffer up by ONE draft per invocation (media generation is heavy — a video
  * draft can take ~2 minutes), oldest gap first. When the buffer is full it
  * exits immediately.
+ *
+ * Every post is grounded in a LIVE web search finding (researchThemeFact),
+ * not the writer LLM's own recall — the 30-day baseline before this (2026-07-28)
+ * showed stats like a 2012 study cited as current, because the model was never
+ * actually looking anything up, just producing something plausible-sounding.
  *
  * Each draft carries its own day_seq (0-3, position within the day) and
  * linkedin_slot_index (posting time). Product/format/angle rotate on the
@@ -34,7 +39,7 @@ import { generatePoll } from '../_shared/pollVoice.ts';
 const LINKEDIN_ORG_ID = Deno.env.get('LINKEDIN_ORG_ID') || '35932282';
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000; // UTC+5:30
 
-const POSTS_PER_DAY = 4;   // minimum postings per day (user requirement)
+const POSTS_PER_DAY = 1;   // one considered post/day beats several competing with each other (2026-07-28, engagement-quality decision)
 const BUFFER_DAYS = 7;     // content prewritten at least a week ahead
 const SLOT_COUNT = 9;      // mkt_linkedin_config.experiment_slots length
 
@@ -296,6 +301,62 @@ async function verifiedSourceLines(sources: SourceRef[] | undefined): Promise<st
   return '\n\n' + good.map((s) => `Source: ${s.label} — ${s.url}`).join('\n');
 }
 
+// ── Live research grounding (2026-07-28) ────────────────────────────────────
+// The writer prompt used to just tell the LLM to "cite a real statistic" and
+// trust its training-data recall — which is how a 2012 stat ended up quoted
+// as if it were fresh. This does an actual web search per post and hands the
+// writer a real, dated finding to build around instead of hoping it recalls
+// something both true and current.
+
+interface ResearchFinding {
+  finding: string;
+  source_label: string;
+  source_url: string;
+}
+
+async function researchThemeFact(
+  themeHint: string,
+  industries: string,
+  designations: string,
+): Promise<ResearchFinding | null> {
+  const prompt = `Search the web for ONE current, real, specific statistic, survey result, or news development from the last 18 months that supports this idea, for a B2B audience of ${designations} in ${industries}:
+
+"${themeHint}"
+
+Requirements:
+- Must be real and verifiable — search first, do not answer from memory.
+- Prefer a named, credible source (Gartner, McKinsey, NASSCOM, RBI, Forrester, a recent industry survey, a named company's public numbers).
+- Must be specific and quantified (a percentage, a rupee/dollar figure, hours saved, a named recent event) — not a vague trend statement.
+- Must be recent enough to feel current, not a decade-old figure that has been repeated everywhere.
+
+Return JSON only:
+{"finding": "one sentence stating the fact in plain English, phrased as it should be quoted in a LinkedIn post", "source_label": "publisher name, year", "source_url": "the direct URL you found it at"}`;
+
+  try {
+    const { data } = await callLLMJson<ResearchFinding>(prompt, {
+      model: 'sonnet',
+      max_tokens: 800,
+      temperature: 0.3,
+      webSearch: true,
+      maxSearchUses: 3,
+    });
+    if (!data?.finding || !data?.source_url) return null;
+    return data;
+  } catch (e) {
+    console.warn('[blog-writer] research step failed, falling back to model recall:', e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
+function researchBlock(finding: ResearchFinding | null): string {
+  if (!finding) {
+    return `No live research finding was available for this post — fall back to a real, well-known statistic from published research (Gartner, McKinsey, NASSCOM, RBI, Forrester) that you are confident actually exists. Do NOT invent one.`;
+  }
+  return `TODAY'S RESEARCH FINDING (found via live web search moments ago — build the post around THIS, do not invent or recall a different statistic):
+${finding.finding}
+Source: ${finding.source_label} — ${finding.source_url}`;
+}
+
 // ── Brand-led strategy (2026-07-15) ─────────────────────────────────────────
 // Every post promotes the In-Sync PLATFORM story; individual products appear
 // only as proof points inside the narrative, never as standalone offerings.
@@ -364,6 +425,7 @@ async function generateBlogPost(
 
   const angleHint = angleFor(dayIndex);
   const themeHint = themeFor(dayIndex);
+  const research = await researchThemeFact(themeHint, industries, designations);
 
   const prompt = `You are Arohan, the autonomous marketing AI for In-Sync, a B2B SaaS platform company.
 
@@ -376,12 +438,14 @@ AUDIENCE: ${designations} in ${industries}
 THEIR PAIN POINTS: ${painPoints}
 ${ahaEvent ? `AHA MOMENT: ${ahaEvent}` : ''}
 
+${researchBlock(research)}
+
 Write a high-engagement LinkedIn thought leadership post promoting the In-Sync BRAND and platform story — NOT a pitch for any single product.
 
 PRIMARY OBJECTIVE (2026-07-24, revised — engagement is now co-equal, not secondary): make the reader recognise the cost of running their business on disconnected tools AND actually stop scrolling to react — comment, share, or argue. A post nobody comments on doesn't get distributed by LinkedIn's own algorithm and doesn't build the brand either, so a technically-accurate post that reads as safe corporate thought-leadership has failed regardless of how well-sourced it is. Risk something in every post: a real position, a specific admission, a claim some readers will want to push back on. If a draft could have been posted by any competitor about any platform, it has failed.
 
 CONTENT STANDARDS:
-1. Every factual claim must be based on verifiable, real-world data. Use actual statistics from published research, government reports, or well-known analysts (Gartner, McKinsey, NASSCOM, RBI, Forrester, etc.). Cite the source inline naturally (e.g. "According to a 2024 NASSCOM report..."). Do NOT fabricate numbers. ${NUMERIC_CLAIMS_RULE}
+1. Anchor the post on TODAY'S RESEARCH FINDING above — that is a real, just-verified fact, not something to second-guess or replace. Cite the source inline naturally (e.g. "According to a 2024 NASSCOM report..."). Do NOT fabricate additional numbers beyond it. ${NUMERIC_CLAIMS_RULE}
 2. Write specifically for ${designations} in ${industries} — use their exact vocabulary, their operational context, their real daily frustrations. Avoid generic B2B language.
 3. THE PLATFORM IS THE HERO. Do not position ${product.product_name} as a standalone offering. Where the argument needs a concrete example, use ${product.product_name} in ONE paragraph as a proof point of what "one backbone" looks like in practice — then return to the platform story.
 
@@ -454,6 +518,7 @@ async function generateShortCaption(
   const painPoints = Array.isArray(icp?.pain_points) ? (icp.pain_points as string[]).slice(0, 3).join('; ') : '';
   const angleHint = angleFor(dayIndex);
   const themeHint = themeFor(dayIndex);
+  const research = await researchThemeFact(themeHint, industries, designations);
 
   const prompt = `You are Arohan, the autonomous marketing AI for In-Sync, a B2B SaaS platform company.
 
@@ -465,6 +530,8 @@ EXAMPLE PRODUCT (proof point only, optional in this short form): ${product.produ
 AUDIENCE: ${designations} in ${industries}
 THEIR PAIN POINTS: ${painPoints}
 
+${researchBlock(research)}
+
 Write a SHORT LinkedIn caption to accompany a ${mediaKind === 'video' ? 'short vertical video' : 'photo'} post promoting the In-Sync BRAND — the one-platform story — NOT a pitch for any single product. The visual carries the message; this caption should NOT try to be a full essay.
 
 RULES:
@@ -473,7 +540,7 @@ RULES:
 - End with 3-4 relevant hashtags on their own line (brand/theme hashtags, not product ones)
 - No markdown, no bullet points
 - The platform is the hero; mention ${product.product_name} only if it fits naturally as a quick example
-- If you quote a statistic, it must come from a real published report/survey, named inline (e.g. "per a 2024 NASSCOM study"). ${NUMERIC_CLAIMS_RULE}
+- If you quote a statistic, use TODAY'S RESEARCH FINDING above, named inline (e.g. "per a 2024 NASSCOM study"). ${NUMERIC_CLAIMS_RULE}
 
 image_keywords: 4 specific visual search terms for a compelling B2B photo that dramatises today's theme in an Indian business context (e.g. the chaos of disconnected tools, or a team aligned around one screen).
 
@@ -519,6 +586,7 @@ async function generateCarouselContent(
   const painPoints = Array.isArray(icp?.pain_points) ? (icp.pain_points as string[]).slice(0, 3).join('; ') : '';
   const angleHint = angleFor(dayIndex);
   const themeHint = themeFor(dayIndex);
+  const research = await researchThemeFact(themeHint, industries, designations);
 
   const prompt = `You are Arohan, the autonomous marketing AI for In-Sync, a B2B SaaS platform company.
 
@@ -529,6 +597,8 @@ ANGLE FOR TODAY (the rhetorical approach): ${angleHint}
 EXAMPLE PRODUCT (proof point only): ${product.product_name}
 AUDIENCE: ${designations} in ${industries}
 THEIR PAIN POINTS: ${painPoints}
+
+${researchBlock(research)}
 
 Write an ${CAROUSEL_SLIDE_COUNT}-slide LinkedIn carousel (swipeable slide deck) promoting the In-Sync BRAND — the one-platform story — NOT a pitch for any single product.
 

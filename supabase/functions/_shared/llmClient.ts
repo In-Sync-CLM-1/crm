@@ -8,7 +8,17 @@ interface LLMOptions {
   max_tokens?: number;
   temperature?: number;
   system?: string;
+  /** Grounds the response in a live web search instead of the model's training-data recall. */
+  webSearch?: boolean;
+  maxSearchUses?: number;
 }
+
+// Sonnet 4.6 supports the dynamic-filtering web search tool; Haiku 4.5 does not
+// (it's not in that variant's supported-model list), so it gets the basic tool.
+const WEB_SEARCH_TOOL_TYPE: Record<LLMModel, string> = {
+  haiku: 'web_search_20250305',
+  sonnet: 'web_search_20260209',
+};
 
 interface LLMResponse {
   content: string;
@@ -106,10 +116,13 @@ export async function callLLM(
     max_tokens = 1024,
     temperature = 0.3,
     system,
+    webSearch = false,
+    maxSearchUses = 3,
   } = options;
 
   const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
   if (!apiKey) {
+    // Groq has no equivalent server-side search tool — falls back to plain recall.
     return callGroq(prompt, model, { max_tokens, temperature, system, json_mode });
   }
 
@@ -125,6 +138,10 @@ export async function callLLM(
 
   if (system) {
     body.system = system;
+  }
+
+  if (webSearch) {
+    body.tools = [{ type: WEB_SEARCH_TOOL_TYPE[model], name: 'web_search', max_uses: maxSearchUses }];
   }
 
   // Force JSON output by adding instruction if json_mode is true
@@ -174,8 +191,12 @@ export async function callLLM(
       }
 
       const data = await response.json();
-      const textBlock = data.content?.find((b: { type: string }) => b.type === 'text');
-      const content = textBlock?.text || '';
+      // With web search, Claude can emit a narrating text block before the
+      // search runs and a separate one with the actual answer after — the
+      // LAST text block is the final answer; taking the first (the old bug)
+      // returned the "let me look that up" preamble instead of the result.
+      const textBlocks = (data.content || []).filter((b: { type: string }) => b.type === 'text');
+      const content = textBlocks.length ? textBlocks[textBlocks.length - 1].text : '';
 
       return {
         content,
