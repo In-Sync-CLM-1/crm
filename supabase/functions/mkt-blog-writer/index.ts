@@ -357,7 +357,7 @@ Return JSON only:
       max_tokens: 800,
       temperature: 0.3,
       webSearch: true,
-      maxSearchUses: 4,
+      maxSearchUses: 3,
     });
     if (!data?.finding || !data?.source_url) return null;
     return data;
@@ -765,9 +765,20 @@ function err(status: number, message: string) {
 
 // ── Main handler ──────────────────────────────────────────────────────────────
 
+// Edge functions are killed after 150s of no response bytes, and this
+// function writes nothing until its single insert at the very end — so a
+// slow Shotstack render (its own poll loop can take up to 120s) stacked on
+// top of image generation and the research web-search call can blow the
+// whole budget and lose the draft entirely, with nothing to show for it.
+// SHOTSTACK_DEADLINE_MS is checked right before that render starts; past it,
+// skip straight to the fast Pexels video fallback instead of gambling the
+// rest of the budget on a render that may not finish in time.
+const SHOTSTACK_DEADLINE_MS = 80_000;
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
+  const startedAt = Date.now();
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
@@ -1035,11 +1046,13 @@ Deno.serve(async (req) => {
       console.log(`[blog-writer] generating media for keywords: ${draft.image_keywords?.join(', ')}`);
       const rawImageUrl = await getRawPostImage(draft.image_keywords, '4:5');
       let videoUrl: string | null = null;
-      if (rawImageUrl) {
+      if (rawImageUrl && Date.now() - startedAt < SHOTSTACK_DEADLINE_MS) {
         videoUrl = await generateShotstackVideo(rawImageUrl, draft.title).catch((e) => {
           console.warn('[blog-writer] Shotstack failed, falling back to Pexels video:', e.message);
           return null;
         });
+      } else if (rawImageUrl) {
+        console.warn('[blog-writer] skipping Shotstack — not enough time left before the 150s idle-timeout, using Pexels video instead');
       }
       if (!videoUrl) videoUrl = await fetchPexelsVideo(draft.image_keywords || []).catch(() => null);
       const imageUrl = rawImageUrl
@@ -1094,11 +1107,13 @@ Deno.serve(async (req) => {
       const draft = await generateShortCaption(product, icp, postSeq, 'video');
       const rawImageUrl = await getRawPostImage(draft.image_keywords, '9:16');
       let videoUrl: string | null = null;
-      if (rawImageUrl) {
+      if (rawImageUrl && Date.now() - startedAt < SHOTSTACK_DEADLINE_MS) {
         videoUrl = await generateShotstackVideo(rawImageUrl, draft.title).catch((e) => {
           console.warn('[blog-writer] Shotstack failed, falling back to Pexels video:', e.message);
           return null;
         });
+      } else if (rawImageUrl) {
+        console.warn('[blog-writer] skipping Shotstack — not enough time left before the 150s idle-timeout, using Pexels video instead');
       }
       if (!videoUrl) videoUrl = await fetchPexelsVideo(draft.image_keywords || []).catch(() => null);
       const imageUrl = rawImageUrl
