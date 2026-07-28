@@ -317,27 +317,39 @@ async function verifiedSourceLines(sources: SourceRef[] | undefined): Promise<st
 
 interface ResearchFinding {
   finding: string;
+  is_live_trend: boolean; // a genuinely current story/debate/news item, vs. a timeless supporting statistic
   source_label: string;
   source_url: string;
 }
 
+/**
+ * Searches for something happening THIS WEEK first — a real news item, a
+ * debate, a launch, a regulatory change, a viral discussion — and only falls
+ * back to a timeless supporting statistic if nothing current turns up. A
+ * post built around "what people following this space are actually talking
+ * about right now" reads as engaged; one built around a static, evergreen
+ * stat reads as generic no matter how well-sourced the stat is.
+ */
 async function researchThemeFact(
   themeHint: string,
   industries: string,
   designations: string,
 ): Promise<ResearchFinding | null> {
-  const prompt = `Search the web for ONE current, real, specific statistic, survey result, or news development from the last 18 months that supports this idea, for a B2B audience of ${designations} in ${industries}:
+  const prompt = `Search the web for something to anchor a LinkedIn post for a B2B audience of ${designations} in ${industries}, on this theme:
 
 "${themeHint}"
 
-Requirements:
+PRIORITY ORDER (search for the first, only fall back to the second if nothing turns up):
+1. A genuinely CURRENT trend, news item, debate, launch, regulatory change, or discussion from the LAST 2-4 WEEKS that this audience would recognize or have an opinion on — something that makes the post feel like it was written by someone actually paying attention to the world this week, not a timeless observation that could have been posted any month this year.
+2. If nothing sufficiently current and relevant exists, a real, specific, quantified statistic or survey result from the last 18 months (a percentage, a rupee/dollar figure, hours saved, a named recent event) from a credible named source (Gartner, McKinsey, NASSCOM, RBI, Forrester, a recent industry survey, a named company's public numbers).
+
+Requirements either way:
 - Must be real and verifiable — search first, do not answer from memory.
-- Prefer a named, credible source (Gartner, McKinsey, NASSCOM, RBI, Forrester, a recent industry survey, a named company's public numbers).
-- Must be specific and quantified (a percentage, a rupee/dollar figure, hours saved, a named recent event) — not a vague trend statement.
 - Must be recent enough to feel current, not a decade-old figure that has been repeated everywhere.
+- Never invent a source or a number.
 
 Return JSON only:
-{"finding": "one sentence stating the fact in plain English, phrased as it should be quoted in a LinkedIn post", "source_label": "publisher name, year", "source_url": "the direct URL you found it at"}`;
+{"finding": "one or two sentences stating what you found, in plain English, as it should be referenced in a LinkedIn post", "is_live_trend": true or false — true only if this is a genuinely current news/trend item (priority 1), false if it's a timeless supporting statistic (priority 2), "source_label": "publisher/outlet name, year or date", "source_url": "the direct URL you found it at"}`;
 
   try {
     const { data } = await callLLMJson<ResearchFinding>(prompt, {
@@ -345,7 +357,7 @@ Return JSON only:
       max_tokens: 800,
       temperature: 0.3,
       webSearch: true,
-      maxSearchUses: 3,
+      maxSearchUses: 4,
     });
     if (!data?.finding || !data?.source_url) return null;
     return data;
@@ -359,6 +371,11 @@ function researchBlock(finding: ResearchFinding | null): string {
   if (!finding) {
     return `No live research finding was available for this post — fall back to a real, well-known statistic from published research (Gartner, McKinsey, NASSCOM, RBI, Forrester) that you are confident actually exists. Do NOT invent one.`;
   }
+  if (finding.is_live_trend) {
+    return `TODAY'S LIVE TREND (found via web search moments ago — this is something genuinely happening right now; OPEN the post with this, as a live observation, not a footnote — that is what makes this read as engaged rather than scheduled):
+${finding.finding}
+Source: ${finding.source_label} — ${finding.source_url}`;
+  }
   return `TODAY'S RESEARCH FINDING (found via live web search moments ago — build the post around THIS, do not invent or recall a different statistic):
 ${finding.finding}
 Source: ${finding.source_label} — ${finding.source_url}`;
@@ -370,17 +387,32 @@ Source: ${finding.source_label} — ${finding.source_url}`;
 // BRAND_STORY now lives in _shared/brandVoice.ts (also used by the "Post
 // Idea" trend-jack flow in mkt-arohan-chat) — single source of truth.
 
-// The five brand story pillars. Rotates per post (like angle/format) so the
-// week covers the whole story; stored on the row as content_theme for review.
+// The brand story pillars. Rotates per post (like angle/format) so the week
+// covers the whole story; stored on the row as content_theme for review.
+// 'build story' added 2026-07-28: every other theme argues an abstract
+// corporate point; this one tells the company's own real, specific building
+// journey — the same category of content (genuine story, not argument) that
+// is measurably outperforming on Amit's personal profile.
 const CONTENT_THEMES = [
   'operational efficiency: work should flow through one system instead of being retyped, forwarded, and chased across disconnected tools',
   'cost of fragmentation (loss): the silent leaks — enquiries that die in WhatsApp groups, payments that slip, hours burned reconciling tools that do not talk to each other',
   'brand image: slow replies, missed follow-ups, and inconsistent customer experience quietly teach customers the business is not reliable',
   'team alignment: everyone working from one truth — same contacts, same status, same priorities — instead of private spreadsheets and forgotten threads',
   'productivity: fewer tools, fewer tabs, fewer handoffs — people spend their day on customers, not on coordination',
+  'build story: a real, specific chapter of how In-Sync itself got built and rebuilt — told in the BRAND\'s voice (about the company and its founder), not a generic case study',
 ];
 function themeFor(postSeq: number): string {
   return CONTENT_THEMES[postSeq % CONTENT_THEMES.length];
+}
+
+// When today's theme is 'build story', hand the writer the same approved,
+// real facts the persona stream draws on (PERSONA_BACKSTORY) so the story is
+// true and specific rather than a vague "we scaled our platform" gesture —
+// just told about the company/founder in third person, not first-person Amit
+// (that voice is reserved for his own profile).
+function buildStoryContext(themeHint: string): string {
+  if (!themeHint.startsWith('build story')) return '';
+  return `\nREAL FACTS TO DRAW FROM for this build story (never invent beyond these; write about the company/founder in third person, e.g. "In-Sync's founder" or "the team", not first-person "I"):\n${PERSONA_BACKSTORY}\n`;
 }
 
 // Rotating content angle, shared across every format so a reviewer can see the
@@ -444,6 +476,7 @@ EXAMPLE PRODUCT (proof point only): ${product.product_name}
 AUDIENCE: ${designations} in ${industries}
 THEIR PAIN POINTS: ${painPoints}
 ${ahaEvent ? `AHA MOMENT: ${ahaEvent}` : ''}
+${buildStoryContext(themeHint)}
 
 ${researchBlock(research)}
 
@@ -452,14 +485,14 @@ Write a high-engagement LinkedIn thought leadership post promoting the In-Sync B
 PRIMARY OBJECTIVE (2026-07-24, revised — engagement is now co-equal, not secondary): make the reader recognise the cost of running their business on disconnected tools AND actually stop scrolling to react — comment, share, or argue. A post nobody comments on doesn't get distributed by LinkedIn's own algorithm and doesn't build the brand either, so a technically-accurate post that reads as safe corporate thought-leadership has failed regardless of how well-sourced it is. Risk something in every post: a real position, a specific admission, a claim some readers will want to push back on. If a draft could have been posted by any competitor about any platform, it has failed.
 
 CONTENT STANDARDS:
-1. Anchor the post on TODAY'S RESEARCH FINDING above — that is a real, just-verified fact, not something to second-guess or replace. Cite the source inline naturally (e.g. "According to a 2024 NASSCOM report..."). Do NOT fabricate additional numbers beyond it. ${NUMERIC_CLAIMS_RULE}
+1. ${themeHint.startsWith('build story') ? 'This is a build-story post — anchor it on the REAL FACTS above, told as a specific chapter with real stakes, not a vague "we scaled" gesture. TODAY\'S RESEARCH FINDING (if present) is optional supporting color, not the main anchor.' : `Anchor the post on TODAY'S RESEARCH FINDING above — that is a real, just-verified fact, not something to second-guess or replace. Cite the source inline naturally (e.g. "According to a 2024 NASSCOM report..."). Do NOT fabricate additional numbers beyond it.`} ${NUMERIC_CLAIMS_RULE}
 2. Write specifically for ${designations} in ${industries} — use their exact vocabulary, their operational context, their real daily frustrations. Avoid generic B2B language.
-3. THE PLATFORM IS THE HERO. Do not position ${product.product_name} as a standalone offering. Where the argument needs a concrete example, use ${product.product_name} in ONE paragraph as a proof point of what "one backbone" looks like in practice — then return to the platform story.
+3. ${themeHint.startsWith('build story') ? `THE PLATFORM IS STILL THE HERO — this is the story of how In-Sync (the platform) came to exist, not a pitch for ${product.product_name} specifically. Only mention ${product.product_name} if it genuinely belongs in this chapter of the story; do not force it in.` : `THE PLATFORM IS THE HERO. Do not position ${product.product_name} as a standalone offering. Where the argument needs a concrete example, use ${product.product_name} in ONE paragraph as a proof point of what "one backbone" looks like in practice — then return to the platform story.`}
 
 STRUCTURE:
 
 HOOK (3-4 lines, ≤220 chars total):
-Stop the scroll. Open with a verified statistic, a counterintuitive truth, or a direct challenge to a common assumption. Must name a specific pain the audience recognises immediately, framed through today's theme.
+Stop the scroll. If TODAY'S LIVE TREND above is a genuinely current item, open with it as a live observation — that is what separates "someone paying attention this week" from "a scheduled post." Otherwise open with the verified statistic, a counterintuitive truth, or a direct challenge to a common assumption. Must name a specific pain the audience recognises immediately, framed through today's theme.
 
 BODY (8-12 paragraphs, ≤1900 chars total):
 - Each paragraph: 1-3 lines, one idea, no bullet points
@@ -536,7 +569,7 @@ ANGLE FOR TODAY (the rhetorical approach): ${angleHint}
 EXAMPLE PRODUCT (proof point only, optional in this short form): ${product.product_name}
 AUDIENCE: ${designations} in ${industries}
 THEIR PAIN POINTS: ${painPoints}
-
+${buildStoryContext(themeHint)}
 ${researchBlock(research)}
 
 Write a SHORT LinkedIn caption to accompany a ${mediaKind === 'video' ? 'short vertical video' : 'photo'} post promoting the In-Sync BRAND — the one-platform story — NOT a pitch for any single product. The visual carries the message; this caption should NOT try to be a full essay.
@@ -669,7 +702,7 @@ ANGLE FOR TODAY (the rhetorical approach): ${angleHint}
 EXAMPLE PRODUCT (proof point only): ${product.product_name}
 AUDIENCE: ${designations} in ${industries}
 THEIR PAIN POINTS: ${painPoints}
-
+${buildStoryContext(themeHint)}
 ${researchBlock(research)}
 
 Write an ${CAROUSEL_SLIDE_COUNT}-slide LinkedIn carousel (swipeable slide deck) promoting the In-Sync BRAND — the one-platform story — NOT a pitch for any single product.
