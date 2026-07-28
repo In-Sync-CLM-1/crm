@@ -351,18 +351,28 @@ Requirements either way:
 Return JSON only:
 {"finding": "one or two sentences stating what you found, in plain English, as it should be referenced in a LinkedIn post", "is_live_trend": true or false — true only if this is a genuinely current news/trend item (priority 1), false if it's a timeless supporting statistic (priority 2), "source_label": "publisher/outlet name, year or date", "source_url": "the direct URL you found it at"}`;
 
+  // callLLM's own retry/backoff on a slow or rate-limited call can legitimately
+  // run 60-100+s on its own (up to 3 attempts, each with its own 30s fetch
+  // timeout, plus backoff between them) — far too much of this function's
+  // 150s total budget for one optional research step. Race it against a hard
+  // ceiling independent of that retry logic; a timeout here just means the
+  // post falls back to the writer's own recall, not a lost draft.
+  const RESEARCH_TIMEOUT_MS = 25_000;
   try {
-    const { data } = await callLLMJson<ResearchFinding>(prompt, {
-      model: 'sonnet',
-      max_tokens: 800,
-      temperature: 0.3,
-      webSearch: true,
-      maxSearchUses: 3,
-    });
+    const { data } = await Promise.race([
+      callLLMJson<ResearchFinding>(prompt, {
+        model: 'sonnet',
+        max_tokens: 800,
+        temperature: 0.3,
+        webSearch: true,
+        maxSearchUses: 3,
+      }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('research step exceeded time budget')), RESEARCH_TIMEOUT_MS)),
+    ]);
     if (!data?.finding || !data?.source_url) return null;
     return data;
   } catch (e) {
-    console.warn('[blog-writer] research step failed, falling back to model recall:', e instanceof Error ? e.message : e);
+    console.warn('[blog-writer] research step failed or timed out, falling back to model recall:', e instanceof Error ? e.message : e);
     return null;
   }
 }
@@ -773,7 +783,7 @@ function err(status: number, message: string) {
 // SHOTSTACK_DEADLINE_MS is checked right before that render starts; past it,
 // skip straight to the fast Pexels video fallback instead of gambling the
 // rest of the budget on a render that may not finish in time.
-const SHOTSTACK_DEADLINE_MS = 80_000;
+const SHOTSTACK_DEADLINE_MS = 60_000;
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
