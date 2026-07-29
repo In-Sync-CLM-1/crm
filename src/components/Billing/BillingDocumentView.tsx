@@ -134,7 +134,7 @@ export function BillingDocumentView({ doc, payments, settings, onBack, onRecordP
         </div>
         {/* Workflow action buttons */}
         <div className="flex items-center gap-3 flex-wrap pl-12 relative z-10">
-          {doc.doc_type === "invoice" && doc.status !== "cancelled" && doc.status !== "paid" && (
+          {doc.doc_type === "invoice" && doc.status !== "cancelled" && doc.status !== "paid" && doc.status !== "credited" && doc.balance_due > 0 && (
             <Button className="gap-1.5 bg-emerald-600 hover:bg-emerald-700" onClick={() => setShowPaymentModal(true)}>
               <CreditCard className="h-4 w-4" />Record Payment
             </Button>

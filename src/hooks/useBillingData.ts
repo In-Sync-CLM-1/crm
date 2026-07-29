@@ -267,6 +267,50 @@ export function useBillingData() {
     }
   };
 
+  // ─── Helper: sum of credit notes issued against an invoice ───
+  const getCreditedTotal = async (invoiceId: string): Promise<number> => {
+    const { data } = await supabase
+      .from("billing_documents")
+      .select("total_amount")
+      .eq("doc_type", "credit_note")
+      .eq("original_invoice_id", invoiceId);
+    return (data || []).reduce((s, r: any) => s + Number(r.total_amount || 0), 0);
+  };
+
+  // ─── Recompute an invoice's balance_due + status from amount_paid and any
+  // credit notes issued against it. Single source of truth so payments and
+  // credit notes (created, edited, or deleted in either order) always agree.
+  // A credit note that fully offsets the balance with no real cash behind it
+  // is "credited", not "paid" — Total Revenue only counts "paid" documents,
+  // and a credit note was never money received.
+  const recalcInvoiceStatus = useCallback(async (invoiceId: string) => {
+    const { data: inv } = await supabase
+      .from("billing_documents")
+      .select("total_amount, amount_paid, status")
+      .eq("id", invoiceId)
+      .maybeSingle();
+    if (!inv || inv.status === "cancelled") return;
+
+    const creditedTotal = await getCreditedTotal(invoiceId);
+    const paid = Number(inv.amount_paid || 0);
+    const total = Number(inv.total_amount || 0);
+    const newBalance = Math.max(0, total - paid - creditedTotal);
+
+    let newStatus: BillingDocumentStatus;
+    if (newBalance <= 0) {
+      newStatus = paid > 0 ? "paid" : "credited";
+    } else if (paid > 0 || creditedTotal > 0) {
+      newStatus = "partially_paid";
+    } else {
+      newStatus = inv.status as BillingDocumentStatus;
+    }
+
+    await supabase.from("billing_documents")
+      .update({ balance_due: newBalance, status: newStatus, updated_at: new Date().toISOString() })
+      .eq("id", invoiceId);
+    setDocuments(prev => prev.map(d => d.id === invoiceId ? { ...d, balance_due: newBalance, status: newStatus } : d));
+  }, []);
+
   // ─── Helper: increment next doc number in settings ───
   const incrementDocNumber = async (docType: BillingDocumentType) => {
     const key = docType === "proforma" ? "next_proforma_number"
@@ -356,8 +400,15 @@ export function useBillingData() {
     // Add to local state
     const newDoc: BillingDocument = { ...doc, id: data.id, org_id: effectiveOrgId, items: items || [] };
     setDocuments(prev => [newDoc, ...prev]);
+
+    // A new credit note changes what's actually still owed on its invoice —
+    // reflect that immediately (balance_due + status) so the invoice stops
+    // showing as outstanding / awaiting payment for the credited amount.
+    if (doc.doc_type === "credit_note" && docData.original_invoice_id) {
+      await recalcInvoiceStatus(docData.original_invoice_id);
+    }
     return { success: true, id: data.id };
-  }, [effectiveOrgId, settings]);
+  }, [effectiveOrgId, settings, recalcInvoiceStatus]);
 
   const updateDocument = useCallback(async (id: string, updates: Partial<BillingDocument>): Promise<{ success: boolean; error?: string }> => {
     const { items, client, ...updateData } = updates as any;
@@ -400,8 +451,17 @@ export function useBillingData() {
     if (items) await saveItems(id, items);
 
     setDocuments(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));
+
+    // Editing a credit note (e.g. its amount) changes what's owed on its
+    // invoice — recompute the invoice's balance_due + status to match.
+    const existing = documents.find(d => d.id === id);
+    const effectiveType = updateData.doc_type ?? existing?.doc_type;
+    const effectiveInvoiceId = updateData.original_invoice_id ?? existing?.original_invoice_id;
+    if (effectiveType === "credit_note" && effectiveInvoiceId) {
+      await recalcInvoiceStatus(effectiveInvoiceId);
+    }
     return { success: true };
-  }, [effectiveOrgId]);
+  }, [effectiveOrgId, documents, recalcInvoiceStatus]);
 
   const deleteDocument = useCallback(async (id: string) => {
     if (!effectiveOrgId) return;
@@ -440,7 +500,13 @@ export function useBillingData() {
         setSettingsState(prev => ({ ...prev, [counterKey]: nextVal }));
       }
     }
-  }, [effectiveOrgId, documents, settings]);
+
+    // Deleting a credit note gives back the balance it had written off —
+    // recompute its invoice so the reversal shows up immediately.
+    if (target?.doc_type === "credit_note" && target.original_invoice_id) {
+      await recalcInvoiceStatus(target.original_invoice_id);
+    }
+  }, [effectiveOrgId, documents, settings, recalcInvoiceStatus]);
 
   const convertDocument = useCallback(async (doc: BillingDocument, targetType: BillingDocumentType) => {
     if (!effectiveOrgId || busy) return doc;
@@ -644,17 +710,19 @@ export function useBillingData() {
     };
     setPayments(prev => [newPayment, ...prev]);
 
-    // Update document payment status (amount + TDS = total settled)
+    // Update amount_paid, then derive balance_due/status from amount_paid +
+    // any credit notes already issued against this invoice — recalcInvoiceStatus
+    // is the single place that combines both, so a payment recorded after (or
+    // before) a credit note always nets out correctly.
     const doc = documents.find(d => d.id === payment.document_id);
     if (doc) {
       const totalSettled = payment.amount + tdsAmount;
       const newPaid = doc.amount_paid + totalSettled;
-      const newBalance = doc.total_amount - newPaid;
-      const newStatus: BillingDocumentStatus = newBalance <= 0 ? "paid" : "partially_paid";
-      await updateDocument(doc.id, { amount_paid: newPaid, balance_due: Math.max(0, newBalance), status: newStatus });
+      await updateDocument(doc.id, { amount_paid: newPaid });
+      await recalcInvoiceStatus(doc.id);
     }
     return newPayment;
-  }, [effectiveOrgId, documents, updateDocument]);
+  }, [effectiveOrgId, documents, updateDocument, recalcInvoiceStatus]);
 
   // Payments are otherwise write-once — this only lets TDS and transaction
   // details (mode/reference/notes) be corrected after the fact. Amount and
@@ -690,13 +758,12 @@ export function useBillingData() {
       const doc = documents.find(d => d.id === existing.document_id);
       if (doc) {
         const newPaid = doc.amount_paid + tdsDiff;
-        const newBalance = doc.total_amount - newPaid;
-        const newStatus: BillingDocumentStatus = newBalance <= 0 ? "paid" : (newPaid > 0 ? "partially_paid" : doc.status);
-        await updateDocument(doc.id, { amount_paid: newPaid, balance_due: Math.max(0, newBalance), status: newStatus });
+        await updateDocument(doc.id, { amount_paid: newPaid });
+        await recalcInvoiceStatus(doc.id);
       }
     }
     return updatedPayment;
-  }, [payments, documents, updateDocument]);
+  }, [payments, documents, updateDocument, recalcInvoiceStatus]);
 
   const getDocumentPayments = useCallback((docId: string) => {
     return payments.filter(p => p.document_id === docId);

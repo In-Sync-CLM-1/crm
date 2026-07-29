@@ -36,7 +36,7 @@ export function BillingDocumentList({ documents, docType, onView, onCreate, onCo
   });
 
   const receivable = filtered.reduce((s, d) => {
-    if (["paid", "cancelled", "converted", "draft"].includes(d.status)) return s;
+    if (["paid", "credited", "cancelled", "converted", "draft"].includes(d.status)) return s;
     return s + (d.balance_due || 0);
   }, 0);
 
@@ -44,7 +44,7 @@ export function BillingDocumentList({ documents, docType, onView, onCreate, onCo
     ? ["all", "draft", "sent", "paid", "cancelled", "converted"]
     : docType === "credit_note"
     ? ["all", "draft", "sent", "issued", "cancelled"]
-    : ["all", "draft", "sent", "paid", "partially_paid", "overdue", "cancelled"];
+    : ["all", "draft", "sent", "paid", "partially_paid", "credited", "overdue", "cancelled"];
 
   return (
     <div className="space-y-5">
