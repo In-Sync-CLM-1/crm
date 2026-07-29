@@ -7,6 +7,7 @@ import { useAccountingData } from "@/hooks/useAccountingData";
 import { useToast } from "@/hooks/use-toast";
 import type { ParsedBankRow } from "@/types/accounting";
 import { format } from "date-fns";
+import * as XLSX from "xlsx";
 
 function parseAmount(raw: string): number {
   if (!raw || raw.trim() === "" || raw.trim() === "-") return 0;
@@ -44,13 +45,14 @@ function parseDate(raw: string): string {
   return "";
 }
 
-function parseBankCsv(text: string): ParsedBankRow[] {
-  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-
+// Shared column-detection + row-extraction, fed either from a parsed CSV grid
+// or an Excel sheet grid — same bank-statement layouts, just a different
+// source format, so both go through one place to stay in sync.
+function parseBankRows(grid: string[][]): ParsedBankRow[] {
   let headerIdx = -1;
   let headers: string[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    const cols = lines[i].split(",").map(c => c.replace(/^"|"$/g, "").toLowerCase().trim());
+  for (let i = 0; i < grid.length; i++) {
+    const cols = grid[i].map(c => c.toLowerCase().trim());
     if (cols.some(c => c.includes("date")) && cols.some(c => c.includes("debit") || c.includes("credit") || c.includes("amount") || c.includes("withdrawal") || c.includes("deposit"))) {
       headerIdx = i;
       headers = cols;
@@ -74,18 +76,16 @@ function parseBankCsv(text: string): ParsedBankRow[] {
   const amountCol  = idx(["amount"]);
   const balCol     = idx(["balance"]);
 
-  if (dateCol === null) throw new Error("CSV is missing a Date column.");
+  if (dateCol === null) throw new Error("File is missing a Date column.");
   if (debitCol === null && creditCol === null && amountCol === null) {
-    throw new Error("CSV is missing Amount/Debit/Credit columns.");
+    throw new Error("File is missing Amount/Debit/Credit columns.");
   }
 
   const rows: ParsedBankRow[] = [];
-  for (let i = headerIdx + 1; i < lines.length; i++) {
-    const cols = lines[i].match(/(".*?"|[^,]+|(?<=,)(?=,)|(?<=,)$|^(?=,))/g)?.map(
-      c => c.replace(/^"|"$/g, "").trim()
-    ) ?? lines[i].split(",").map(c => c.trim());
+  for (let i = headerIdx + 1; i < grid.length; i++) {
+    const cols = grid[i];
 
-    const dateStr = cols[dateCol] || "";
+    const dateStr = (cols[dateCol] || "").trim();
     if (!dateStr || dateStr.toLowerCase().includes("total") || dateStr.toLowerCase().includes("opening")) continue;
 
     const txnDate = parseDate(dateStr);
@@ -118,6 +118,34 @@ function parseBankCsv(text: string): ParsedBankRow[] {
   return rows;
 }
 
+function parseBankCsv(text: string): ParsedBankRow[] {
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const grid = lines.map(line =>
+    line.match(/(".*?"|[^,]+|(?<=,)(?=,)|(?<=,)$|^(?=,))/g)?.map(c => c.replace(/^"|"$/g, "").trim())
+      ?? line.split(",").map(c => c.trim())
+  );
+  return parseBankRows(grid);
+}
+
+// Excel cells come back typed (Date objects for date-formatted cells, numbers
+// for amounts) rather than pre-formatted text — normalize each to the same
+// plain string shape parseBankRows already knows how to read.
+function cellToString(v: unknown): string {
+  if (v instanceof Date) return format(v, "yyyy-MM-dd");
+  if (v === null || v === undefined) return "";
+  return String(v).trim();
+}
+
+async function parseBankExcel(file: File): Promise<ParsedBankRow[]> {
+  const buf = await file.arrayBuffer();
+  const workbook = XLSX.read(buf, { type: "array", cellDates: true });
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  if (!sheet) throw new Error("The workbook has no sheets.");
+  const rawGrid = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: "" }) as unknown[][];
+  const grid = rawGrid.map(row => row.map(cellToString)).filter(row => row.some(c => c !== ""));
+  return parseBankRows(grid);
+}
+
 type StatementType = "company" | "director_personal";
 
 export function AccountingImport() {
@@ -132,23 +160,19 @@ export function AccountingImport() {
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<{ imported: number; skipped: number } | null>(null);
 
-  function handleFile(file: File) {
+  async function handleFile(file: File) {
     setParseError(null);
     setParsed(null);
     setResult(null);
     setFilename(file.name);
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const text = e.target?.result as string;
-        const rows = parseBankCsv(text);
-        if (rows.length === 0) throw new Error("No transactions found in the file.");
-        setParsed(rows);
-      } catch (err: unknown) {
-        setParseError(err instanceof Error ? err.message : "Could not parse the file.");
-      }
-    };
-    reader.readAsText(file);
+    try {
+      const isExcel = /\.(xlsx|xls)$/i.test(file.name);
+      const rows = isExcel ? await parseBankExcel(file) : parseBankCsv(await file.text());
+      if (rows.length === 0) throw new Error("No transactions found in the file.");
+      setParsed(rows);
+    } catch (err: unknown) {
+      setParseError(err instanceof Error ? err.message : "Could not parse the file.");
+    }
   }
 
   function handleTypeChange(t: StatementType) {
@@ -264,15 +288,15 @@ export function AccountingImport() {
           >
             <Upload className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
             <p className="text-sm text-muted-foreground">
-              Drag & drop your bank statement CSV here, or click to browse
+              Drag & drop your bank statement (CSV or Excel) here, or click to browse
             </p>
             <p className="text-xs text-muted-foreground mt-1">
               {isPersonal
-                ? "Export statement from your bank's internet banking as CSV"
-                : "Download from Internet Banking → Accounts → Statement → Export as CSV"}
+                ? "Export statement from your bank's internet banking as CSV or Excel"
+                : "Download from Internet Banking → Accounts → Statement → Export as CSV or Excel"}
             </p>
           </div>
-          <input ref={fileRef} type="file" accept=".csv" className="hidden"
+          <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" className="hidden"
             onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }}
           />
 
