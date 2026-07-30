@@ -22,7 +22,7 @@ import { useOrgContext } from "@/hooks/useOrgContext";
 import { LoadingState } from "@/components/common/LoadingState";
 import { PostDetailDialog, CalendarPost } from "@/components/Marketing/PostDetailDialog";
 import { ScheduledPreviewDialog } from "@/components/Marketing/ScheduledPreviewDialog";
-import { getScheduledPlans, ScheduledPlan, POSTS_PER_DAY, themeLabel } from "@/lib/contentSchedule";
+import { getScheduledPlans, ScheduledPlan, themeLabel } from "@/lib/contentSchedule";
 import { Clock } from "lucide-react";
 
 const statusDot: Record<string, string> = {
@@ -140,7 +140,8 @@ export default function ContentCalendar() {
             <h1 className="text-2xl font-bold">Content Calendar</h1>
             <p className="text-sm text-muted-foreground">
               Everything the marketing engine has written, posted, or has queued — LinkedIn, Facebook, Instagram, YouTube.
-              Content is prewritten a week ahead, 4 posts a day, each at its own time — so you can review and intervene before anything goes live.
+              Content is prewritten a week ahead: 1 company post a day, plus a first-person post from Amit's own profile on weekdays —
+              each at its own time, so you can review and intervene before anything goes live.
               Posts go out automatically at their scheduled time unless you edit or skip them here.
               Dashed entries are planned slots the AI hasn't written yet.
             </p>
@@ -188,7 +189,9 @@ export default function ContentCalendar() {
                 const inMonth = isSameMonth(day, month);
                 const isFuture = day > new Date() && !isToday(day);
                 // Future slots not yet written by the AI show as dashed planned entries.
-                const plans = isFuture && dayPosts.length < POSTS_PER_DAY && schedule
+                // Each day can have up to 2 real slots (company + Amit's weekday post),
+                // so gate per day_seq rather than a single day-wide count.
+                const plans = isFuture && schedule
                   ? getScheduledPlans(schedule.startDate, key, schedule.products, schedule.slots)
                       .filter((pl) => !dayPosts.some((p) => p.day_seq === pl.day_seq))
                   : [];
