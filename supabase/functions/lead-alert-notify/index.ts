@@ -61,7 +61,7 @@ async function alertWhatsApp(lead: LeadPayload) {
   const tpl = Deno.env.get('NEW_LEAD_WA_TEMPLATE');
   if (!tpl) return 'wa skipped (no approved template yet)';
   const sid = Deno.env.get('EXOTEL_WA_SID'), key = Deno.env.get('EXOTEL_WA_API_KEY'), tok = Deno.env.get('EXOTEL_WA_API_TOKEN');
-  const from = Deno.env.get('EXOTEL_SENDER_NUMBER'), subdomain = Deno.env.get('EXOTEL_WA_SUBDOMAIN');
+  const from = Deno.env.get('EXOTEL_SENDER_NUMBER'), subdomain = Deno.env.get('EXOTEL_SUBDOMAIN');
   if (!sid || !key || !tok || !from || !subdomain) return 'wa skipped (creds missing)';
   const summary = `${lead.name || 'Unknown'} — ${lead.product || 'unknown product'} — ${lead.phone || 'no phone'}`;
   const payload = buildExotelPayload({
