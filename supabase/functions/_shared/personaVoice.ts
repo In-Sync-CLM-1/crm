@@ -1,8 +1,8 @@
 /**
- * Amit's LinkedIn persona voice — shared between mkt-blog-writer (daily
- * pillar rotation) and mkt-arohan-chat (user-suggested ideas, prefix
- * "Persona Post Idea"). Single source of truth for the backstory: never
- * duplicate PERSONA_BACKSTORY elsewhere.
+ * Amit's LinkedIn persona voice — shared between mkt-blog-writer (weekly
+ * pillar rotation, 1 post/week as of 2026-07-31) and mkt-arohan-chat
+ * (user-suggested ideas, prefix "Persona Post Idea"). Single source of
+ * truth for the backstory: never duplicate PERSONA_BACKSTORY elsewhere.
  */
 import { callLLMJson } from './llmClient.ts';
 

@@ -69,9 +69,8 @@ function getIST(offsetDays = 0) {
   return { date: d.toISOString().slice(0, 10) };
 }
 
-// 0=Sun..6=Sat, IST. Used to gate the persona stream to weekdays only
-// (2026-07-24, Arohan recommendation: daily posting is unsustainable at
-// save-worthy quality — drop to a 5-day business-week cadence).
+// 0=Sun..6=Sat, IST. Used to gate the persona stream to one slot a week
+// (2026-07-31, user instruction: cap founder posts at 1/week, not more).
 function istDayOfWeek(dateStr: string): number {
   return new Date(dateStr + 'T00:00:00Z').getUTCDay();
 }
@@ -853,11 +852,11 @@ Deno.serve(async (req) => {
         for (let j = 0; j < POSTS_PER_DAY; j++) {
           if (!filled.has(`${date}#${j}`)) gaps.push({ date, seq: j });
         }
-        // Persona post (Amit's profile) — weekdays only, 5/week (2026-07-24:
-        // dropped from a daily streak per Arohan's recommendation).
-        const dow = istDayOfWeek(date);
-        const isWeekday = dow !== 0 && dow !== 6;
-        if (isWeekday && !filled.has(`${date}#${PERSONA_DAY_SEQ}`)) gaps.push({ date, seq: PERSONA_DAY_SEQ });
+        // Persona post (Amit's profile) — capped at 1/week, Wednesday only
+        // (2026-07-31, user instruction: "not more than that, effective
+        // immediately" — was 5/week weekdays before this).
+        const isPersonaDay = istDayOfWeek(date) === 3;
+        if (isPersonaDay && !filled.has(`${date}#${PERSONA_DAY_SEQ}`)) gaps.push({ date, seq: PERSONA_DAY_SEQ });
       }
       if (!gaps.length) {
         return ok({ skip: 'buffer full', buffer_days: BUFFER_DAYS, posts_per_day: POSTS_PER_DAY });
@@ -872,13 +871,14 @@ Deno.serve(async (req) => {
     if (daySeq === PERSONA_DAY_SEQ) {
       const personaDayIndex = daysSince(config.start_date, targetDate);
 
-      // Weekly anchor post lands on Wednesday — one reliable reference-post
-      // slot a week (2026-07-24, Arohan recommendation), regardless of where
-      // the 5-way pillar rotation happens to be that day.
-      const isAnchorDay = istDayOfWeek(targetDate) === 3;
-      // Poll lands every OTHER Friday (2026-07-24: "conduct a poll
-      // sometimes") — distinct weekday from the anchor, so they never clash.
-      const isPollDay = istDayOfWeek(targetDate) === 5 && Math.floor(personaDayIndex / 7) % 2 === 0;
+      // At 1 post/week (2026-07-31), anchor and poll formats now rotate by
+      // WEEK instead of by weekday (there's only one slot a week to place
+      // them in): every 4th week is the anchor reference-post, every 4th
+      // week offset by 2 is a poll, the other two weeks are normal 5-pillar
+      // rotation.
+      const weekIndex = Math.floor(personaDayIndex / 7);
+      const isAnchorDay = weekIndex % 4 === 0;
+      const isPollDay = weekIndex % 4 === 2;
 
       if (isPollDay) {
         const { data: recentPolls } = await supabase
