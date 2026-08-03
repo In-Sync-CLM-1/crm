@@ -122,6 +122,7 @@ Deno.serve(async (req) => {
         age_max: 55,
         flexible_spec: [{ interests }],
         publisher_platforms: ['facebook'],
+        targeting_automation: { advantage_audience: 0 },
       },
       status: 'ACTIVE',
     });
