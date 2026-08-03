@@ -94,6 +94,7 @@ Deno.serve(async (req) => {
       objective: 'OUTCOME_ENGAGEMENT',
       status: 'ACTIVE',
       special_ad_categories: [],
+      is_adset_budget_sharing_enabled: false,
     });
 
     const adset = await fbPost(`${actId}/adsets`, token, {
