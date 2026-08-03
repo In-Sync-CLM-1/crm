@@ -18,7 +18,14 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/corsHeaders.ts';
 
 const FB_API_VERSION = 'v21.0';
-const DEFAULT_INTERESTS = ['Small business', 'Entrepreneurship'];
+// Meta's flexible_spec interests require real numeric interest IDs, not
+// bare names (bare names 400 with a cryptic "type integer expected, NULL
+// received" — discovered live on mkt-meta-followers-launch, 2026-08-03).
+// Resolved via GET /act_.../targetingsearch?type=adinterest&q=<term>.
+const DEFAULT_INTERESTS = [
+  { id: '6002884511422', name: 'Small business (business & finance)' },
+  { id: '6003371567474', name: 'Entrepreneurship (business & finance)' },
+];
 
 function ok(data: unknown) {
   return new Response(JSON.stringify(data), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -59,7 +66,7 @@ interface LaunchBody {
   primary_text: string;
   headline: string;
   image_url: string;
-  targeting_interests?: string[];
+  targeting_interests?: { id: string; name: string }[];
 }
 
 Deno.serve(async (req) => {
@@ -90,13 +97,14 @@ Deno.serve(async (req) => {
     const actId = `act_${config.fb_ad_account_id}`;
     const startTime = new Date(Date.now() + 5 * 60_000).toISOString();
     const endTime = `${addDays(launch_date, duration_days)}T00:00:00+0000`;
-    const interests = (body.targeting_interests?.length ? body.targeting_interests : DEFAULT_INTERESTS).map((name) => ({ name }));
+    const interests = body.targeting_interests?.length ? body.targeting_interests : DEFAULT_INTERESTS;
 
     const campaign = await fbPost(`${actId}/campaigns`, token, {
       name,
       objective: 'OUTCOME_TRAFFIC',
       status: 'ACTIVE',
       special_ad_categories: [],
+      is_adset_budget_sharing_enabled: false,
     });
 
     const adset = await fbPost(`${actId}/adsets`, token, {
