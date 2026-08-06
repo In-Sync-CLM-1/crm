@@ -93,19 +93,22 @@ export function useBillingData() {
       if (missingClientIds.length > 0) {
         const { data: clientRows } = await supabase
           .from("clients")
-          .select("id, company, first_name, last_name, address, city, state, postal_code")
+          .select("id, company, first_name, last_name, address, billing_address, city, state, postal_code, gstin, pan, billing_state_code, invoice_company_name")
           .in("id", missingClientIds);
         for (const c of clientRows || []) {
-          const stateCode = INDIAN_STATES.find(s => s.name === c.state)?.code || "";
+          const stateCode = c.billing_state_code || INDIAN_STATES.find(s => s.name === c.state)?.code || "";
           clientLookup[c.id] = {
             company: c.company || `${c.first_name} ${c.last_name || ""}`.trim(),
+            invoice_company_name: c.invoice_company_name || "",
             first_name: c.first_name,
             last_name: c.last_name || "",
-            billing_address: c.address || "",
+            billing_address: c.billing_address || c.address || "",
             city: c.city || "",
             state: c.state || "",
             billing_state_code: stateCode,
             pin_code: c.postal_code || "",
+            gstin: c.gstin || "",
+            pan: c.pan || "",
           };
         }
         // Auto-save snapshots back to DB so this lookup only happens once
