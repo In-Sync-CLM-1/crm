@@ -251,25 +251,57 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // AI auto-response function
-    async function getAIResponse(subj: string, desc: string, prio: string): Promise<string | null> {
-      const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");
-      if (!anthropicKey) return null;
+    // AI auto-response function — text-only, so Groq (1st choice) with
+    // Cerebras as the 2nd-choice fallback; no Anthropic call needed.
+    const SUPPORT_SYSTEM_PROMPT = `You are a helpful support assistant for In-Sync CRM platform. Provide an immediate, concise first response to support tickets. Acknowledge the issue, suggest solutions if possible, keep under 150 words, use a warm professional tone. Working hours: Mon-Fri, 9 AM - 6 PM IST.`;
+
+    async function callGroqSupport(userContent: string): Promise<string | null> {
+      const groqKey = Deno.env.get("GROQ_API_KEY");
+      if (!groqKey) return null;
       try {
-        const res = await fetch("https://api.anthropic.com/v1/messages", {
+        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
           method: "POST",
-          headers: { "x-api-key": anthropicKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+          headers: { "Authorization": `Bearer ${groqKey}`, "Content-Type": "application/json" },
           body: JSON.stringify({
-            model: "claude-haiku-4-5-20251001",
+            model: "llama-3.3-70b-versatile",
             max_tokens: 500,
-            system: `You are a helpful support assistant for In-Sync CRM platform. Provide an immediate, concise first response to support tickets. Acknowledge the issue, suggest solutions if possible, keep under 150 words, use a warm professional tone. Working hours: Mon-Fri, 9 AM - 6 PM IST.`,
-            messages: [{ role: "user", content: `Subject: ${subj}\nDescription: ${desc}\nPriority: ${prio}` }],
+            messages: [
+              { role: "system", content: SUPPORT_SYSTEM_PROMPT },
+              { role: "user", content: userContent },
+            ],
           }),
         });
         if (!res.ok) return null;
         const result = await res.json();
-        return result.content?.[0]?.text || null;
+        return result.choices?.[0]?.message?.content || null;
       } catch { return null; }
+    }
+
+    async function callCerebrasSupport(userContent: string): Promise<string | null> {
+      const cerebrasKey = Deno.env.get("CEREBRAS_API_KEY");
+      if (!cerebrasKey) return null;
+      try {
+        const res = await fetch("https://api.cerebras.ai/v1/chat/completions", {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${cerebrasKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: "gemma-4-31b",
+            max_tokens: 500,
+            messages: [
+              { role: "system", content: SUPPORT_SYSTEM_PROMPT },
+              { role: "user", content: userContent },
+            ],
+          }),
+        });
+        if (!res.ok) return null;
+        const result = await res.json();
+        return result.choices?.[0]?.message?.content || null;
+      } catch { return null; }
+    }
+
+    async function getAIResponse(subj: string, desc: string, prio: string): Promise<string | null> {
+      const userContent = `Subject: ${subj}\nDescription: ${desc}\nPriority: ${prio}`;
+      return (await callGroqSupport(userContent)) ?? (await callCerebrasSupport(userContent));
     }
 
     // Use the main org (ECR TIPL)

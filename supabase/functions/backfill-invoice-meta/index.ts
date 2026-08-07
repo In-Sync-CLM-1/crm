@@ -53,6 +53,31 @@ async function parseWithGroq(b64: string, mime: string): Promise<Record<string, 
   } catch { return null; }
 }
 
+async function parseWithCerebras(b64: string, mime: string): Promise<Record<string, unknown> | null> {
+  // Cerebras' vision model only accepts image formats, not PDF — it 400s on
+  // PDF input and we fall through to parseWithAnthropic (Haiku), which is the
+  // only provider here that reads real PDF documents natively.
+  try {
+    const res = await fetch("https://api.cerebras.ai/v1/chat/completions", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${Deno.env.get("CEREBRAS_API_KEY")}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "gemma-4-31b",
+        max_tokens: 300,
+        messages: [{ role: "user", content: [
+          { type: "image_url", image_url: { url: `data:${mime};base64,${b64}` } },
+          { type: "text", text: PARSE_PROMPT },
+        ]}],
+      }),
+    });
+    if (!res.ok) return null;
+    const d = await res.json();
+    const text = d.choices?.[0]?.message?.content ?? "";
+    const m = text.match(/\{[\s\S]*\}/);
+    return m ? JSON.parse(m[0]) : null;
+  } catch { return null; }
+}
+
 async function parseWithAnthropic(b64: string, mime: string): Promise<Record<string, unknown> | null> {
   try {
     const isPdf = mime === "application/pdf";
@@ -154,6 +179,7 @@ serve(async (req) => {
         // Parse and update with new R2 URL
         const b64 = base64Encode(buf);
         let parsed = await parseWithGroq(b64, mime);
+        if (!parsed) parsed = await parseWithCerebras(b64, mime);
         if (!parsed) parsed = await parseWithAnthropic(b64, mime);
 
         const rawAmount = typeof parsed?.amount === "number" ? parsed.amount : null;
@@ -182,6 +208,7 @@ serve(async (req) => {
       // Reparse path: re-parse file from R2 and update amounts
       const b64 = base64Encode(buf);
       let parsed = await parseWithGroq(b64, mime);
+      if (!parsed) parsed = await parseWithCerebras(b64, mime);
       if (!parsed) parsed = await parseWithAnthropic(b64, mime);
 
       const rawAmount = typeof parsed?.amount === "number" ? parsed.amount : null;

@@ -126,6 +126,51 @@ Example response:
     console.log('File fetched, mime type:', mimeType);
 
     const isPdf = mimeType === 'application/pdf';
+
+    // 1st choice: Cerebras. It only accepts image formats — not PDF — so it
+    // 400s and we silently fall through to Claude Haiku below, which is the
+    // only provider here that reads real PDF documents natively. Since almost
+    // all documents here are PDFs, Haiku still does most of the real work.
+    if (!isPdf) {
+      const cerebrasKey = Deno.env.get('CEREBRAS_API_KEY');
+      if (cerebrasKey) {
+        try {
+          const cerebrasRes = await fetch('https://api.cerebras.ai/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${cerebrasKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: 'gemma-4-31b',
+              max_tokens: 2000,
+              messages: [
+                { role: 'system', content: systemPrompt },
+                {
+                  role: 'user',
+                  content: [
+                    { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64}` } },
+                    { type: 'text', text: 'Please extract the client information and invoice details from this document.' },
+                  ],
+                },
+              ],
+            }),
+          });
+          if (cerebrasRes.ok) {
+            const cerebrasData = await cerebrasRes.json();
+            const content = cerebrasData.choices?.[0]?.message?.content || '';
+            const jsonMatch = content.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+              const extractedData = JSON.parse(jsonMatch[0]);
+              console.log('Extracted data (Cerebras):', extractedData);
+              return new Response(JSON.stringify({ success: true, extractedData }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              });
+            }
+          }
+        } catch (cerebrasError) {
+          console.error('Cerebras extraction failed, falling back to Haiku:', cerebrasError);
+        }
+      }
+    }
+
     const fileBlock = isPdf
       ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } }
       : { type: 'image', source: { type: 'base64', media_type: mimeType, data: base64 } };
