@@ -1,5 +1,6 @@
 // Transcribes a call recording with Groq Whisper and analyzes the transcript
-// with Claude Haiku 4.5. Works for both call_logs (click-to-call) and
+// with Groq (1st choice) / Cerebras (2nd-choice fallback). Works for both
+// call_logs (click-to-call) and
 // mkt_voice_calls (Bolna agentic). For Bolna calls without a recording yet
 // (recording was enabled mid-May 2026), it can ingest a transcript supplied
 // in the request body.
@@ -9,13 +10,14 @@ import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 import { jsonResponse, errorResponse, handleCors } from '../_shared/responseHelpers.ts';
 
 const GROQ_API_KEY = Deno.env.get('GROQ_API_KEY')!;
-const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY')!;
+const CEREBRAS_API_KEY = Deno.env.get('CEREBRAS_API_KEY') || '';
 const BOLNA_API_KEY = Deno.env.get('BOLNA_API_KEY') || '';
 const EXOTEL_API_KEY = Deno.env.get('EXOTEL_API_KEY') || '';
 const EXOTEL_API_TOKEN = Deno.env.get('EXOTEL_API_TOKEN') || '';
 
 const GROQ_WHISPER_MODEL = 'whisper-large-v3-turbo';
-const HAIKU_MODEL = 'claude-haiku-4-5-20251001';
+const GROQ_TEXT_MODEL = 'llama-3.3-70b-versatile';
+const CEREBRAS_MODEL = 'gemma-4-31b';
 
 async function fetchBolnaTranscript(executionId: string): Promise<string | null> {
   if (!BOLNA_API_KEY) return null;
@@ -68,7 +70,7 @@ async function transcribeWithGroq(recordingUrl: string): Promise<string> {
   return (data.text || '').trim();
 }
 
-async function analyzeWithHaiku(opts: {
+async function analyzeCall(opts: {
   transcript: string;
   callKind: CallKind;
   fromNumber?: string | null;
@@ -103,26 +105,57 @@ Be concrete and specific. Use the customer's actual words where useful. Indian E
 Transcript:
 ${opts.transcript}`;
 
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key': ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: HAIKU_MODEL,
-      max_tokens: 1024,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userContent }],
-    }),
-  });
-  if (!r.ok) throw new Error(`Haiku failed: ${r.status} ${await r.text()}`);
-  const data = await r.json();
-  const text = data?.content?.[0]?.text || '';
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error('Haiku returned no JSON');
-  return JSON.parse(jsonMatch[0]) as AnalysisResult;
+  // Text-only analysis — Groq (1st choice), Cerebras (2nd-choice fallback).
+  async function callGroqAnalysis(): Promise<AnalysisResult | null> {
+    try {
+      const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${GROQ_API_KEY}`, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: GROQ_TEXT_MODEL,
+          max_tokens: 1024,
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userContent },
+          ],
+        }),
+      });
+      if (!r.ok) return null;
+      const data = await r.json();
+      const text = data?.choices?.[0]?.message?.content || '';
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      return jsonMatch ? (JSON.parse(jsonMatch[0]) as AnalysisResult) : null;
+    } catch { return null; }
+  }
+
+  async function callCerebrasAnalysis(): Promise<AnalysisResult | null> {
+    if (!CEREBRAS_API_KEY) return null;
+    try {
+      const r = await fetch('https://api.cerebras.ai/v1/chat/completions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${CEREBRAS_API_KEY}`, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: CEREBRAS_MODEL,
+          max_tokens: 1024,
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userContent },
+          ],
+        }),
+      });
+      if (!r.ok) return null;
+      const data = await r.json();
+      const text = data?.choices?.[0]?.message?.content || '';
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      return jsonMatch ? (JSON.parse(jsonMatch[0]) as AnalysisResult) : null;
+    } catch { return null; }
+  }
+
+  const result = (await callGroqAnalysis()) ?? (await callCerebrasAnalysis());
+  if (!result) throw new Error('Call analysis failed on both Groq and Cerebras');
+  return result;
 }
 
 async function processCall(opts: {
@@ -180,7 +213,7 @@ async function processCall(opts: {
     return { skipped: true, reason: 'empty transcript' };
   }
 
-  const analysis = await analyzeWithHaiku({
+  const analysis = await analyzeCall({
     transcript,
     callKind,
     fromNumber: (row as any)[fromCol],
