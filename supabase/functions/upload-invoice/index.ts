@@ -64,38 +64,6 @@ async function parseWithGroq(base64Data: string, mimeType: string): Promise<Reco
   }
 }
 
-async function parseWithCerebras(base64Data: string, mimeType: string): Promise<Record<string, unknown> | null> {
-  const key = Deno.env.get("CEREBRAS_API_KEY");
-  if (!key) return null;
-  // Cerebras' vision model only accepts image formats, not PDF — it 400s on
-  // PDF input and we fall through to parseWithAnthropic (Haiku), which is the
-  // only provider here that reads real PDF documents natively.
-  try {
-    const res = await fetch("https://api.cerebras.ai/v1/chat/completions", {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "gemma-4-31b",
-        max_tokens: 300,
-        messages: [{
-          role: "user",
-          content: [
-            { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Data}` } },
-            { type: "text", text: PARSE_PROMPT },
-          ],
-        }],
-      }),
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    const text = data.choices?.[0]?.message?.content ?? "";
-    const m = text.match(/\{[\s\S]*\}/);
-    return m ? JSON.parse(m[0]) : null;
-  } catch {
-    return null;
-  }
-}
-
 async function parseWithAnthropic(base64Data: string, mimeType: string): Promise<Record<string, unknown> | null> {
   const key = Deno.env.get("ANTHROPIC_API_KEY");
   if (!key) return null;
@@ -169,7 +137,6 @@ serve(async (req) => {
     // 2. Parse with AI
     const b64    = base64Encode(buf);
     let parsed   = await parseWithGroq(b64, mimeType);
-    if (!parsed) parsed = await parseWithCerebras(b64, mimeType);
     if (!parsed) parsed = await parseWithAnthropic(b64, mimeType);
 
     const invoiceNumber = typeof parsed?.invoice_number === "string" && parsed.invoice_number

@@ -127,19 +127,20 @@ Example response:
 
     const isPdf = mimeType === 'application/pdf';
 
-    // 1st choice: Cerebras. It only accepts image formats — not PDF — so it
-    // 400s and we silently fall through to Claude Haiku below, which is the
-    // only provider here that reads real PDF documents natively. Since almost
-    // all documents here are PDFs, Haiku still does most of the real work.
+    // 1st choice: Groq. It only accepts image formats — not PDF — so for PDF
+    // input we skip straight to Claude Haiku below, which is the only
+    // provider here that reads real PDF documents natively. Since almost all
+    // documents here are PDFs, Haiku still does most of the real work; Groq
+    // picks up the rare image-only upload.
     if (!isPdf) {
-      const cerebrasKey = Deno.env.get('CEREBRAS_API_KEY');
-      if (cerebrasKey) {
+      const groqKey = Deno.env.get('GROQ_API_KEY');
+      if (groqKey) {
         try {
-          const cerebrasRes = await fetch('https://api.cerebras.ai/v1/chat/completions', {
+          const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
             method: 'POST',
-            headers: { 'Authorization': `Bearer ${cerebrasKey}`, 'Content-Type': 'application/json' },
+            headers: { 'Authorization': `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              model: 'gemma-4-31b',
+              model: 'meta-llama/llama-4-scout-17b-16e-instruct',
               max_tokens: 2000,
               messages: [
                 { role: 'system', content: systemPrompt },
@@ -153,20 +154,20 @@ Example response:
               ],
             }),
           });
-          if (cerebrasRes.ok) {
-            const cerebrasData = await cerebrasRes.json();
-            const content = cerebrasData.choices?.[0]?.message?.content || '';
+          if (groqRes.ok) {
+            const groqData = await groqRes.json();
+            const content = groqData.choices?.[0]?.message?.content || '';
             const jsonMatch = content.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
               const extractedData = JSON.parse(jsonMatch[0]);
-              console.log('Extracted data (Cerebras):', extractedData);
+              console.log('Extracted data (Groq):', extractedData);
               return new Response(JSON.stringify({ success: true, extractedData }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
               });
             }
           }
-        } catch (cerebrasError) {
-          console.error('Cerebras extraction failed, falling back to Haiku:', cerebrasError);
+        } catch (groqError) {
+          console.error('Groq extraction failed, falling back to Haiku:', groqError);
         }
       }
     }
