@@ -25,9 +25,11 @@ export function BillingDashboard({ documents, onCreateInvoice, onViewDocument, o
   const invoices = useMemo(() => documents.filter(d => d.doc_type === "invoice"), [documents]);
   const creditNotes = useMemo(() => documents.filter(d => d.doc_type === "credit_note"), [documents]);
 
-  // Revenue = paid invoices + paid proformas
+  // Revenue = actual cash received across all billable documents, including
+  // partial payments on invoices that haven't fully settled yet — summing
+  // total_amount for status === "paid" alone silently drops that cash.
   const totalRevenue = useMemo(() =>
-    billable.filter(d => d.status === "paid").reduce((s, d) => s + d.total_amount, 0),
+    billable.reduce((s, d) => s + (d.amount_paid || 0), 0),
   [billable]);
 
   const outstanding = useMemo(() =>
@@ -89,7 +91,7 @@ export function BillingDashboard({ documents, onCreateInvoice, onViewDocument, o
 
   // Document lists for each card dialog
   const cardDocMap = useMemo<Record<string, BillingDocument[]>>(() => ({
-    paid: billable.filter(d => d.status === "paid"),
+    paid: billable.filter(d => (d.amount_paid || 0) > 0),
     sent: billable.filter(d => ["sent", "partially_paid"].includes(d.status)),
     overdue: billable.filter(d => d.status === "overdue"),
     this_month: thisMonthDocs,
@@ -100,7 +102,7 @@ export function BillingDashboard({ documents, onCreateInvoice, onViewDocument, o
   const dialogDocs = dialogCard ? (cardDocMap[dialogCard] || []) : [];
 
   const kpiCards = [
-    { label: "Total Revenue", value: formatCurrencyINR(totalRevenue), sub: "Paid documents", icon: TrendingUp, color: "text-emerald-600", bg: "bg-emerald-50", filter: "paid" },
+    { label: "Total Revenue", value: formatCurrencyINR(totalRevenue), sub: "Payments received", icon: TrendingUp, color: "text-emerald-600", bg: "bg-emerald-50", filter: "paid" },
     { label: "Outstanding", value: formatCurrencyINR(outstanding), sub: `${billable.filter(d => ["sent", "partially_paid"].includes(d.status)).length} documents`, icon: Clock, color: "text-amber-600", bg: "bg-amber-50", filter: "sent" },
     { label: "Overdue", value: formatCurrencyINR(overdue), sub: `${billable.filter(d => d.status === "overdue").length} documents`, icon: AlertTriangle, color: "text-red-600", bg: "bg-red-50", filter: "overdue" },
     { label: "This Month", value: formatCurrencyINR(thisMonth), sub: thisMonthLabel, icon: IndianRupee, color: "text-blue-600", bg: "bg-blue-50", filter: "this_month" },

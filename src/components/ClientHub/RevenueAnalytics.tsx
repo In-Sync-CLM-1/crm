@@ -57,16 +57,28 @@ export function RevenueAnalytics({ invoices }: RevenueAnalyticsProps) {
   const invoicesOnly = allInvoicesOnly.filter(filterByDateRange);
   const proformasOnly = allProformasOnly.filter(filterByDateRange);
 
+  // billing_documents rows carry real amount_paid/balance_due (partial
+  // payments possible); the older client_invoices table has no partial-
+  // payment concept, so a "paid" status there means the full amount landed.
+  const receivedAmount = (inv: any) =>
+    inv._source === "billing_documents"
+      ? Number(inv.amount_paid || 0)
+      : inv.status === "paid"
+        ? (inv.amount || 0) + (inv.tax_amount || 0)
+        : 0;
+  const outstandingAmount = (inv: any) =>
+    inv._source === "billing_documents"
+      ? Number(inv.balance_due || 0)
+      : inv.status !== "paid" && inv.status !== "cancelled"
+        ? (inv.amount || 0) + (inv.tax_amount || 0)
+        : 0;
+
   const totalInvoiced = invoicesOnly.reduce((sum, inv) => sum + (inv.amount || 0) + (inv.tax_amount || 0), 0);
-  const totalPaid = invoicesOnly
-    .filter((inv) => inv.status === "paid")
-    .reduce((sum, inv) => sum + (inv.amount || 0) + (inv.tax_amount || 0), 0);
-  const totalOutstanding = invoicesOnly
-    .filter((inv) => inv.status !== "paid" && inv.status !== "cancelled")
-    .reduce((sum, inv) => sum + (inv.amount || 0) + (inv.tax_amount || 0), 0);
+  const totalPaid = invoicesOnly.reduce((sum, inv) => sum + receivedAmount(inv), 0);
+  const totalOutstanding = invoicesOnly.reduce((sum, inv) => sum + outstandingAmount(inv), 0);
   const totalOverdue = invoicesOnly
     .filter((inv) => inv.status === "overdue")
-    .reduce((sum, inv) => sum + (inv.amount || 0) + (inv.tax_amount || 0), 0);
+    .reduce((sum, inv) => sum + outstandingAmount(inv), 0);
   const proformasValue = proformasOnly.reduce((sum, inv) => sum + (inv.amount || 0) + (inv.tax_amount || 0), 0);
 
   // Monthly trend data - respects the selected date range
@@ -82,11 +94,8 @@ export function RevenueAnalytics({ invoices }: RevenueAnalyticsProps) {
       }
       
       const entry = monthlyMap.get(monthKey)!;
-      const amount = (inv.amount || 0) + (inv.tax_amount || 0);
-      entry.invoiced += amount;
-      if (inv.status === "paid") {
-        entry.paid += amount;
-      }
+      entry.invoiced += (inv.amount || 0) + (inv.tax_amount || 0);
+      entry.paid += receivedAmount(inv);
     });
 
     // Sort chronologically
@@ -127,9 +136,9 @@ export function RevenueAnalytics({ invoices }: RevenueAnalyticsProps) {
       case "invoiced":
         return invoicesOnly;
       case "received":
-        return invoicesOnly.filter((inv) => inv.status === "paid");
+        return invoicesOnly.filter((inv) => receivedAmount(inv) > 0);
       case "outstanding":
-        return invoicesOnly.filter((inv) => inv.status !== "paid" && inv.status !== "cancelled");
+        return invoicesOnly.filter((inv) => outstandingAmount(inv) > 0);
       case "overdue":
         return invoicesOnly.filter((inv) => inv.status === "overdue");
       case "proformas":
@@ -325,7 +334,10 @@ export function RevenueAnalytics({ invoices }: RevenueAnalyticsProps) {
                     </TableHeader>
                     <TableBody>
                       {filteredInvoices.map((inv) => {
-                        const amount = (inv.amount || 0) + (inv.tax_amount || 0);
+                        const amount =
+                          selectedCategory === "received" ? receivedAmount(inv)
+                          : selectedCategory === "outstanding" || selectedCategory === "overdue" ? outstandingAmount(inv)
+                          : (inv.amount || 0) + (inv.tax_amount || 0);
                         const daysOverdue = inv.due_date && inv.status === "overdue" 
                           ? differenceInDays(new Date(), new Date(inv.due_date))
                           : 0;
