@@ -17,37 +17,13 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/corsHeaders.ts';
 
-const FB_API_VERSION = 'v21.0';
-// Meta's flexible_spec interests require real numeric interest IDs, not
-// bare names (bare names 400 with a cryptic "type integer expected, NULL
-// received" — discovered live on mkt-meta-followers-launch, 2026-08-03).
-// Resolved via GET /act_.../targetingsearch?type=adinterest&q=<term>.
-const DEFAULT_INTERESTS = [
-  { id: '6002884511422', name: 'Small business (business & finance)' },
-  { id: '6003371567474', name: 'Entrepreneurship (business & finance)' },
-];
+import { DEFAULT_INTERESTS, fbPost } from '../_shared/metaAds.ts';
 
 function ok(data: unknown) {
   return new Response(JSON.stringify(data), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 }
 function err(status: number, message: string) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-}
-
-async function fbPost(path: string, token: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const body = new URLSearchParams();
-  for (const [k, v] of Object.entries(params)) {
-    body.set(k, typeof v === 'string' ? v : JSON.stringify(v));
-  }
-  body.set('access_token', token);
-  const res = await fetch(`https://graph.facebook.com/${FB_API_VERSION}/${path}`, {
-    method: 'POST',
-    body,
-    signal: AbortSignal.timeout(30_000),
-  });
-  const json = await res.json();
-  if (!res.ok) throw new Error(`FB Graph API ${res.status} on ${path}: ${JSON.stringify(json)}`);
-  return json;
 }
 
 function addDays(dateStr: string, days: number): string {

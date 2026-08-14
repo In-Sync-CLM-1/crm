@@ -11,6 +11,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/corsHeaders.ts';
 import { loadGoogleAdsConfig, getGoogleAccessToken, mutateGoogleAds } from '../_shared/googleAdsClient.ts';
+import { FB_API_VERSION } from '../_shared/metaAds.ts';
 
 function ok(data: unknown) {
   return new Response(JSON.stringify(data), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -53,7 +54,7 @@ Deno.serve(async (req) => {
         .eq('active', true)
         .maybeSingle();
       if (!config) return err(400, 'no active mkt_social_config for this org');
-      const res = await fetch(`https://graph.facebook.com/v21.0/${campaign.meta_campaign_id}`, {
+      const res = await fetch(`https://graph.facebook.com/${FB_API_VERSION}/${campaign.meta_campaign_id}`, {
         method: 'POST',
         body: new URLSearchParams({ status: 'PAUSED', access_token: config.fb_page_access_token as string }),
         signal: AbortSignal.timeout(30_000),
