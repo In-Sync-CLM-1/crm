@@ -173,7 +173,7 @@ Deno.serve(async (req) => {
 
     const { data: post, error: postErr } = await supabase
       .from('blog_posts')
-      .select('id, blog_title, blog_excerpt, blog_url, video_url')
+      .select('id, blog_title, blog_excerpt, blog_url, video_url, yt_video_id')
       .eq('id', blog_post_id)
       .maybeSingle();
 
@@ -182,6 +182,13 @@ Deno.serve(async (req) => {
 
     if (!post.video_url) {
       return ok({ skip: 'no video_url on blog post' });
+    }
+
+    // Already on the channel — the promo posts carry a hand-uploaded video id,
+    // and a retried fan-out would otherwise upload a second copy (and burn
+    // another ~1600 units of the daily quota).
+    if (post.yt_video_id) {
+      return ok({ skip: 'already uploaded to YouTube', yt_video_id: post.yt_video_id });
     }
 
     const accessToken = await getAccessToken();

@@ -1,0 +1,66 @@
+[
+  {
+    "file": "globalcrm-promo.mp4",
+    "title": "In-Sync CRM — the AI-native CRM your sales team will actually use",
+    "shortTitle": "Your CRM is where leads go to quietly die #Shorts",
+    "url": "https://in-sync.co.in/products/crm",
+    "desc": "Your CRM is where leads go to quietly die. Reps hate updating it, so you fly blind. In-Sync CRM flips that — the AI does the work for them.\n\nEvery channel into one pipeline, tagged by source. Contacts that enrich themselves and get scored. AI call coaching that tells reps exactly what to fix. And a command centre that tells you which deals to chase today.\n\nLess busywork. More closing. A CRM your team will adopt.",
+    "tags": ["crm", "ai crm", "sales crm india", "lead management", "sales pipeline", "in-sync crm", "b2b sales", "sales automation"]
+  },
+  {
+    "file": "ats-promo.mp4",
+    "title": "In-Sync ATS — sourcing is the easy part. We run the hiring pipeline",
+    "shortTitle": "800 candidates across three spreadsheets #Shorts",
+    "url": "https://in-sync.co.in/products/ats",
+    "desc": "Candidates sourced — but where does each one stand? Eight hundred candidates across three spreadsheets. In-Sync ATS puts the whole pipeline on one live screen.\n\nMandates with deadlines you see slipping before the client calls. Candidates that arrive parsed, de-duplicated and AI-scored. Aadhaar and PAN checks in the flow, audit-ready and DPDP-compliant. And AI calls that guard the gap between offer and day one.\n\nA clean, scored database. Verified placements. Faster time-to-fill.",
+    "tags": ["ats", "applicant tracking system", "recruitment software india", "hiring", "recruitment ai", "in-sync ats", "talent acquisition", "kyc onboarding"]
+  },
+  {
+    "file": "eventsync-promo.mp4",
+    "title": "EventSync — registration is the easy part. We run the event day",
+    "shortTitle": "40% of your registrations never show up #Shorts",
+    "url": "https://in-sync.co.in/products/eventsync",
+    "desc": "Your event is your big moment — so why run it on a Google Form, a WhatsApp group and a list at the door? Forty percent never show up.\n\nEventSync runs the day: automatic WhatsApp reminders, and when a guest goes quiet the AI calls them. QR check-in with a live count on every screen. And every guest scored as they leave, so your hottest leads are ranked and waiting the next morning.\n\nA packed room, a flawless day, and leads you can act on immediately.",
+    "tags": ["event management software", "event registration", "qr check in", "event india", "eventsync", "attendee engagement", "event leads"]
+  },
+  {
+    "file": "vendor-sync-promo.mp4",
+    "title": "Vendor-Sync — know your vendor before you commit | PAN, GST & bank checks",
+    "shortTitle": "Every new vendor is a stranger you're about to pay #Shorts",
+    "url": "https://in-sync.co.in/products/vendor-verification",
+    "desc": "Every new vendor is a stranger you're about to pay. A PAN, a bank line, nobody checked — and fraud shows up after the purchase order is signed.\n\nVendor-Sync checks PAN, GST and bank against government sources in minutes, flags duplicate identities and tampered documents, then keeps that verified identity attached through onboarding, every invoice, every advance and every settlement. Vendors file their own paperwork; the AI reads it; your team just approves.\n\nAudit-ready, without a single spreadsheet.",
+    "tags": ["vendor verification", "vendor management", "due diligence", "gst verification", "pan verification", "fraud prevention", "vendor onboarding india"]
+  },
+  {
+    "file": "wa-promo.mp4",
+    "title": "In-Sync WhatsApp — official Business API campaigns, AI inbox and templates",
+    "shortTitle": "98% of WhatsApp messages get opened #Shorts",
+    "url": "https://in-sync.co.in/products/whatsapp-campaigns",
+    "desc": "Your customers are already on WhatsApp, and they open it — ninety-eight percent, usually within minutes.\n\nIn-Sync WhatsApp is the complete toolkit on the official Business API: broadcast campaigns to your whole list in minutes, personalised and scheduled. An AI inbox trained on your own catalogue that replies in seconds, day or night. Pre-approved templates for marketing, order updates and OTPs. And delivery, open and reply tracking on every send.\n\nMessages that get read, and replies that turn into sales.",
+    "tags": ["whatsapp business api", "whatsapp marketing", "whatsapp campaigns", "bulk whatsapp india", "customer engagement", "ai chatbot", "whatsapp crm"]
+  },
+  {
+    "file": "email-promo.mp4",
+    "title": "In-Sync Email — land in the inbox every time | campaigns and automation",
+    "shortTitle": "You send a thousand emails, half land in spam #Shorts",
+    "url": "https://in-sync.co.in/products/email-broadcast",
+    "desc": "You send a thousand emails and half of them land in spam. In-Sync Email is built to actually reach the inbox.\n\nPick a template, choose your audience, send thousands of personalised emails in minutes. Welcome series, follow-ups and drip sequences that fire the moment someone joins your list. A library of polished templates so every send looks professional. Opens, clicks and bounces tracked in real time.\n\nEmails that land, opens that climb, and a list that turns into revenue.",
+    "tags": ["email marketing", "email campaigns", "email automation", "drip campaign", "bulk email india", "email deliverability", "newsletter software"]
+  },
+  {
+    "file": "expense-promo.mp4",
+    "title": "In-Sync Expense — claims, advances and GST credit on autopilot",
+    "shortTitle": "Every advance is cash that left before anyone checked #Shorts",
+    "url": "https://in-sync.co.in/products/expense",
+    "desc": "Every claim is a number someone typed. Every advance is cash that left before anyone checked.\n\nIn-Sync Expense reconciles advances automatically against what's approved — what's owed, what's recovered — with no ledger matching by hand. The AI reads the GST number and the tax straight off the receipt, so input tax credit sitting in a drawer today is recovered tomorrow. Filing takes a minute: a photo, not a form. Every action timestamped with a name on it, and month-end is one click.\n\nControl over every rupee claimed, advanced and taxed.",
+    "tags": ["expense management", "expense claims", "gst input tax credit", "employee reimbursement", "advance reconciliation", "expense software india", "receipt scanning ai"]
+  },
+  {
+    "file": "field-promo.mp4",
+    "title": "In-Sync Field — GPS-verified visits, your whole field team on one live map",
+    "shortTitle": "Is your field team visiting customers, or parked at a chai stall? #Shorts",
+    "url": "https://in-sync.co.in/products/field-sync",
+    "desc": "Your field team is out there somewhere. Are they really visiting customers, or parked at a chai stall?\n\nIn-Sync Field shows every rep on a live GPS-verified map with today's route as it happens. Recurring beat plans put the right rep in front of the right customers week after week. Directed visit lists land straight on their phone. And visits, orders, distance and collections come back per rep in one clear report.\n\nVisits you can trust, and a field team you can finally see.",
+    "tags": ["field force management", "field sales app", "gps tracking sales", "beat plan", "merchandising", "field team india", "sales visit tracking"]
+  }
+]
