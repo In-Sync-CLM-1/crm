@@ -16,7 +16,7 @@ const env = Object.fromEntries(
 );
 
 const CID = '6785487693';
-const API = 'https://googleads.googleapis.com/v21';
+const API = 'https://googleads.googleapis.com/v25'; // keep in step with _shared/googleAdsClient.ts
 
 const WANT = [
   { name: 'CRM Qualified Lead (offline)', category: 'QUALIFIED_LEAD' },
