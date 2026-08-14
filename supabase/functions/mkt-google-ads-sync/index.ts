@@ -1,5 +1,6 @@
 import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 import { createEngineLogger } from '../_shared/engineLogger.ts';
+import { GOOGLE_ADS_API_VERSION } from '../_shared/googleAdsClient.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -364,7 +365,7 @@ async function queryGoogleAds(
   if (loginCustomerId) headers['login-customer-id'] = loginCustomerId;
 
   const response = await fetch(
-    `https://googleads.googleapis.com/v21/customers/${cleanCustomerId}/googleAds:searchStream`,
+    `https://googleads.googleapis.com/${GOOGLE_ADS_API_VERSION}/customers/${cleanCustomerId}/googleAds:searchStream`,
     {
       method: 'POST',
       headers,

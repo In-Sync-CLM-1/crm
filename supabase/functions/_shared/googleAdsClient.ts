@@ -1,10 +1,23 @@
 /**
- * Shared Google Ads API v21 auth + request helpers. Extracted from the
+ * Shared Google Ads API auth + request helpers. Extracted from the
  * OAuth/GAQL pattern already proven in mkt-google-ads-sync and the mutate
  * pattern in mkt-google-ads-campaign-control, so the new campaign-creation
  * path (mkt-google-ads-launch) doesn't duplicate either.
+ *
+ * Google retires API versions on a rolling ~yearly schedule and then HARD
+ * BLOCKS them — a retired version 400s with requestError UNSUPPORTED_VERSION
+ * on every call, which looks like a credential problem but isn't. v16 died
+ * this way (2026-06-01) and v21 died the same way (found 2026-08-14, which
+ * had silently killed the daily stats sync, the hourly offline-conversion
+ * upload, the ads dashboard worker AND the pause/resume control).
+ *
+ * This constant is the single source of truth for every Deno function that
+ * talks to Google Ads — bump it here, not in each caller. Two callers live
+ * outside this bundle and must be bumped alongside it: `ads-dashboard-worker`
+ * (Cloudflare Worker) and `scripts/*.mjs` (Node one-offs).
  */
-const API_VERSION = 'v21';
+export const GOOGLE_ADS_API_VERSION = 'v25';
+const API_VERSION = GOOGLE_ADS_API_VERSION;
 
 export interface GoogleAdsConfig {
   developerToken: string;

@@ -5,6 +5,10 @@
 
 const CID = '6785487693';
 const CAMP = '23906419126';
+// Keep in step with GOOGLE_ADS_API_VERSION in
+// supabase/functions/_shared/googleAdsClient.ts — Google hard-blocks retired
+// versions (UNSUPPORTED_VERSION), which silently blanks this dashboard.
+const ADS_API_VERSION = 'v25';
 
 async function token(env) {
   const r = await fetch('https://oauth2.googleapis.com/token', {
@@ -14,7 +18,7 @@ async function token(env) {
   return (await r.json()).access_token;
 }
 async function adsQuery(env, at, query) {
-  const r = await fetch(`https://googleads.googleapis.com/v21/customers/${CID}/googleAds:search`, {
+  const r = await fetch(`https://googleads.googleapis.com/${ADS_API_VERSION}/customers/${CID}/googleAds:search`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'developer-token': env.GOOGLE_ADS_DEVELOPER_TOKEN, Authorization: 'Bearer ' + at },
     body: JSON.stringify({ query }),
   });

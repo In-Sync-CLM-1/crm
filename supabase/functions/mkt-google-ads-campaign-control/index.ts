@@ -4,6 +4,7 @@
 // writes back to Google Ads.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.58.0';
 import { getSupabaseClient } from '../_shared/supabaseClient.ts';
+import { GOOGLE_ADS_API_VERSION } from '../_shared/googleAdsClient.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -75,7 +76,7 @@ Deno.serve(async (req) => {
     if (loginCustomerId) headers['login-customer-id'] = loginCustomerId;
 
     const mutateRes = await fetch(
-      `https://googleads.googleapis.com/v21/customers/${customerId}/campaigns:mutate`,
+      `https://googleads.googleapis.com/${GOOGLE_ADS_API_VERSION}/customers/${customerId}/campaigns:mutate`,
       {
         method: 'POST',
         headers,

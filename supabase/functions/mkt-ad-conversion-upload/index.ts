@@ -1,6 +1,7 @@
 import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2.58.0';
 import { createEngineLogger } from '../_shared/engineLogger.ts';
+import { GOOGLE_ADS_API_VERSION } from '../_shared/googleAdsClient.ts';
 
 /**
  * OFFLINE CONVERSION FEEDBACK LOOP — Phase 1 (qualified leads).
@@ -32,7 +33,7 @@ const CUSTOMER_ID = (Deno.env.get('GOOGLE_ADS_CUSTOMER_ID') || '6785487693').rep
 const QUALIFIED_CONVERSION =
   Deno.env.get('GOOGLE_ADS_QUALIFIED_LEAD_CONVERSION') ||
   'customers/6785487693/conversionActions/7636244387';
-const ADS_API = 'https://googleads.googleapis.com/v21';
+const ADS_API = `https://googleads.googleapis.com/${GOOGLE_ADS_API_VERSION}`;
 
 // "2026-06-05T13:00:00.000Z" -> "2026-06-05 13:00:00+00:00" (Google Ads format).
 function fmtAdsDateTime(iso: string): string {

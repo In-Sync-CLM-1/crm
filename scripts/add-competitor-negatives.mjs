@@ -18,7 +18,7 @@ const env = Object.fromEntries(
 );
 
 const CUSTOMER_ID = '6785487693';
-const API = 'https://googleads.googleapis.com/v21';
+const API = 'https://googleads.googleapis.com/v25'; // keep in step with _shared/googleAdsClient.ts
 
 // Bare competitor brands — exact negatives so "<brand> alternative" stays eligible.
 const BRANDS = [
