@@ -35,6 +35,13 @@ jobs:
           ok=0; fail=0
           while IFS='|' read -r suffix fn body sched; do
             [ -z "$suffix" ] && continue
+            # '#' comments out a job: it keeps the definition in jobs.txt but
+            # stops it being deployed. Without this a commented line would be
+            # read as a worker named "crm-cron-#..." and fail the whole run.
+            # NOTE: commenting does NOT delete an already-deployed Worker —
+            # it only stops future updates. Delete the Worker too, or it keeps
+            # running its last-deployed code on its existing schedule.
+            case "$suffix" in \#*) echo "SKIP  $suffix (commented out)"; continue;; esac
             name="crm-cron-$suffix"
             if [ -n "$body" ]; then
               esc=${body//\"/\\\"}
