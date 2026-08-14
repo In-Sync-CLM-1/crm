@@ -69,7 +69,7 @@ Deno.serve(async (req) => {
   try {
     const { data: config } = await supabase
       .from('mkt_social_config')
-      .select('org_id, fb_page_id, fb_page_access_token, fb_ad_account_id')
+      .select('org_id, fb_page_id, fb_page_access_token, fb_ad_account_id, ig_user_id')
       .eq('active', true)
       .maybeSingle();
 
@@ -124,7 +124,10 @@ Deno.serve(async (req) => {
           reach: 0,
         });
       }
-      if (p.ig_post_id) {
+      // An Instagram post can only be promoted when we know which IG account
+      // published it — the creative needs instagram_user_id. Without it the
+      // launch would fail deep in the Graph chain, so drop the candidate here.
+      if (p.ig_post_id && config.ig_user_id) {
         candidates.push({
           post_id: p.id,
           channel: 'instagram',
@@ -134,7 +137,17 @@ Deno.serve(async (req) => {
         });
       }
     }
-    candidates.sort((a, b) => b.interactions - a.interactions || b.reach - a.reach);
+    // Ties are common early on, when every post still has zero recorded
+    // engagement. Break them toward Facebook: same budget, but the Page is
+    // the follower base being grown, and the FB creative path is the simpler
+    // of the two. Real engagement still wins over channel once it exists.
+    const channelRank = (c: string) => (c === 'facebook' ? 0 : 1);
+    candidates.sort(
+      (a, b) =>
+        b.interactions - a.interactions ||
+        b.reach - a.reach ||
+        channelRank(a.channel) - channelRank(b.channel),
+    );
     const best = candidates[0];
 
     const startDate = now.toISOString().slice(0, 10);
@@ -230,9 +243,28 @@ Deno.serve(async (req) => {
         status: 'ACTIVE',
       });
 
-      const creative = await fbPost(`${actId}/adcreatives`, token, {
-        object_story_id: `${config.fb_page_id}_${best.fb_post_id}`,
-      });
+      /**
+       * Facebook and Instagram need DIFFERENT creative shapes to promote an
+       * existing organic post, and using the Facebook shape for an Instagram
+       * post fails with the misleading "This post can't be boosted — there is
+       * an issue with this post" (subcode 2446187), which reads like the post
+       * is ineligible rather than like a malformed request.
+       *
+       *  - Facebook: object_story_id = "<page_id>_<post_id>".
+       *  - Instagram: source_instagram_media_id = "<ig_media_id>", plus
+       *    instagram_user_id at the TOP LEVEL of the creative. Putting the
+       *    IG account inside object_story_spec instead fails two ways —
+       *    "The link field is required", or, if both are supplied,
+       *    "The object that you are trying to promote is ambiguous."
+       *
+       * All four shapes were tried against the live ad account (2026-08-14);
+       * these are the two that Meta accepts.
+       */
+      const creativeSpec = best.channel === 'instagram'
+        ? { source_instagram_media_id: best.fb_post_id, instagram_user_id: config.ig_user_id }
+        : { object_story_id: `${config.fb_page_id}_${best.fb_post_id}` };
+
+      const creative = await fbPost(`${actId}/adcreatives`, token, creativeSpec);
 
       const ad = await fbPost(`${actId}/ads`, token, {
         name: `Boost ${best.channel} ${startDate} ad`,
