@@ -6,7 +6,11 @@ process-scheduled-messages-and-reminders|scheduled-messages-processor||*/5 * * *
 linkedin-engagement-tracker|mkt-linkedin-engagement-tracker||30 17 * * *
 member-engagement|mkt-member-engagement||30 7 * * 1,4
 social-engagement-tracker|mkt-social-engagement-tracker||0 17 * * *
-social-boost-weekly|mkt-social-boost||0 4 * * 1
+# DISABLED 2026-08-14 by Amit — Meta is being set up by hand, and this job
+# spends on its own (Rs 200/day x 4 = Rs 800/week) on a post it picks itself.
+# Left off so that once Meta's non-discrimination certification clears, only
+# the manual campaigns spend. Re-enable = delete this comment block and push.
+#social-boost-weekly|mkt-social-boost||0 4 * * 1
 linkedin-blog-writer|mkt-blog-writer||*/30 * * * *
 linkedin-slot-0|mkt-blog-poster||0 2 * * *
 linkedin-slot-1|mkt-blog-poster||0 3 * * *
