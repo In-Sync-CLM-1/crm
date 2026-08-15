@@ -10,8 +10,12 @@
  * after clearing every automated filter, which is exactly why a human reads
  * them.
  *
- *   POST { limit: 10 }        research the next N ungraded/unresearched firms
+ *   POST { limit: 4 }         research the next N unresearched A/B firms
  *   POST { firm_ids: [...] }  research specific firms
+ *
+ * Eight pages at one request per two seconds is ~20s per firm, so the limit is
+ * capped low: a bigger batch would hit the function timeout mid-firm and leave
+ * the row half-written.
  */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/corsHeaders.ts';
@@ -46,39 +50,87 @@ async function fetchPage(url: string): Promise<{ text: string; finalUrl: string 
   } catch { return null; }
 }
 
-/** Case-study and client names as written. Titles come from heading-ish runs. */
+// Words that appear in headings and marketing copy around a client list and
+// get mistaken for company names — the first pass pulled out "Clients Say",
+// "Great" and "Results" as clients, which would have produced a first line
+// naming something the firm does not recognise.
+const NOT_A_COMPANY = new Set([
+  'clients', 'client', 'customers', 'customer', 'trusted', 'say', 'says', 'what',
+  'great', 'results', 'our', 'we', 'us', 'your', 'their', 'the', 'this', 'that',
+  'more', 'about', 'work', 'works', 'case', 'cases', 'study', 'studies', 'story',
+  'stories', 'read', 'view', 'all', 'see', 'learn', 'contact', 'home', 'services',
+  'solutions', 'team', 'leadership', 'partners', 'testimonials', 'reviews',
+  'projects', 'portfolio', 'industries', 'success', 'why', 'how', 'who', 'from',
+  'with', 'and', 'for', 'you', 'they', 'have', 'has', 'been', 'was', 'were',
+  'llc', 'inc', 'ltd', 'corp', 'company', 'group', 'get', 'started', 'let', 'talk',
+  'privacy', 'policy', 'terms', 'cookie', 'blog', 'news', 'careers', 'jobs',
+]);
+
+const TITLE_WORDS = /\b(chief|officer|president|director|manager|founder|ceo|cto|coo|vp|partner|principal)\b/i;
+
+function looksLikeCompany(candidate: string): boolean {
+  const tokens = candidate.split(/\s+/);
+  if (tokens.length > 4 || candidate.length < 3 || candidate.length > 48) return false;
+  if (tokens.every((t) => NOT_A_COMPANY.has(t.toLowerCase()))) return false;
+  // A leading generic word means the match ran into a heading.
+  if (NOT_A_COMPANY.has(tokens[0].toLowerCase())) return false;
+  // Job titles swept up from a team page.
+  if (TITLE_WORDS.test(candidate)) return false;
+  return true;
+}
+
+const STACK = ['Salesforce', 'HubSpot', 'Dynamics 365', 'NetSuite', 'SAP', 'Oracle', 'ServiceNow',
+  'Bullhorn', 'Zoho', 'Odoo', 'Shopify', 'Magento', 'Snowflake', 'Databricks',
+  'AS/400', 'VB6', 'FoxPro', 'Delphi', 'COBOL', 'Mulesoft', 'Boomi', 'Twilio'];
+
+const VERTICALS = ['healthcare', 'insurance', 'financial services', 'banking', 'lending',
+  'manufacturing', 'logistics', 'distribution', 'retail', 'education', 'nonprofit',
+  'government', 'legal', 'real estate', 'construction', 'energy', 'staffing',
+  'recruitment', 'hospitality', 'automotive', 'telecom'];
+
+const CLIENT_CUE = /(?:our clients?|client list|customers include|trusted by|partnered with|worked with|clients include)[^.]{0,240}/gi;
+const CAPITALISED = /[A-Z][A-Za-z0-9&.]*(?: [A-Z][A-Za-z0-9&.]*){0,3}/g;
+const TEAM = /([A-Z][a-z]+ [A-Z][a-z]+)\s*(?:[,—–-]\s*)?((?:Chief [A-Z][a-z]+ Officer|Co-?[Ff]ounder|Founder|CEO|CTO|COO|CIO|President|VP of [A-Z][a-z]+|Vice President|Director of [A-Z][a-z]+|Head of [A-Z][a-z]+|Managing Partner|Principal))/g;
+const CASE_TITLE = /(?:case study|success story)[:\s—–-]+([A-Z][^.|\n]{8,90})/gi;
+
+/** Extract as written. A wrong "client" is worse than a missing one. */
 function extractFacts(text: string, firmName: string) {
   const facts: Record<string, string[]> = { clients: [], cases: [], verticals: [], stack: [], team: [] };
 
-  // Named platforms and partner tiers — these are the concrete things a first
-  // line can be built on.
-  const STACK = ['Salesforce', 'HubSpot', 'Dynamics 365', 'NetSuite', 'SAP', 'Oracle', 'ServiceNow',
-    'Bullhorn', 'Zoho', 'Odoo', 'Shopify', 'Magento', 'AWS', 'Azure', 'Google Cloud', 'Snowflake',
-    'Databricks', 'AS/400', 'VB6', 'FoxPro', 'Delphi', 'COBOL', 'Mulesoft', 'Boomi', 'Twilio'];
-  for (const s of STACK) if (new RegExp(`\\b${s.replace(/[/.]/g, '\\$&')}\\b`, 'i').test(text)) facts.stack.push(s);
-
-  const VERTICALS = ['healthcare', 'insurance', 'financial services', 'banking', 'lending', 'manufacturing',
-    'logistics', 'distribution', 'retail', 'education', 'nonprofit', 'government', 'legal', 'real estate',
-    'construction', 'energy', 'staffing', 'recruitment', 'hospitality', 'automotive', 'telecom'];
-  for (const v of VERTICALS) if (new RegExp(`\\b${v}\\b`, 'i').test(text)) facts.verticals.push(v);
-
-  // Leadership: "Firstname Lastname, Title" or "Firstname Lastname — Title"
-  const teamRe = /\b([A-Z][a-z]+ [A-Z][a-z]+)\s*[,—–-]\s*((?:Chief|Co-?founder|Founder|CEO|CTO|COO|President|VP|Vice President|Director|Head|Partner|Principal)[A-Za-z &]*)/g;
-  let m: RegExpExecArray | null;
-  while ((m = teamRe.exec(text)) !== null && facts.team.length < 12) facts.team.push(`${m[1]} — ${m[2].trim()}`);
-
-  // Client names: capitalised multiword runs near a client-ish cue word.
-  const clientRe = /(?:clients?|customers?|partnered with|worked with|trusted by)[^.]{0,240}/gi;
-  const stop = new Set(['We', 'Our', 'The', 'This', 'They', 'You', 'Your', 'And', 'For', 'With', firmName]);
-  while ((m = clientRe.exec(text)) !== null && facts.clients.length < 20) {
-    for (const cand of m[0].match(/\b[A-Z][A-Za-z0-9&.]*(?: [A-Z][A-Za-z0-9&.]*){0,3}\b/g) || []) {
-      if (cand.length > 3 && !stop.has(cand.split(' ')[0]) && !facts.clients.includes(cand)) facts.clients.push(cand);
-    }
+  // Exact string matches — the most reliable extract, no guessing involved.
+  for (const s of STACK) {
+    const escaped = s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+    if (new RegExp('\\b' + escaped + '\\b', 'i').test(text)) facts.stack.push(s);
   }
 
-  // Case study titles as written.
-  const caseRe = /(?:case study|success story)[:\s—–-]+([A-Z][^.|\n]{8,90})/gi;
-  while ((m = caseRe.exec(text)) !== null && facts.cases.length < 12) facts.cases.push(m[1].trim());
+  // Industries they explicitly CLAIM. A passing mention of "healthcare" in a
+  // blog title is not a claimed vertical, so require a claiming phrase nearby.
+  for (const v of VERTICALS) {
+    const re = new RegExp('(industries?|verticals?|sectors?|clients? in|specializ\\w+ in|serve|serving|expertise in)[^.]{0,120}\\b' + v + '\\b', 'i');
+    if (re.test(text)) facts.verticals.push(v);
+  }
+
+  let m: RegExpExecArray | null;
+
+  const seenTeam = new Set<string>();
+  while ((m = TEAM.exec(text)) !== null && facts.team.length < 12) {
+    const entry = `${m[1]} — ${m[2].trim()}`;
+    if (!seenTeam.has(entry)) { seenTeam.add(entry); facts.team.push(entry); }
+  }
+  TEAM.lastIndex = 0;
+
+  while ((m = CLIENT_CUE.exec(text)) !== null && facts.clients.length < 20) {
+    for (const cand of m[0].match(CAPITALISED) || []) {
+      const clean = cand.trim();
+      if (!looksLikeCompany(clean)) continue;
+      if (clean.toLowerCase() === firmName.toLowerCase()) continue;
+      if (!facts.clients.includes(clean)) facts.clients.push(clean);
+    }
+  }
+  CLIENT_CUE.lastIndex = 0;
+
+  while ((m = CASE_TITLE.exec(text)) !== null && facts.cases.length < 12) facts.cases.push(m[1].trim());
+  CASE_TITLE.lastIndex = 0;
 
   return facts;
 }
@@ -90,22 +142,15 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const limit = Math.min(Number(body.limit) || 10, 25);
+    const limit = Math.min(Number(body.limit) || 4, 6);
+    const COLS = 'id, firm_name, city, state, website, other_services, research_facts, researched_at';
 
-    let query = supabase
-      .from('bd_firms')
-      .select('id, firm_name, city, state, website, other_services, research_facts, researched_at')
-      .eq('org_id', BD_ORG_ID)
-      .is('state_flag', null)
-      .in('grade', ['A', 'B'])
-      .order('grade', { ascending: true });
-
-    if (body.firm_ids?.length) query = supabase
-      .from('bd_firms')
-      .select('id, firm_name, city, state, website, other_services, research_facts, researched_at')
-      .eq('org_id', BD_ORG_ID)
-      .in('id', body.firm_ids);
-    else query = query.is('researched_at', null).limit(limit);
+    const query = body.firm_ids?.length
+      ? supabase.from('bd_firms').select(COLS).eq('org_id', BD_ORG_ID).in('id', body.firm_ids)
+      : supabase.from('bd_firms').select(COLS).eq('org_id', BD_ORG_ID)
+          .is('state_flag', null).in('grade', ['A', 'B'])
+          .is('researched_at', null)
+          .order('grade', { ascending: true }).limit(limit);
 
     const { data: firms, error } = await query;
     if (error) return err(500, error.message);
@@ -123,15 +168,16 @@ Deno.serve(async (req) => {
 
       for (const p of PATHS) {
         const page = await fetchPage(domain.replace(/\/$/, '') + p);
-        // Rate limit: 1 request / 2s, per the spec.
-        await new Promise((r) => setTimeout(r, 2000));
+        await new Promise((r) => setTimeout(r, 2000));   // 1 req / 2s
         if (!page) continue;
         reachedAny = true;
         combined += ' ' + page.text.slice(0, 20_000);
         // A redirect landing on a different company name is an acquisition.
-        const host = new URL(page.finalUrl).hostname.replace(/^www\./, '');
-        const expected = new URL(domain).hostname.replace(/^www\./, '');
-        if (host !== expected) redirectedTo = host;
+        try {
+          const host = new URL(page.finalUrl).hostname.replace(/^www\./, '');
+          const expected = new URL(domain).hostname.replace(/^www\./, '');
+          if (host !== expected) redirectedTo = host;
+        } catch { /* malformed URL — not a redirect signal */ }
       }
 
       if (!reachedAny) {
@@ -140,7 +186,7 @@ Deno.serve(async (req) => {
           notes: `research: site unreachable at ${domain} — verify the URL`,
           updated_at: new Date().toISOString(),
         }).eq('id', f.id);
-        results.push({ firm: f.firm_name, status: 'unreachable' });
+        results.push({ firm: f.firm_name, status: 'unreachable', tried: domain });
         continue;
       }
 
@@ -148,15 +194,19 @@ Deno.serve(async (req) => {
       const flags = disqualifierFlags(combined);
       if (redirectedTo) (flags.acquired_dead ||= []).push(`redirects to ${redirectedTo}`);
 
-      // Domain anchor: does their client/vertical language match a type he has
-      // actually shipped for? This outranks the fit score in grading.
-      const hay = combined.toLowerCase();
-      const anchor = CONFIG.domain_anchors.find((a) => hay.includes(a)) || null;
+      // Domain anchor: does their CLIENT and INDUSTRY language match a type he
+      // has actually shipped for? Checked against the extracted facts, never
+      // the raw page — a careers page saying "we are recruiting" would
+      // otherwise promote the grade and select the strongest angle on a phrase
+      // that has nothing to do with their clients.
+      const anchorHay = [...facts.clients, ...facts.verticals, ...facts.cases].join(' ').toLowerCase();
+      const anchor = CONFIG.domain_anchors.find((a) => anchorHay.includes(a)) || null;
 
       await supabase.from('bd_firms').update({
         research_facts: { ...facts, fetched_from: domain, chars: combined.length },
         disqualifier_flags: Object.keys(flags).length ? flags : null,
         has_domain_anchor: !!anchor,
+        website: domain,
         researched_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }).eq('id', f.id);
@@ -167,6 +217,7 @@ Deno.serve(async (req) => {
         clients: facts.clients.length,
         stack: facts.stack.length,
         team: facts.team.length,
+        verticals: facts.verticals.length,
         domain_anchor: anchor,
         flags: Object.keys(flags),
       });
