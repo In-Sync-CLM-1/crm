@@ -66,10 +66,18 @@ const NOT_A_COMPANY = new Set([
   'privacy', 'policy', 'terms', 'cookie', 'blog', 'news', 'careers', 'jobs',
 ]);
 
-const TITLE_WORDS = /\b(chief|officer|president|director|manager|founder|ceo|cto|coo|vp|partner|principal)\b/i;
+const TITLE_WORDS = /\b(chief|officer|president|director|manager|founder|ceo|cto|coo|vp|partner|principal|leader|lead|producer|engineer|designer|developer|consultant|analyst|specialist)\b/i;
+
+// Regions and continents read as capitalised names but are never clients.
+const PLACES = new Set([
+  'europe', 'asia', 'africa', 'america', 'north america', 'south america',
+  'middle east', 'united states', 'usa', 'us', 'uk', 'canada', 'australia',
+  'india', 'emea', 'apac', 'latam', 'worldwide', 'global', 'nationwide',
+]);
 
 function looksLikeCompany(candidate: string): boolean {
   const tokens = candidate.split(/\s+/);
+  if (PLACES.has(candidate.toLowerCase())) return false;
   if (tokens.length > 4 || candidate.length < 3 || candidate.length > 48) return false;
   if (tokens.every((t) => NOT_A_COMPANY.has(t.toLowerCase()))) return false;
   // A leading generic word means the match ran into a heading.
@@ -114,6 +122,9 @@ function extractFacts(text: string, firmName: string) {
 
   const seenTeam = new Set<string>();
   while ((m = TEAM.exec(text)) !== null && facts.team.length < 12) {
+    // "Operations Leader — Founder" is a role phrase that matched the
+    // name pattern, not a person.
+    if (TITLE_WORDS.test(m[1])) continue;
     const entry = `${m[1]} — ${m[2].trim()}`;
     if (!seenTeam.has(entry)) { seenTeam.add(entry); facts.team.push(entry); }
   }
@@ -124,6 +135,9 @@ function extractFacts(text: string, firmName: string) {
       const clean = cand.trim();
       if (!looksLikeCompany(clean)) continue;
       if (clean.toLowerCase() === firmName.toLowerCase()) continue;
+      // A person's first name lifted out of a quote attribution ("Ray" from
+      // "Ray Fanous, COO") is not a client.
+      if (facts.team.some((t) => t.toLowerCase().includes(clean.toLowerCase()))) continue;
       if (!facts.clients.includes(clean)) facts.clients.push(clean);
     }
   }
