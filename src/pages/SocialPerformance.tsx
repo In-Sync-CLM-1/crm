@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { format, subDays } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
@@ -11,9 +11,10 @@ import { Input } from "@/components/ui/input";
 import { LoadingState } from "@/components/common/LoadingState";
 import { useOrgContext } from "@/hooks/useOrgContext";
 import { EChart } from "@/components/Marketing/EChart";
-import { ArrowDownRight, ArrowUpRight, Bot, ExternalLink, ImageIcon, LayoutGrid, Minus, Send, Type, Video } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Bot, ExternalLink, ImageIcon, LayoutGrid, Minus, RefreshCw, Send, Type, Video } from "lucide-react";
 import type { EChartsOption } from "echarts";
 import { themeLabel } from "@/lib/contentSchedule";
+import { toast } from "sonner";
 
 /**
  * Social Performance — always-on view of how the content pipeline is doing
@@ -94,6 +95,20 @@ const xInteractions = (p: PerfPost) => n(p.x_likes) + n(p.x_replies) + n(p.x_rep
 const totalInteractions = (p: PerfPost) => liInteractions(p) + fbInteractions(p) + igInteractions(p) + ytInteractions(p) + xInteractions(p);
 const totalReach = (p: PerfPost) => n(p.linkedin_impressions) + n(p.ig_reach) + n(p.yt_views) + n(p.x_impressions);
 
+// Public permalink per channel, so a row in "top posts" can be opened on the
+// platform it ran on. Facebook/Instagram/X ids are stored, LinkedIn keeps a
+// full url. Everything opens in a new tab — the dashboard should never be
+// navigated away from.
+const postLinks = (p: PerfPost): { label: string; href: string; color: string }[] => {
+  const out: { label: string; href: string; color: string }[] = [];
+  if (p.linkedin_url) out.push({ label: "in", href: p.linkedin_url, color: CHANNEL_COLOR.LinkedIn });
+  if (p.fb_post_id) out.push({ label: "fb", href: `https://www.facebook.com/${String(p.fb_post_id).replace("_", "/posts/")}`, color: CHANNEL_COLOR.Facebook });
+  if (p.ig_post_id || p.ig_reel_id) out.push({ label: "ig", href: `https://www.instagram.com/p/${p.ig_post_id || p.ig_reel_id}/`, color: CHANNEL_COLOR.Instagram });
+  if (p.yt_video_id) out.push({ label: "yt", href: `https://youtu.be/${p.yt_video_id}`, color: CHANNEL_COLOR.YouTube });
+  if (p.x_post_id) out.push({ label: "x", href: `https://x.com/i/status/${p.x_post_id}`, color: CHANNEL_COLOR.X });
+  return out;
+};
+
 function pctDelta(current: number, previous: number): number | null {
   if (!previous) return null;
   return Math.round(((current - previous) / previous) * 100);
@@ -135,6 +150,31 @@ export default function SocialPerformance() {
   const since = format(subDays(new Date(), rangeDays), "yyyy-MM-dd");
   const prevSince = format(subDays(new Date(), rangeDays * 2), "yyyy-MM-dd");
 
+  const queryClient = useQueryClient();
+  const [refreshing, setRefreshing] = useState(false);
+
+  // The stored numbers are only as fresh as the last tracker sweep (hourly).
+  // LinkedIn and Meta both return current figures on demand, so a manual
+  // refresh re-reads them immediately rather than waiting for the next hour —
+  // needed right after publishing, or after boosting a post.
+  const refreshNow = async () => {
+    setRefreshing(true);
+    try {
+      const results = await Promise.allSettled([
+        supabase.functions.invoke("mkt-linkedin-engagement-tracker", { body: {} }),
+        supabase.functions.invoke("mkt-social-engagement-tracker", { body: {} }),
+      ]);
+      const failed = results.filter((r) => r.status === "rejected" || r.value?.error);
+      await queryClient.invalidateQueries({ queryKey: ["social-perf-posts"] });
+      await queryClient.invalidateQueries({ queryKey: ["social-perf-followers"] });
+      if (failed.length === results.length) toast.error("Couldn't refresh the numbers — try again in a moment.");
+      else if (failed.length) toast.warning("Refreshed, but one channel didn't respond.");
+      else toast.success("Numbers refreshed.");
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   const { data: posts, isLoading } = useQuery({
     queryKey: ["social-perf-posts", effectiveOrgId, prevSince],
     queryFn: async () => {
@@ -170,6 +210,25 @@ export default function SocialPerformance() {
     enabled: !!effectiveOrgId,
   });
 
+  // Daily cumulative snapshots per post per channel — differenced into real
+  // per-day figures below. Written by the two engagement trackers each sweep.
+  const { data: snapshotRows } = useQuery({
+    queryKey: ["social-perf-snapshots", effectiveOrgId, prevSince],
+    queryFn: async () => {
+      if (!effectiveOrgId) return [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (supabase as any)
+        .from("mkt_post_metrics_daily")
+        .select("post_id, stat_date, channel, reach, interactions")
+        .eq("org_id", effectiveOrgId)
+        .gte("stat_date", prevSince)
+        .order("stat_date", { ascending: true });
+      if (error) throw error;
+      return data as { post_id: string; stat_date: string; channel: string; reach: number | null; interactions: number | null }[];
+    },
+    enabled: !!effectiveOrgId,
+  });
+
   const model = useMemo(() => {
     const all = posts || [];
     const current = all.filter((p) => p.publish_date >= since);
@@ -178,12 +237,37 @@ export default function SocialPerformance() {
     const days: string[] = [];
     for (let i = rangeDays - 1; i >= 0; i--) days.push(format(subDays(new Date(), i), "yyyy-MM-dd"));
 
-    const byDay = (sel: (p: PerfPost) => number) => {
+    // Each post's LIFETIME total, credited to the day it was published — NOT
+    // what happened on that day. Used only until a post has daily snapshots
+    // (mkt_post_metrics_daily) to difference; see dailySeries below.
+    const byPublishDate = (sel: (p: PerfPost) => number) => {
       const map = new Map<string, number>(days.map((d) => [d, 0]));
       for (const p of current) {
         if (map.has(p.publish_date)) map.set(p.publish_date, (map.get(p.publish_date) || 0) + sel(p));
       }
       return days.map((d) => map.get(d) || 0);
+    };
+
+    // What actually happened on each day: the rise in each post's cumulative
+    // total from the previous snapshot. A post's first snapshot counts in full
+    // (everything it had gathered up to then). Falls back to publish-date
+    // attribution for days before snapshots existed, so the chart stays
+    // populated rather than showing a cliff at the changeover.
+    const dailySeries = (channel: string, metric: "reach" | "interactions", fallback: number[]) => {
+      const rows = (snapshotRows || []).filter((r) => r.channel === channel);
+      if (!rows.length) return fallback;
+      const firstSnapDay = rows.reduce((min, r) => (r.stat_date < min ? r.stat_date : min), rows[0].stat_date);
+
+      const prevByPost = new Map<string, number>();
+      const perDay = new Map<string, number>(days.map((d) => [d, 0]));
+      for (const r of [...rows].sort((a, b) => a.stat_date.localeCompare(b.stat_date))) {
+        const value = Number(r[metric] ?? 0);
+        const prev = prevByPost.get(r.post_id);
+        const delta = prev === undefined ? value : Math.max(0, value - prev);
+        prevByPost.set(r.post_id, value);
+        if (perDay.has(r.stat_date)) perDay.set(r.stat_date, (perDay.get(r.stat_date) || 0) + delta);
+      }
+      return days.map((d, i) => (d < firstSnapDay ? fallback[i] : perDay.get(d) || 0));
     };
 
     const sum = (arr: PerfPost[], sel: (p: PerfPost) => number) => arr.reduce((s, p) => s + sel(p), 0);
@@ -228,17 +312,17 @@ export default function SocialPerformance() {
       reachDelta: pctDelta(sum(current, totalReach), sum(previous, totalReach)),
       postsCount: current.length,
       interactionsByChannel: {
-        LinkedIn: byDay(liInteractions),
-        Facebook: byDay(fbInteractions),
-        Instagram: byDay(igInteractions),
-        YouTube: byDay(ytInteractions),
-        X: byDay(xInteractions),
+        LinkedIn: dailySeries("linkedin", "interactions", byPublishDate(liInteractions)),
+        Facebook: dailySeries("facebook", "interactions", byPublishDate(fbInteractions)),
+        Instagram: dailySeries("instagram", "interactions", byPublishDate(igInteractions)),
+        YouTube: dailySeries("youtube", "interactions", byPublishDate(ytInteractions)),
+        X: dailySeries("x", "interactions", byPublishDate(xInteractions)),
       },
       reachByChannel: {
-        LinkedIn: byDay((p) => n(p.linkedin_impressions)),
-        Instagram: byDay((p) => n(p.ig_reach)),
-        YouTube: byDay((p) => n(p.yt_views)),
-        X: byDay((p) => n(p.x_impressions)),
+        LinkedIn: dailySeries("linkedin", "reach", byPublishDate((p) => n(p.linkedin_impressions))),
+        Instagram: dailySeries("instagram", "reach", byPublishDate((p) => n(p.ig_reach))),
+        YouTube: dailySeries("youtube", "reach", byPublishDate((p) => n(p.yt_views))),
+        X: dailySeries("x", "reach", byPublishDate((p) => n(p.x_impressions))),
       },
       byFormat,
       byTheme,
@@ -247,7 +331,7 @@ export default function SocialPerformance() {
       latestFollowers,
       followerDelta,
     };
-  }, [posts, followerRows, since, rangeDays]);
+  }, [posts, followerRows, since, rangeDays, snapshotRows]);
 
   const axisCommon = {
     axisLine: { lineStyle: { color: INK.axis } },
@@ -331,14 +415,18 @@ export default function SocialPerformance() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-xl font-semibold">Social Performance</h1>
-            <p className="text-sm text-muted-foreground">LinkedIn · Facebook · Instagram · YouTube · X — updated nightly.</p>
+            <p className="text-sm text-muted-foreground">LinkedIn · Facebook · Instagram · YouTube · X — updated hourly.</p>
           </div>
-          <div className="flex gap-1">
+          <div className="flex items-center gap-1">
             {RANGES.map((r) => (
               <Button key={r} size="sm" variant={rangeDays === r ? "default" : "outline"} onClick={() => setRangeDays(r)}>
                 {r}d
               </Button>
             ))}
+            <Button size="sm" variant="outline" className="ml-2 gap-1.5" onClick={refreshNow} disabled={refreshing}>
+              <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
+              {refreshing ? "Refreshing" : "Refresh"}
+            </Button>
           </div>
         </div>
 
@@ -363,12 +451,12 @@ export default function SocialPerformance() {
         <div className="grid lg:grid-cols-2 gap-4">
           <Card className="p-4">
             <h2 className="text-sm font-medium mb-1">Interactions per day</h2>
-            <p className="text-xs text-muted-foreground mb-2">Likes + comments + shares/saves, by channel</p>
+            <p className="text-xs text-muted-foreground mb-2">Likes + comments + shares/saves gained each day, by channel</p>
             <EChart option={lineChart(model.interactionsByChannel, { area: true })} />
           </Card>
           <Card className="p-4">
             <h2 className="text-sm font-medium mb-1">Reach per day</h2>
-            <p className="text-xs text-muted-foreground mb-2">LinkedIn impressions + Instagram reach (Facebook doesn't report post views)</p>
+            <p className="text-xs text-muted-foreground mb-2">Impressions gained each day (Facebook doesn't report post views)</p>
             <EChart option={lineChart(model.reachByChannel)} />
           </Card>
         </div>
@@ -421,19 +509,29 @@ export default function SocialPerformance() {
                     <span className="text-xs text-muted-foreground w-4">{i + 1}.</span>
                     <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
                     <div className="min-w-0 flex-1">
-                      <p className="truncate">{p.blog_title || "(untitled)"}</p>
+                      {p.linkedin_url ? (
+                        <a href={p.linkedin_url} target="_blank" rel="noopener noreferrer" className="truncate block hover:underline">
+                          {p.blog_title || "(untitled)"}
+                        </a>
+                      ) : (
+                        <p className="truncate">{p.blog_title || "(untitled)"}</p>
+                      )}
                       <p className="text-xs text-muted-foreground">{format(new Date(p.publish_date + "T00:00:00"), "d MMM")} · {themeLabel(p.content_theme || "")}</p>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
-                      {liInteractions(p) > 0 && <Badge variant="outline" style={{ borderColor: CHANNEL_COLOR.LinkedIn, color: CHANNEL_COLOR.LinkedIn }}>in {liInteractions(p)}</Badge>}
-                      {fbInteractions(p) > 0 && <Badge variant="outline" style={{ borderColor: CHANNEL_COLOR.Facebook, color: CHANNEL_COLOR.Facebook }}>fb {fbInteractions(p)}</Badge>}
-                      {igInteractions(p) > 0 && <Badge variant="outline" style={{ borderColor: CHANNEL_COLOR.Instagram, color: CHANNEL_COLOR.Instagram }}>ig {igInteractions(p)}</Badge>}
-                      {ytInteractions(p) > 0 && <Badge variant="outline" style={{ borderColor: CHANNEL_COLOR.YouTube, color: CHANNEL_COLOR.YouTube }}>yt {ytInteractions(p)}</Badge>}
-                      {xInteractions(p) > 0 && <Badge variant="outline" style={{ borderColor: CHANNEL_COLOR.X, color: CHANNEL_COLOR.X }}>x {xInteractions(p)}</Badge>}
+                      {([["in", liInteractions(p), CHANNEL_COLOR.LinkedIn], ["fb", fbInteractions(p), CHANNEL_COLOR.Facebook], ["ig", igInteractions(p), CHANNEL_COLOR.Instagram], ["yt", ytInteractions(p), CHANNEL_COLOR.YouTube], ["x", xInteractions(p), CHANNEL_COLOR.X]] as [string, number, string][])
+                        .filter(([, v]) => v > 0)
+                        .map(([label, v, color]) => {
+                          const link = postLinks(p).find((l) => l.label === label);
+                          const badge = <Badge variant="outline" style={{ borderColor: color, color }}>{label} {v}</Badge>;
+                          return link
+                            ? <a key={label} href={link.href} target="_blank" rel="noopener noreferrer">{badge}</a>
+                            : <span key={label}>{badge}</span>;
+                        })}
                       <span className="font-medium w-8 text-right">{p.interactions}</span>
                     </div>
                     {p.linkedin_url && (
-                      <a href={p.linkedin_url} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-foreground">
+                      <a href={p.linkedin_url} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground">
                         <ExternalLink className="h-3.5 w-3.5" />
                       </a>
                     )}
