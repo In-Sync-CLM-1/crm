@@ -33,3 +33,15 @@ linkedin-follower-demographics|mkt-linkedin-follower-demographics||0 5 * * 1
 follow-topup|mkt-follow-topup||0 */6 * * *
 follow-sender-leader|mkt-follow-sender|{"segment":"leader"}|30 4 * * *
 follow-sender-individual|mkt-follow-sender|{"segment":"individual"}|40 4 * * *
+
+# BD outreach pipeline. Generation runs daily so the review queue refills
+# itself and never stalls waiting for a human; only the scheduler is
+# time-sensitive, and it enforces the Tue/Wed/Thu 8-11am-local window itself.
+# Research is capped at 6 firms a run (8 pages at 1 req/2s each), so it runs
+# twice a day rather than in one large batch.
+bd-research-morning|bd-research|{"limit":6}|0 2 * * *
+bd-research-evening|bd-research|{"limit":6}|0 14 * * *
+bd-contacts|bd-contacts|{"limit":10}|30 2 * * *
+bd-draft|bd-draft|{"limit":5}|0 3 * * *
+bd-schedule|bd-schedule||15 11 * * 2,3,4
+bd-track|bd-track||0 * * * *
