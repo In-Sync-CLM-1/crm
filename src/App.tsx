@@ -55,6 +55,7 @@ const EngineConfig = lazy(() => import("./pages/EngineConfig"));
 const ProductManagement = lazy(() => import("./pages/ProductManagement"));
 const ProductICP = lazy(() => import("./pages/ProductICP"));
 const ContentCalendar = lazy(() => import("./pages/ContentCalendar"));
+const BDOutreach = lazy(() => import("./pages/BDOutreach"));
 
 // Lazy loaded pages - Admin
 const ApprovalMatrix = lazy(() => import("./pages/ApprovalMatrix"));
@@ -256,6 +257,12 @@ const App = () => (
           <Route path="/marketing/content-calendar" element={
             <ProtectedRoute>
               <ContentCalendar />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/marketing/bd-outreach" element={
+            <ProtectedRoute>
+              <BDOutreach />
             </ProtectedRoute>
           } />
 
