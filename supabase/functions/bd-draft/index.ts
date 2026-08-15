@@ -127,39 +127,68 @@ Deno.serve(async (req) => {
       const researchText = [facts.clients, facts.cases, facts.stack, facts.verticals].flat().filter(Boolean).join(', ');
       const proof = pickProof(f as FirmRow, researchText);
 
-      // The one generative step. Grounded strictly in the fetched facts: if it
-      // has nothing specific to work from, it must say so rather than invent.
+      // The sufficiency test is made HERE, not by the model. Asked to reply
+      // INSUFFICIENT when the facts are thin, it instead wrote "your website
+      // lists 'none' under clients, suggesting you may not have secured any
+      // paid engagements" — it treated the placeholder as a fact and insulted
+      // the firm. A deterministic gate removes that whole class of failure.
+      const usable = {
+        clients: (facts.clients || []).filter(Boolean),
+        cases: (facts.cases || []).filter(Boolean),
+        stack: (facts.stack || []).filter(Boolean),
+        verticals: (facts.verticals || []).filter(Boolean),
+      };
+      // A named client or a case study title is a real hook. Stack alone only
+      // counts when it is a distinctive platform — "AWS" is true of everyone.
+      const hasHook = usable.clients.length > 0 || usable.cases.length > 0 || usable.stack.length > 0;
+      if (!hasHook) {
+        results.push({ firm: f.firm_name, skipped: 'no named client, case study or distinctive stack item — nothing specific to open on' });
+        continue;
+      }
+
+      // Only non-empty categories reach the prompt: a printed "none" is
+      // something the model will comment on.
+      const factLines = Object.entries(usable)
+        .filter(([, v]) => v.length)
+        .map(([k, v]) => `  ${k}: ${v.slice(0, 10).join(', ')}`)
+        .join('\n');
+
       const prompt = `You write one opening line for a cold email to a US software consultancy. Peer to peer, never an applicant.
 
 FIRM: ${f.firm_name} — ${f.city}, ${f.state}
 VERBATIM FACTS FETCHED FROM THEIR SITE:
-  clients: ${(facts.clients || []).slice(0, 10).join(', ') || 'none'}
-  case studies: ${(facts.cases || []).slice(0, 6).join(' | ') || 'none'}
-  stack: ${(facts.stack || []).join(', ') || 'none'}
-  verticals: ${(facts.verticals || []).join(', ') || 'none'}
+${factLines}
 
 RULES
 - Name ONE specific thing from the facts above: a client, a case title, a stack item.
-- State what it IMPLIES, not that it is good. Never compliment.
+- State what it IMPLIES about their clients or their work, not that it is good.
   good: "AS/400 on your stack page in 2026 means clients who can't move and won't be told to."
   bad:  "Impressive work with legacy systems."
+- Write about THEM. Never mention yourself, your firm, or what you noticed.
+- Never say anything critical about the firm or its size.
 - One or two sentences. No adjectives. No exclamation marks.
-- If it would be true of any other consultancy, it is too generic — be more specific.
-- If the facts contain nothing specific enough, reply with exactly: INSUFFICIENT
 
 Return only the line.`;
 
+      // Anything that reads as self-referential, hedged, or critical is
+      // rejected outright — these are the shapes a small model falls into when
+      // the facts are thin, and every one of them undoes the email.
+      const BAD_LINE = /\b(I noticed|I saw|our firm|we also|suggesting|implying|may not|might not|appears to|seems to|unfortunately|impressive|great job|none\b)/i;
+
       let firstLine = '';
-      try {
-        const res = await callLLM(prompt, { max_tokens: 200, temperature: 0.6 });
-        firstLine = String(res.content ?? '').trim().replace(/^["']|["']$/g, '');
-      } catch (e) {
-        results.push({ firm: f.firm_name, skipped: `line generation failed: ${e instanceof Error ? e.message : String(e)}` });
-        continue;
+      for (let attempt = 0; attempt < 2 && !firstLine; attempt++) {
+        try {
+          const res = await callLLM(prompt, { max_tokens: 200, temperature: attempt === 0 ? 0.6 : 0.8 });
+          const line = String(res.content ?? '').trim().replace(/^["']|["']$/g, '');
+          if (line && line.length > 25 && line.length < 320 && !BAD_LINE.test(line)) firstLine = line;
+        } catch (e) {
+          results.push({ firm: f.firm_name, skipped: `line generation failed: ${e instanceof Error ? e.message : String(e)}` });
+          break;
+        }
       }
 
-      if (!firstLine || /^INSUFFICIENT/i.test(firstLine)) {
-        results.push({ firm: f.firm_name, skipped: 'research too thin for a specific first line — re-run research' });
+      if (!firstLine) {
+        results.push({ firm: f.firm_name, skipped: 'could not produce a usable first line from these facts — left for a human' });
         continue;
       }
 
