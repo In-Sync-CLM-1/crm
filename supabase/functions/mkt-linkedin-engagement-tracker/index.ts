@@ -438,15 +438,20 @@ Deno.serve(async (req) => {
       repliesPosted = await handleCommentReplies(recentPosts, config.org_id, token, memberUrn, supabase);
     }
 
-    // 4. Find posts that need engagement metrics fetched (wait 24h after posting)
-    const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+    // 4. Re-read engagement for every post of the last 14 days.
+    // LinkedIn's numbers are cumulative and keep moving long after publication
+    // — a post that is boosted, or simply picked up later, gains most of its
+    // reach after the first 48 hours. Fetching once and never again froze
+    // every row at a 48-hour snapshot and made the reporting understate real
+    // performance. Same window the Meta tracker uses; the newest value
+    // overwrites the previous one.
+    const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
     const { data: pendingPosts } = await supabase
       .from('blog_posts')
       .select('id, linkedin_post_urn, linkedin_slot_index, linkedin_cycle')
       .eq('org_id', config.org_id)
       .not('linkedin_post_urn', 'is', null)
-      .is('linkedin_engagement_fetched_at', null)
-      .lte('posted_timestamp', twoDaysAgo)
+      .gte('posted_timestamp', fourteenDaysAgo)
       .order('posted_timestamp', { ascending: false })
       .limit(20);
 
@@ -465,9 +470,9 @@ Deno.serve(async (req) => {
           ?? (await fetchMemberPostStats(post.linkedin_post_urn, token))
           ?? (await fetchEngagement(post.linkedin_post_urn, token));
         if (!eng) {
-          // Metrics unavailable (LinkedIn partner-gated) — mark the attempt so
-          // the row isn't retried forever, but leave every metric NULL:
-          // "unknown" must stay distinguishable from a real zero.
+          // Metrics unavailable (LinkedIn partner-gated) — record the attempt
+          // but leave every metric NULL: "unknown" must stay distinguishable
+          // from a real zero. Retries stop when the post leaves the window.
           await supabase
             .from('blog_posts')
             .update({ linkedin_engagement_fetched_at: new Date().toISOString() })
