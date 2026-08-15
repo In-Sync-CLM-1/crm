@@ -493,6 +493,21 @@ Deno.serve(async (req) => {
           })
           .eq('id', post.id);
 
+        // Snapshot today's cumulative value so the per-day charts can show a
+        // real daily figure (tomorrow's value minus today's) instead of
+        // dumping a post's whole lifetime total onto its publish date.
+        await supabase
+          .from('mkt_post_metrics_daily')
+          .upsert({
+            org_id: config.org_id,
+            post_id: post.id,
+            stat_date: new Date().toISOString().slice(0, 10),
+            channel: 'linkedin',
+            reach: eng.impressions,
+            interactions: eng.likes + eng.comments + eng.reposts,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'post_id,channel,stat_date' });
+
         console.log(`[engagement-tracker] post ${post.id}: likes=${eng.likes} comments=${eng.comments} reposts=${eng.reposts}`);
       }
     }

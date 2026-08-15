@@ -323,6 +323,32 @@ Deno.serve(async (req) => {
 
       if (Object.keys(update).length) {
         await supabase.from('blog_posts').update(update).eq('id', post.id);
+
+        // Snapshot today's cumulative values per channel, so the per-day charts
+        // can plot a real daily figure (tomorrow minus today) instead of
+        // attributing a post's whole lifetime total to its publish date.
+        // reach stays NULL where the channel has none — Facebook lost
+        // post-level impressions when Meta retired them in v21.
+        const statDay = now.slice(0, 10);
+        const snapshots: Record<string, unknown>[] = [];
+        const snap = (channel: string, reach: number | null, interactions: number) =>
+          snapshots.push({ org_id: config.org_id, post_id: post.id, stat_date: statDay, channel, reach, interactions, updated_at: now });
+
+        if (update.fb_engagement_fetched_at) {
+          snap('facebook', null, Number(update.fb_likes || 0) + Number(update.fb_comments || 0) + Number(update.fb_shares || 0));
+        }
+        if (update.ig_engagement_fetched_at) {
+          snap('instagram', Number(update.ig_reach || 0), Number(update.ig_likes || 0) + Number(update.ig_comments || 0) + Number(update.ig_saves || 0) + Number(update.ig_shares || 0));
+        }
+        if (update.yt_engagement_fetched_at) {
+          snap('youtube', Number(update.yt_views || 0), Number(update.yt_likes || 0) + Number(update.yt_comments || 0));
+        }
+        if (update.x_engagement_fetched_at) {
+          snap('x', Number(update.x_impressions || 0), Number(update.x_likes || 0) + Number(update.x_replies || 0) + Number(update.x_reposts || 0));
+        }
+        if (snapshots.length) {
+          await supabase.from('mkt_post_metrics_daily').upsert(snapshots, { onConflict: 'post_id,channel,stat_date' });
+        }
       }
     }
 

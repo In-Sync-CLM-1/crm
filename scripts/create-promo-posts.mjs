@@ -115,6 +115,18 @@ const POSTS = [
       'Visits you can trust, and a field team you can finally see → https://in-sync.co.in/products/field-sync',
     ].join('\n\n'),
   },
+  {
+    product_key: 'worksync', file: 'worksync-promo-vertical.mp4',
+    title: 'Work-Sync — you assign, it chases, done means done',
+    url: 'https://in-sync.co.in/products/worksync',
+    caption: [
+      "You gave the task. Do you know it's done?",
+      'A message in a group chat is not a system — and the compliance filing nobody closed costs ₹200 a day until someone notices.',
+      'Work-Sync puts every task on one screen with an owner, a due date and a priority, and chases them for you. Every stage change reaches the right person — WhatsApp first, email as backup, up the hierarchy. And done means done: the person who assigned the task is the one who signs it off.',
+      'Deadlines that hold, a team nobody has to chase, and penalties you never pay.',
+      'Start free — 14 days, no card → https://in-sync.co.in/products/worksync',
+    ].join('\n\n'),
+  },
 ];
 
 const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
@@ -139,6 +151,23 @@ const rows = POSTS.map((p, i) => {
     yt_posted_at: yt.uploadedAt,
   };
 });
+
+// Already-queued promos must not be inserted twice — this script is re-run
+// whenever a new product promo joins the set.
+const existing = await fetch('https://api.supabase.com/v1/projects/' + REF + '/database/query', {
+  method: 'POST',
+  headers: { Authorization: 'Bearer ' + TOKEN, 'Content-Type': 'application/json', 'User-Agent': 'curl/8' },
+  body: JSON.stringify({ query: "select product_key, publish_date from blog_posts where video_url like '%/promo/%'" }),
+}).then((r) => r.json()).catch(() => []);
+const queued = new Set((existing || []).map((r) => r.product_key));
+const lastDate = (existing || []).map((r) => r.publish_date).sort().pop();
+
+const pending = rows.filter((r) => !queued.has(r.product_key));
+if (!pending.length) { console.log('every promo is already queued — nothing to do'); process.exit(0); }
+// Re-date the pending ones to follow whatever is already on the calendar.
+pending.forEach((r, i) => { r.publish_date = lastDate ? addDays(lastDate, i + 1) : r.publish_date; });
+rows.length = 0;
+rows.push(...pending);
 
 const cols = Object.keys(rows[0]);
 const sql = 'INSERT INTO blog_posts (' + cols.join(', ') + ') VALUES\n' +
