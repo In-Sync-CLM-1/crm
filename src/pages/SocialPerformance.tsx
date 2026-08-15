@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { format, subDays } from "date-fns";
+import { format, subMonths, startOfMonth } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/Layout/DashboardLayout";
 import { Card } from "@/components/ui/card";
@@ -139,16 +139,19 @@ function StatTile({ label, value, delta, deltaSuffix, sub }: { label: string; va
   );
 }
 
-const RANGES = [7, 30, 90] as const;
+// Month-length windows. The trend charts read as monthly progress, so the
+// shortest useful range is a quarter — a 7-day window would be a single bar.
+const RANGES = [3, 6, 12] as const;
 
 export default function SocialPerformance() {
   const { effectiveOrgId } = useOrgContext();
   const navigate = useNavigate();
-  const [rangeDays, setRangeDays] = useState<(typeof RANGES)[number]>(30);
+  const [rangeMonths, setRangeMonths] = useState<(typeof RANGES)[number]>(6);
   const [question, setQuestion] = useState("");
 
-  const since = format(subDays(new Date(), rangeDays), "yyyy-MM-dd");
-  const prevSince = format(subDays(new Date(), rangeDays * 2), "yyyy-MM-dd");
+  // Whole calendar months, so the first bucket is never a part-month.
+  const since = format(startOfMonth(subMonths(new Date(), rangeMonths - 1)), "yyyy-MM-dd");
+  const prevSince = format(startOfMonth(subMonths(new Date(), rangeMonths * 2 - 1)), "yyyy-MM-dd");
 
   const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = useState(false);
@@ -235,7 +238,9 @@ export default function SocialPerformance() {
     const previous = all.filter((p) => p.publish_date < since);
 
     const days: string[] = [];
-    for (let i = rangeDays - 1; i >= 0; i--) days.push(format(subDays(new Date(), i), "yyyy-MM-dd"));
+    for (let d = new Date(since + "T00:00:00"); d <= new Date(); d.setDate(d.getDate() + 1)) {
+      days.push(format(d, "yyyy-MM-dd"));
+    }
 
     // Each post's LIFETIME total, credited to the day it was published — NOT
     // what happened on that day. Used only until a post has daily snapshots
@@ -268,6 +273,24 @@ export default function SocialPerformance() {
         if (perDay.has(r.stat_date)) perDay.set(r.stat_date, (perDay.get(r.stat_date) || 0) + delta);
       }
       return days.map((d, i) => (d < firstSnapDay ? fallback[i] : perDay.get(d) || 0));
+    };
+
+    // Calendar months covered by the range, oldest first ("2026-08" keys).
+    const months: string[] = [];
+    for (const d of days) {
+      const m = d.slice(0, 7);
+      if (months[months.length - 1] !== m) months.push(m);
+    }
+
+    // Roll a per-day series up into per-month totals. The daily figures are
+    // already true increments, so a month is simply their sum.
+    const toMonthly = (daily: number[]) => {
+      const totals = new Map<string, number>(months.map((m) => [m, 0]));
+      days.forEach((d, i) => {
+        const m = d.slice(0, 7);
+        totals.set(m, (totals.get(m) || 0) + (daily[i] || 0));
+      });
+      return months.map((m) => totals.get(m) || 0);
     };
 
     const sum = (arr: PerfPost[], sel: (p: PerfPost) => number) => arr.reduce((s, p) => s + sel(p), 0);
@@ -311,18 +334,19 @@ export default function SocialPerformance() {
       reachTotal: sum(current, totalReach),
       reachDelta: pctDelta(sum(current, totalReach), sum(previous, totalReach)),
       postsCount: current.length,
+      months,
       interactionsByChannel: {
-        LinkedIn: dailySeries("linkedin", "interactions", byPublishDate(liInteractions)),
-        Facebook: dailySeries("facebook", "interactions", byPublishDate(fbInteractions)),
-        Instagram: dailySeries("instagram", "interactions", byPublishDate(igInteractions)),
-        YouTube: dailySeries("youtube", "interactions", byPublishDate(ytInteractions)),
-        X: dailySeries("x", "interactions", byPublishDate(xInteractions)),
+        LinkedIn: toMonthly(dailySeries("linkedin", "interactions", byPublishDate(liInteractions))),
+        Facebook: toMonthly(dailySeries("facebook", "interactions", byPublishDate(fbInteractions))),
+        Instagram: toMonthly(dailySeries("instagram", "interactions", byPublishDate(igInteractions))),
+        YouTube: toMonthly(dailySeries("youtube", "interactions", byPublishDate(ytInteractions))),
+        X: toMonthly(dailySeries("x", "interactions", byPublishDate(xInteractions))),
       },
       reachByChannel: {
-        LinkedIn: dailySeries("linkedin", "reach", byPublishDate((p) => n(p.linkedin_impressions))),
-        Instagram: dailySeries("instagram", "reach", byPublishDate((p) => n(p.ig_reach))),
-        YouTube: dailySeries("youtube", "reach", byPublishDate((p) => n(p.yt_views))),
-        X: dailySeries("x", "reach", byPublishDate((p) => n(p.x_impressions))),
+        LinkedIn: toMonthly(dailySeries("linkedin", "reach", byPublishDate((p) => n(p.linkedin_impressions)))),
+        Instagram: toMonthly(dailySeries("instagram", "reach", byPublishDate((p) => n(p.ig_reach)))),
+        YouTube: toMonthly(dailySeries("youtube", "reach", byPublishDate((p) => n(p.yt_views)))),
+        X: toMonthly(dailySeries("x", "reach", byPublishDate((p) => n(p.x_impressions)))),
       },
       byFormat,
       byTheme,
@@ -331,7 +355,7 @@ export default function SocialPerformance() {
       latestFollowers,
       followerDelta,
     };
-  }, [posts, followerRows, since, rangeDays, snapshotRows]);
+  }, [posts, followerRows, since, snapshotRows]);
 
   const axisCommon = {
     axisLine: { lineStyle: { color: INK.axis } },
@@ -344,7 +368,7 @@ export default function SocialPerformance() {
     grid: { left: 44, right: 16, top: 30, bottom: 28 },
     legend: { top: 0, left: 0, icon: "circle", itemWidth: 8, itemHeight: 8, textStyle: { color: INK.secondary, fontSize: 11 } },
     tooltip: { trigger: "axis", axisPointer: { type: "cross", label: { show: false } } },
-    xAxis: { type: "category", boundaryGap: false, data: model.days.map((d) => format(new Date(d + "T00:00:00"), "d MMM")), ...axisCommon, splitLine: { show: false } },
+    xAxis: { type: "category", boundaryGap: false, data: model.months.map((m) => format(new Date(m + "-01T00:00:00"), "MMM yy")), ...axisCommon, splitLine: { show: false } },
     yAxis: { type: "value", minInterval: 1, ...axisCommon, axisLine: { show: false } },
     series: Object.entries(seriesMap).map(([name, data]) => ({
       name,
@@ -419,8 +443,8 @@ export default function SocialPerformance() {
           </div>
           <div className="flex items-center gap-1">
             {RANGES.map((r) => (
-              <Button key={r} size="sm" variant={rangeDays === r ? "default" : "outline"} onClick={() => setRangeDays(r)}>
-                {r}d
+              <Button key={r} size="sm" variant={rangeMonths === r ? "default" : "outline"} onClick={() => setRangeMonths(r)}>
+                {r}m
               </Button>
             ))}
             <Button size="sm" variant="outline" className="ml-2 gap-1.5" onClick={refreshNow} disabled={refreshing}>
@@ -432,8 +456,8 @@ export default function SocialPerformance() {
 
         {/* KPI tiles */}
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-          <StatTile label={`Interactions (${rangeDays}d)`} value={String(model.interactionsTotal)} delta={model.interactionsDelta} sub="vs prior period" />
-          <StatTile label={`Reach (${rangeDays}d)`} value={String(model.reachTotal)} delta={model.reachDelta} sub="vs prior period" />
+          <StatTile label={`Interactions (${rangeMonths}m)`} value={String(model.interactionsTotal)} delta={model.interactionsDelta} sub="vs prior period" />
+          <StatTile label={`Reach (${rangeMonths}m)`} value={String(model.reachTotal)} delta={model.reachDelta} sub="vs prior period" />
           <StatTile label="Posts published" value={String(model.postsCount)} />
           {(["LinkedIn", "Facebook", "Instagram", "YouTube", "X"] as const).map((ch) => (
             <StatTile
@@ -442,7 +466,7 @@ export default function SocialPerformance() {
               value={model.latestFollowers(ch) === null ? "—" : String(model.latestFollowers(ch))}
               delta={model.followerDelta(ch)}
               deltaSuffix=""
-              sub={model.latestFollowers(ch) === null ? "first snapshot tonight" : `in ${rangeDays}d`}
+              sub={model.latestFollowers(ch) === null ? "first snapshot tonight" : `in ${rangeMonths}m`}
             />
           ))}
         </div>
@@ -450,14 +474,14 @@ export default function SocialPerformance() {
         {/* Trends */}
         <div className="grid lg:grid-cols-2 gap-4">
           <Card className="p-4">
-            <h2 className="text-sm font-medium mb-1">Interactions per day</h2>
-            <p className="text-xs text-muted-foreground mb-2">Likes + comments + shares/saves gained each day, by channel</p>
+            <h2 className="text-sm font-medium mb-1">Interactions per month</h2>
+            <p className="text-xs text-muted-foreground mb-2">Likes + comments + shares/saves gained each month, by channel</p>
             <EChart option={lineChart(model.interactionsByChannel, { area: true })} />
           </Card>
           <Card className="p-4">
-            <h2 className="text-sm font-medium mb-1">Reach per day</h2>
-            <p className="text-xs text-muted-foreground mb-2">Impressions gained each day (Facebook doesn't report post views)</p>
-            <EChart option={lineChart(model.reachByChannel)} />
+            <h2 className="text-sm font-medium mb-1">Reach per month</h2>
+            <p className="text-xs text-muted-foreground mb-2">Impressions gained each month (Facebook doesn't report post views)</p>
+            <EChart option={lineChart(model.reachByChannel, { area: true })} />
           </Card>
         </div>
 
@@ -499,7 +523,7 @@ export default function SocialPerformance() {
             </div>
           </Card>
           <Card className="p-4 lg:col-span-2">
-            <h2 className="text-sm font-medium mb-3">Top posts ({rangeDays}d)</h2>
+            <h2 className="text-sm font-medium mb-3">Top posts ({rangeMonths}m)</h2>
             <div className="space-y-2">
               {model.topPosts.length === 0 && <p className="text-sm text-muted-foreground">No posted content in range.</p>}
               {model.topPosts.map((p, i) => {
