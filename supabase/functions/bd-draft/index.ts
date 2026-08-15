@@ -173,14 +173,17 @@ Return only the line.`;
       // Anything that reads as self-referential, hedged, or critical is
       // rejected outright — these are the shapes a small model falls into when
       // the facts are thin, and every one of them undoes the email.
-      const BAD_LINE = /\b(I noticed|I saw|our firm|we also|suggesting|implying|may not|might not|appears to|seems to|unfortunately|impressive|great job|none\b)/i;
+      const BAD_LINE = /\b(I noticed|I saw|our firm|we also|suggesting|implying|may indicate|might indicate|could indicate|may suggest|likely means|probably|may not|might not|appears to|seems to|unfortunately|impressive|great job|none)\b/i;
 
       let firstLine = '';
       for (let attempt = 0; attempt < 2 && !firstLine; attempt++) {
         try {
           const res = await callLLM(prompt, { max_tokens: 200, temperature: attempt === 0 ? 0.6 : 0.8 });
           const line = String(res.content ?? '').trim().replace(/^["']|["']$/g, '');
-          if (line && line.length > 25 && line.length < 320 && !BAD_LINE.test(line)) firstLine = line;
+          // A line that opens with the firm's own name reads as a report about
+          // them rather than a remark to them.
+          const startsWithName = line.toLowerCase().startsWith(String(f.firm_name).toLowerCase());
+          if (line && line.length > 25 && line.length < 320 && !BAD_LINE.test(line) && !startsWithName) firstLine = line;
         } catch (e) {
           results.push({ firm: f.firm_name, skipped: `line generation failed: ${e instanceof Error ? e.message : String(e)}` });
           break;
