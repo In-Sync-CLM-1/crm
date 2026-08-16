@@ -31,20 +31,12 @@ export function requireOnline(
  * device is offline; storage pressure is best handled when we're online.
  */
 export async function ttlOfflineTables(maxAgeDays = 30): Promise<{
-  tasks: number;
-  contacts: number;
-  activities: number;
-  callLogs: number;
   tickets: number;
   ticketComments: number;
 }> {
   const cutoff = new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000);
   const cutoffMs = cutoff.getTime();
   const counts = {
-    tasks: 0,
-    contacts: 0,
-    activities: 0,
-    callLogs: 0,
     tickets: 0,
     ticketComments: 0,
   };
@@ -55,10 +47,6 @@ export async function ttlOfflineTables(maxAgeDays = 30): Promise<{
     return !!ts && ts.getTime() < cutoffMs;
   };
 
-  counts.tasks = await db.tasks.filter(eligible).delete();
-  counts.contacts = await db.contacts.filter(eligible).delete();
-  counts.activities = await db.activities.filter(eligible).delete();
-  counts.callLogs = await db.callLogs.filter(eligible).delete();
   counts.tickets = await db.tickets.filter(eligible).delete();
   counts.ticketComments = await db.ticketComments.filter(eligible).delete();
 

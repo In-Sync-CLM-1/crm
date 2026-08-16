@@ -5,7 +5,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 interface DailyActivityData {
   date: string;
-  calls: number;
   emails: number;
   whatsapp: number;
   sms: number;
@@ -29,13 +28,13 @@ export const DashboardActivityChart = memo(function DashboardActivityChart({ dat
     );
   }
 
-  const hasData = data.some(d => d.calls > 0 || d.emails > 0 || d.whatsapp > 0 || d.sms > 0);
+  const hasData = data.some(d => d.emails > 0 || d.whatsapp > 0 || d.sms > 0);
 
   return (
     <Card className="p-3">
       <div className="mb-2">
         <h3 className="text-sm font-medium">Communication Activity</h3>
-        <p className="text-[10px] text-muted-foreground">Daily trends for calls, emails, WhatsApp & SMS</p>
+        <p className="text-[10px] text-muted-foreground">Daily trends for emails, WhatsApp & SMS</p>
       </div>
       {!hasData ? (
         <div className="h-[180px] flex items-center justify-center text-muted-foreground text-xs">
@@ -73,16 +72,7 @@ export const DashboardActivityChart = memo(function DashboardActivityChart({ dat
               wrapperStyle={{ fontSize: '10px' }}
               iconSize={8}
             />
-            <Line 
-              type="monotone" 
-              dataKey="calls" 
-              stroke="#8B5CF6" 
-              strokeWidth={2}
-              dot={{ r: 2 }}
-              activeDot={{ r: 4 }}
-              name="Calls"
-            />
-            <Line 
+            <Line
               type="monotone" 
               dataKey="emails" 
               stroke="#F97316" 

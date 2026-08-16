@@ -3,7 +3,6 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useOrgContext } from "@/hooks/useOrgContext";
 import { useNotification } from "@/hooks/useNotification";
-import { useRealtimeSync } from "@/hooks/useRealtimeSync";
 import { DashboardLayout } from "@/components/Layout/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -42,35 +41,10 @@ const Templates = () => {
   const { effectiveOrgId } = useOrgContext();
   const notify = useNotification();
   const [syncing, setSyncing] = useState(false);
-  const [queuedJobId, setQueuedJobId] = useState<string | null>(null);
-  const [queueStatus, setQueueStatus] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("whatsapp");
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
   const [selectedEmailTemplate, setSelectedEmailTemplate] = useState<EmailTemplate | null>(null);
 
-  // Real-time sync for queue updates
-  useRealtimeSync({
-    table: 'operation_queue',
-    filter: queuedJobId ? `id=eq.${queuedJobId}` : undefined,
-    enabled: !!queuedJobId,
-    onUpdate: (payload) => {
-      const newStatus = payload.new.status;
-      setQueueStatus(newStatus);
-
-      if (newStatus === 'completed') {
-        notify.success("Sync Complete", "Templates have been synced successfully");
-        setQueuedJobId(null);
-        setQueueStatus(null);
-        setSyncing(false);
-        // React Query will refetch automatically
-      } else if (newStatus === 'failed') {
-        notify.error("Sync Failed", payload.new.error || "Failed to sync templates");
-        setQueuedJobId(null);
-        setQueueStatus(null);
-        setSyncing(false);
-      }
-    },
-  });
 
   const { data: whatsappTemplates = [], isLoading: loadingWhatsApp } = useQuery({
     queryKey: ['whatsapp-templates', effectiveOrgId],
@@ -111,14 +85,7 @@ const Templates = () => {
       const response = await supabase.functions.invoke("sync-exotel-whatsapp-templates");
 
       if (response.error) throw response.error;
-
-      // Check if queued
-      if (response.data?.status === 'queued') {
-        setQueuedJobId(response.data.job_id);
-        setQueueStatus('queued');
-        
-        notify.info("Sync Queued", `Your template sync has been queued. Estimated wait: ${response.data.estimated_wait_minutes} minutes. Position: ${response.data.position_in_queue}`);
-      } else {
+ else {
         // Immediate sync - React Query will refetch automatically
         notify.success("Success", `Synced ${response.data.synced} templates from Exotel`);
         setSyncing(false);
@@ -184,22 +151,6 @@ const Templates = () => {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        {queueStatus === 'queued' && (
-          <Card className="border-primary">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <RefreshCw className="h-5 w-5 animate-spin text-primary" />
-                <div>
-                  <p className="font-medium">Template Sync Queued</p>
-                  <p className="text-sm text-muted-foreground">
-                    Your sync request is in the queue and will be processed shortly.
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold">Message Templates</h1>

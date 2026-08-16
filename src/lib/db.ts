@@ -18,73 +18,6 @@ interface OfflineRow {
   serverUpdatedAt?: Date;
 }
 
-export interface TaskLocal extends OfflineRow {
-  title: string;
-  description?: string | null;
-  assignedTo: string;
-  assignedBy: string;
-  dueDate: string;
-  status: "pending" | "in_progress" | "completed";
-  priority?: "low" | "medium" | "high" | null;
-  completedAt?: string | null;
-  remarks?: string | null;
-  createdAt: Date;
-}
-
-export interface ContactLocal extends OfflineRow {
-  firstName: string;
-  lastName?: string | null;
-  email?: string | null;
-  phone?: string | null;
-  company?: string | null;
-  jobTitle?: string | null;
-  status?: string | null;
-  source?: string | null;
-  pipelineStageId?: string | null;
-  assignedTo?: string | null;
-  assignedTeamId?: string | null;
-  city?: string | null;
-  state?: string | null;
-  country?: string | null;
-  notes?: string | null;
-  createdBy?: string | null;
-  createdAt: Date;
-}
-
-export interface ActivityLocal extends OfflineRow {
-  contactId?: string | null;
-  activityType: string;
-  subject?: string | null;
-  description?: string | null;
-  scheduledAt?: string | null;
-  completedAt?: string | null;
-  durationMinutes?: number | null;
-  priority?: string | null;
-  meetingLink?: string | null;
-  nextActionDate?: string | null;
-  nextActionNotes?: string | null;
-  createdBy?: string | null;
-  createdAt: Date;
-}
-
-export interface CallLogLocal extends OfflineRow {
-  contactId?: string | null;
-  agentId?: string | null;
-  exotelCallSid: string;
-  callType: "inbound" | "outbound";
-  fromNumber: string;
-  toNumber: string;
-  direction: string;
-  status: string;
-  callDuration?: number | null;
-  startedAt?: string | null;
-  endedAt?: string | null;
-  dispositionId?: string | null;
-  subDispositionId?: string | null;
-  notes?: string | null;
-  createdAt: Date;
-}
-
 export interface SupportTicketLocal extends OfflineRow {
   ticketNumber: string;
   subject: string;
@@ -149,13 +82,9 @@ export interface SyncQueueItem {
 }
 
 // IMPORTANT: Bump on every schema/index change.
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
 
 class InSyncCRMDatabase extends Dexie {
-  tasks!: Table<TaskLocal, string>;
-  contacts!: Table<ContactLocal, string>;
-  activities!: Table<ActivityLocal, string>;
-  callLogs!: Table<CallLogLocal, string>;
   tickets!: Table<SupportTicketLocal, string>;
   ticketComments!: Table<TicketCommentLocal, string>;
   notes!: Table<NoteLocal, string>;
@@ -165,13 +94,6 @@ class InSyncCRMDatabase extends Dexie {
     super("InSyncCRMDB");
 
     this.version(DB_VERSION).stores({
-      tasks: "id, orgId, assignedTo, status, dueDate, syncStatus, updatedAt",
-      contacts:
-        "id, orgId, assignedTo, pipelineStageId, status, syncStatus, updatedAt",
-      activities:
-        "id, orgId, contactId, activityType, scheduledAt, syncStatus, updatedAt",
-      callLogs:
-        "id, orgId, contactId, agentId, exotelCallSid, syncStatus, createdAt",
       tickets:
         "id, orgId, ticketNumber, status, assignedTo, createdBy, syncStatus, updatedAt",
       ticketComments: "id, ticketId, userId, syncStatus, createdAt",

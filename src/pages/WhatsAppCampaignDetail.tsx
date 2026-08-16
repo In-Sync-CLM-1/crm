@@ -89,18 +89,6 @@ export default function WhatsAppCampaignDetail() {
     return <Badge variant={config.variant}>{config.label}</Badge>;
   };
 
-  const handleRetryFailed = async () => {
-    const { error } = await supabase.functions.invoke('retry-failed-whatsapp', {
-      body: { campaignId: id },
-    });
-
-    if (error) {
-      notify.error("Error", error.message);
-    } else {
-      notify.success("Retry Initiated", "Failed messages will be retried");
-    }
-  };
-
   const handleExport = () => {
     const csv = [
       ["Name", "Phone", "Status", "Error", "Retry Count"].join(","),
@@ -253,12 +241,6 @@ export default function WhatsAppCampaignDetail() {
                 <Download className="mr-2 h-4 w-4" />
                 Export CSV
               </Button>
-              {campaign.failed_count > 0 && (
-                <Button variant="outline" size="sm" onClick={handleRetryFailed}>
-                  <RefreshCw className="mr-2 h-4 w-4" />
-                  Retry Failed
-                </Button>
-              )}
             </div>
           </div>
           <div className="flex gap-2 mt-4">

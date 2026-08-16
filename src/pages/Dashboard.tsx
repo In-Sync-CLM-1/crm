@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useRef, useState } from "react";
+import { useMemo, useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -7,46 +7,26 @@ import { isProsyncIssuedDoc } from "@/utils/billingUtils";
 import DashboardLayout from "@/components/Layout/DashboardLayout";
 import { useOrgContext } from "@/hooks/useOrgContext";
 import { LoadingState } from "@/components/common/LoadingState";
-import { useCallbackReminders } from "@/hooks/useCallbackReminders";
 import DateRangeFilter, { DateRangePreset, getDateRangeFromPreset } from "@/components/common/DateRangeFilter";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
-import { TrendingUp, PhoneCall, IndianRupee, ArrowLeft, RefreshCw, Percent } from "lucide-react";
+import { TrendingUp, IndianRupee, ArrowLeft, RefreshCw, Percent } from "lucide-react";
 
 // Extracted Dashboard components
-import { DashboardStatsCards } from "@/components/Dashboard/DashboardStatsCards";
 import { DashboardRevenueCards, type RevenueCardType } from "@/components/Dashboard/DashboardRevenueCards";
 import { RevenueCardDialog } from "@/components/Dashboard/RevenueCardDialog";
 import { DueToDeptDialog } from "@/components/Dashboard/DueToDeptDialog";
 import { DashboardRevenueChart } from "@/components/Dashboard/DashboardRevenueChart";
-import { DashboardPipelineChart } from "@/components/Dashboard/DashboardPipelineChart";
 import { DashboardActivityChart } from "@/components/Dashboard/DashboardActivityChart";
 
 // Revenue Dashboard components
 import { MonthlyGoalTracker } from "@/components/Revenue/MonthlyGoalTracker";
 import { ProgressionChart } from "@/components/Revenue/ProgressionChart";
 import { RevenueBreakdownTabs } from "@/components/Revenue/RevenueBreakdownTabs";
-import { ContactsListDialog, type MetricType } from "@/components/Revenue/ContactsListDialog";
+import { InvoiceListDialog, type MetricType } from "@/components/Revenue/InvoiceListDialog";
 import { DashboardGSTSection } from "@/components/Dashboard/DashboardGSTSection";
 
 type DashboardView = "main" | "revenue" | "gst";
-
-interface DashboardStats {
-  totalContacts: number;
-  activeDeals: number;
-  callsToday: number;
-  conversionRate: number;
-  newContactsThisWeek: number;
-  dealsWonThisMonth: number;
-  contactGrowth: number;
-  dealGrowth: number;
-}
-
-interface PipelineData {
-  stage: string;
-  count: number;
-  value: number;
-}
 
 interface RevenueStats {
   totalInvoiced: number;
@@ -66,8 +46,6 @@ interface MonthlyRevenueData {
 export default function Dashboard() {
   const { effectiveOrgId, isLoading: orgLoading } = useOrgContext();
   const queryClient = useQueryClient();
-  const { triggerEdgeFunctionCheck, checkReminders } = useCallbackReminders();
-  const hasCheckedReminders = useRef(false);
   
   // Date range filter state - default to This Month
   const [datePreset, setDatePreset] = useState<DateRangePreset>("this_month");
@@ -79,7 +57,7 @@ export default function Dashboard() {
   // Dialog state for clickable actuals
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState<string>("");
-  const [selectedMetric, setSelectedMetric] = useState<MetricType>("qualified");
+  const [selectedMetric, setSelectedMetric] = useState<MetricType>("invoiced");
 
   // Dialog state for revenue card drill-down
   const [revenueCardDialogOpen, setRevenueCardDialogOpen] = useState(false);
@@ -87,47 +65,6 @@ export default function Dashboard() {
   const [dueToDeptDialogOpen, setDueToDeptDialogOpen] = useState(false);
 
   // Removed goal state - no longer needed with new MonthlyGoalTracker
-
-  // Trigger reminder check on dashboard load
-  useEffect(() => {
-    if (effectiveOrgId && !hasCheckedReminders.current) {
-      hasCheckedReminders.current = true;
-      triggerEdgeFunctionCheck();
-      checkReminders();
-    }
-  }, [effectiveOrgId, triggerEdgeFunctionCheck, checkReminders]);
-
-  // Fetch optimized dashboard stats using database function
-  const { data: rawStats, isLoading: statsLoading } = useQuery<any>({
-    queryKey: ["dashboard-stats", effectiveOrgId],
-    queryFn: async () => {
-      if (!effectiveOrgId) throw new Error("No organization context");
-      
-      const { data, error } = await supabase.rpc("get_dashboard_stats", {
-        p_org_id: effectiveOrgId,
-      });
-      
-      if (error) throw error;
-      return data;
-    },
-    enabled: !!effectiveOrgId,
-    staleTime: 60000,
-  });
-
-  // Fetch pipeline distribution
-  const { data: pipelineRaw = [], isLoading: pipelineLoading } = useQuery({
-    queryKey: ["pipeline-distribution", effectiveOrgId],
-    queryFn: async () => {
-      if (!effectiveOrgId) throw new Error("No organization context");
-      const { data, error } = await supabase.rpc("get_pipeline_distribution", {
-        p_org_id: effectiveOrgId,
-      });
-      if (error) throw error;
-      return data || [];
-    },
-    enabled: !!effectiveOrgId,
-    staleTime: 60000,
-  });
 
   // Fetch communication activity from correct data sources
   const { data: emailCampaigns, isLoading: emailLoading } = useQuery({
@@ -174,24 +111,6 @@ export default function Dashboard() {
       const { data, error } = await supabase
         .from("sms_bulk_campaigns")
         .select("sent_count, created_at")
-        .eq("org_id", effectiveOrgId)
-        .gte("created_at", dateRange.from.toISOString())
-        .lte("created_at", dateRange.to.toISOString());
-      
-      if (error) throw error;
-      return data || [];
-    },
-    enabled: !!effectiveOrgId,
-  });
-
-  const { data: callLogs, isLoading: callsLoading } = useQuery({
-    queryKey: ["call-logs-activity", effectiveOrgId, format(dateRange.from, "yyyy-MM-dd"), format(dateRange.to, "yyyy-MM-dd")],
-    queryFn: async () => {
-      if (!effectiveOrgId) throw new Error("No organization context");
-      
-      const { data, error } = await supabase
-        .from("call_logs")
-        .select("created_at")
         .eq("org_id", effectiveOrgId)
         .gte("created_at", dateRange.from.toISOString())
         .lte("created_at", dateRange.to.toISOString());
@@ -373,22 +292,6 @@ export default function Dashboard() {
   });
 
   // Fetch current goal - MOVED BEFORE EARLY RETURN
-  // Fetch pipeline stages to get contacts by stage for MonthlyGoalTracker
-  const { data: pipelineStages = [] } = useQuery({
-    queryKey: ["pipeline-stages-for-goals", effectiveOrgId],
-    queryFn: async () => {
-      if (!effectiveOrgId) throw new Error("No organization context");
-      const { data, error } = await supabase
-        .from("pipeline_stages")
-        .select("id, name")
-        .eq("org_id", effectiveOrgId);
-      if (error) throw error;
-      return data || [];
-    },
-    enabled: !!effectiveOrgId,
-    staleTime: 120000,
-  });
-
   // Fetch monthly actuals via RPC directly (no edge function cold-start)
   const currentYear = new Date().getFullYear();
   const { data: backendActuals, isLoading: actualsLoading } = useQuery({
@@ -498,28 +401,20 @@ export default function Dashboard() {
     return [...(yearlyClientInvoices || []), ...mappedBilling];
   }, [yearlyClientInvoices, yearlyBillingDocs]);
 
-  const activityLoading = emailLoading || whatsappLoading || callsLoading || smsLoading;
+  const activityLoading = emailLoading || whatsappLoading || smsLoading;
 
   // Process communication activity data into daily timeline format
   const dailyActivityData = useMemo(() => {
     // Create a map of dates within range
-    const dateMap: Record<string, { calls: number; emails: number; whatsapp: number; sms: number }> = {};
+    const dateMap: Record<string, { emails: number; whatsapp: number; sms: number }> = {};
     
     // Initialize all dates in range
     const start = new Date(dateRange.from);
     const end = new Date(dateRange.to);
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
       const dateKey = format(new Date(d), "yyyy-MM-dd");
-      dateMap[dateKey] = { calls: 0, emails: 0, whatsapp: 0, sms: 0 };
+      dateMap[dateKey] = { emails: 0, whatsapp: 0, sms: 0 };
     }
-
-    // Add call counts
-    callLogs?.forEach((log: any) => {
-      const dateKey = format(new Date(log.created_at), "yyyy-MM-dd");
-      if (dateMap[dateKey]) {
-        dateMap[dateKey].calls += 1;
-      }
-    });
 
     // Add email counts from campaigns
     emailCampaigns?.forEach((campaign: any) => {
@@ -552,7 +447,7 @@ export default function Dashboard() {
         date: format(new Date(date), "MMM d"),
         ...counts,
       }));
-  }, [emailCampaigns, whatsappCampaigns, smsCampaigns, callLogs, dateRange]);
+  }, [emailCampaigns, whatsappCampaigns, smsCampaigns, dateRange]);
 
   // Unpaid GST to department for the selected period (Prosync-only liability minus remittance)
   const gstDueToDept = useMemo(() => {
@@ -864,8 +759,6 @@ export default function Dashboard() {
   // Listen for org context changes
   useEffect(() => {
     const handleOrgChange = () => {
-      queryClient.removeQueries({ queryKey: ["dashboard-stats"] });
-      queryClient.removeQueries({ queryKey: ["pipeline-distribution"] });
       queryClient.removeQueries({ queryKey: ["demo-stats"] });
       queryClient.removeQueries({ queryKey: ["revenue-stats"] });
     };
@@ -877,11 +770,11 @@ export default function Dashboard() {
   // Process monthly actuals from backend API
   const monthlyActuals = useMemo(() => {
     const monthNames = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
-    const result: Record<string, { qualified: number; proposals: number; deals: number; invoiced: number; received: number }> = {};
+    const result: Record<string, { invoiced: number; received: number }> = {};
     
     // Initialize all months
     monthNames.forEach(m => {
-      result[m] = { qualified: 0, proposals: 0, deals: 0, invoiced: 0, received: 0 };
+      result[m] = { invoiced: 0, received: 0 };
     });
 
     // If we have backend actuals, use them
@@ -890,9 +783,6 @@ export default function Dashboard() {
         const monthKey = monthNames[monthData.month - 1];
         if (monthKey) {
           result[monthKey] = {
-            qualified: monthData.qualified || 0,
-            proposals: monthData.proposals || 0,
-            deals: monthData.deals || 0,
             invoiced: monthData.invoiced || 0,
             received: monthData.received || 0,
           };
@@ -917,22 +807,18 @@ export default function Dashboard() {
     return result;
   }, [backendActuals]);
 
-  // Get filtered contacts/invoices for dialog using backend IDs
+  // Invoices behind a clicked revenue cell, resolved from the backend ID lists
   const getDialogData = useMemo(() => {
     return async (month: string, metricType: MetricType) => {
       const monthData = backendMonthlyData[month];
-      
-      if (!monthData) {
-        return { contacts: [], invoices: [] };
-      }
 
-      if (metricType === "invoiced" || metricType === "received") {
-        const invoiceIds = metricType === "invoiced" 
-          ? monthData.invoiced_invoice_ids 
+      if (monthData) {
+        const invoiceIds = metricType === "invoiced"
+          ? monthData.invoiced_invoice_ids
           : monthData.received_invoice_ids;
-        
+
         if (!invoiceIds || invoiceIds.length === 0) {
-          return { contacts: [], invoices: [] };
+          return { invoices: [] };
         }
 
         // Fetch invoice details from yearlyInvoicesWithClients
@@ -947,44 +833,15 @@ export default function Dashboard() {
             invoice_date: metricType === "received" ? (inv.payment_received_date || inv.invoice_date) : inv.invoice_date,
             clientName: inv.clients?.company || `${inv.clients?.first_name || ''} ${inv.clients?.last_name || ''}`.trim() || 'Unknown',
           }));
-        return { invoices, contacts: [] };
-      } else {
-        let contactIds: string[] = [];
-        if (metricType === "qualified") contactIds = monthData.qualified_contact_ids || [];
-        else if (metricType === "proposals") contactIds = monthData.proposal_contact_ids || [];
-        else if (metricType === "deals") contactIds = monthData.deal_contact_ids || [];
-        
-        if (contactIds.length === 0) {
-          return { contacts: [], invoices: [] };
-        }
-
-        // Fetch contact details from database
-        const { data: contacts } = await supabase
-          .from("contacts")
-          .select("id, first_name, last_name, company, created_at, pipeline_stage_id")
-          .in("id", contactIds);
-
-        // Get stage names
-        const stageNameMap: Record<string, string> = {};
-        pipelineStages.forEach((stage: any) => {
-          stageNameMap[stage.id] = stage.name?.toLowerCase() || '';
-        });
-
-        const formattedContacts = (contacts || []).map((contact: any) => ({
-          id: contact.id,
-          first_name: contact.first_name,
-          last_name: contact.last_name,
-          company: contact.company,
-          created_at: contact.created_at,
-          stageName: stageNameMap[contact.pipeline_stage_id] || '',
-        }));
-        return { contacts: formattedContacts, invoices: [] };
+        return { invoices };
       }
+
+      return { invoices: [] };
     };
-  }, [backendMonthlyData, yearlyInvoicesWithClients, pipelineStages]);
+  }, [backendMonthlyData, yearlyInvoicesWithClients]);
 
   // State for dialog data (fetched asynchronously)
-  const [dialogData, setDialogData] = useState<{ contacts: any[]; invoices: any[] }>({ contacts: [], invoices: [] });
+  const [dialogData, setDialogData] = useState<{ invoices: any[] }>({ invoices: [] });
 
   const handleCellClick = async (month: string, metricType: MetricType) => {
     setSelectedMonth(month);
@@ -1040,19 +897,16 @@ export default function Dashboard() {
   }, [monthlyActuals]);
 
 
-  const loading = orgLoading || statsLoading || pipelineLoading || revenueLoading || actualsLoading;
+  const loading = orgLoading || revenueLoading || actualsLoading;
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
-    await queryClient.invalidateQueries({ queryKey: ["pipeline-distribution"] });
     await queryClient.invalidateQueries({ queryKey: ["revenue-stats"] });
     await queryClient.invalidateQueries({ queryKey: ["monthly-actuals-backend-v2"] });
     await queryClient.invalidateQueries({ queryKey: ["email-campaigns-activity"] });
     await queryClient.invalidateQueries({ queryKey: ["whatsapp-campaigns-activity"] });
     await queryClient.invalidateQueries({ queryKey: ["sms-campaigns-activity"] });
-    await queryClient.invalidateQueries({ queryKey: ["call-logs-activity"] });
     await queryClient.invalidateQueries({ queryKey: ["billing-docs-revenue"] });
     await queryClient.invalidateQueries({ queryKey: ["billing-docs-paid-revenue"] });
     setIsRefreshing(false);
@@ -1147,49 +1001,7 @@ export default function Dashboard() {
   };
 
   // Process stats from database function
-  const stats: DashboardStats = useMemo(() => {
-    if (!rawStats) {
-      return {
-        totalContacts: 0,
-        activeDeals: 0,
-        callsToday: 0,
-        conversionRate: 0,
-        newContactsThisWeek: 0,
-        dealsWonThisMonth: 0,
-        contactGrowth: 0,
-        dealGrowth: 0,
-      };
-    }
-
-    const { total_contacts, active_deals, calls_today, prev_month_contacts, conversion_rate } = rawStats;
-    const currentMonthContacts = total_contacts - prev_month_contacts;
-    const contactGrowth = prev_month_contacts > 0
-      ? Math.round(((currentMonthContacts - prev_month_contacts) / prev_month_contacts) * 100)
-      : 0;
-
-    return {
-      totalContacts: total_contacts,
-      activeDeals: active_deals,
-      callsToday: calls_today,
-      conversionRate: conversion_rate || 0,
-      newContactsThisWeek: 0,
-      dealsWonThisMonth: 0,
-      contactGrowth,
-      dealGrowth: 0,
-    };
-  }, [rawStats]);
-
   // Process pipeline data
-  const pipelineData: PipelineData[] = useMemo(() => {
-    if (!pipelineRaw || pipelineRaw.length === 0) return [];
-
-    return pipelineRaw.map((item: any) => ({
-      stage: item.stage_name,
-      count: Number(item.contact_count),
-      value: Number(item.contact_count),
-    }));
-  }, [pipelineRaw]);
-
   // EARLY RETURN - All hooks are now above this point
   if (!effectiveOrgId || loading) {
     return (
@@ -1319,20 +1131,17 @@ export default function Dashboard() {
               clientBreakdown={clientBreakdown}
             />
 
-            {/* Contacts List Dialog for clickable actuals */}
-            <ContactsListDialog
+            {/* Invoice drill-down for clickable revenue actuals */}
+            <InvoiceListDialog
               open={dialogOpen}
               onClose={() => setDialogOpen(false)}
               month={selectedMonth}
               metricType={selectedMetric}
-              contacts={dialogData.contacts}
               invoices={dialogData.invoices}
             />
           </>
         ) : (
           <>
-            {/* Key Metrics */}
-            <DashboardStatsCards stats={stats} />
 
             {/* Revenue Metrics */}
             <DashboardRevenueCards
@@ -1363,12 +1172,8 @@ export default function Dashboard() {
               clients={uniqueClients}
               formatCurrency={formatCurrency} 
             />
-
-            {/* Pipeline Distribution & Communication Activity Charts */}
-            <div className="grid gap-2 grid-cols-1 lg:grid-cols-2">
-              <DashboardPipelineChart data={pipelineData} />
-              <DashboardActivityChart data={dailyActivityData} isLoading={activityLoading} />
-            </div>
+            {/* Communication Activity */}
+            <DashboardActivityChart data={dailyActivityData} isLoading={activityLoading} />
 
           </>
         )}
