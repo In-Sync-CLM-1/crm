@@ -15,7 +15,7 @@
  * LinkedIn redirects back here with ?code= (+ the state we sent); the flow is
  * told apart by state=org vs anything else.
  */
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 
 const REDIRECT_URI = 'https://mlvgqudcwlkolsbighnn.supabase.co/functions/v1/mkt-linkedin-oauth-callback';
 const LINKEDIN_VERSION = '202503';
@@ -49,10 +49,7 @@ async function exchangeCode(code: string, clientId: string, clientSecret: string
 }
 
 function supabaseClient() {
-  return createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-  );
+  return getSupabaseClient();
 }
 
 async function activeConfig(supabase: ReturnType<typeof supabaseClient>) {

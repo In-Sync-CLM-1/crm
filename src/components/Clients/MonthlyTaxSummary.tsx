@@ -6,6 +6,7 @@ import { ChevronDown, ChevronUp, Calculator } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { format, parseISO } from "date-fns";
 import { MonthlyPaymentsDialog } from "./MonthlyPaymentsDialog";
+import { formatCurrency } from "@/utils/currency";
 
 interface Invoice {
   id: string;
@@ -97,14 +98,6 @@ export function MonthlyTaxSummary({ invoices, currency = "INR" }: MonthlyTaxSumm
     );
   }, [invoices]);
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat("en-IN", {
-      style: "currency",
-      currency: currency,
-      maximumFractionDigits: 0,
-    }).format(value);
-  };
-
   // Calculate totals
   const totals = useMemo(() => {
     return monthlyData.reduce(
@@ -139,10 +132,10 @@ export function MonthlyTaxSummary({ invoices, currency = "INR" }: MonthlyTaxSumm
               <div className="flex items-center gap-4">
                 <div className="flex gap-4 text-sm">
                   <span className="text-muted-foreground">
-                    GST: <span className="font-medium text-foreground">{formatCurrency(totals.gstAmount)}</span>
+                    GST: <span className="font-medium text-foreground">{formatCurrency(totals.gstAmount, currency)}</span>
                   </span>
                   <span className="text-muted-foreground">
-                    TDS: <span className="font-medium text-foreground">{formatCurrency(totals.tdsAmount)}</span>
+                    TDS: <span className="font-medium text-foreground">{formatCurrency(totals.tdsAmount, currency)}</span>
                   </span>
                 </div>
                 {isOpen ? (
@@ -172,11 +165,11 @@ export function MonthlyTaxSummary({ invoices, currency = "INR" }: MonthlyTaxSumm
                 {monthlyData.map((month) => (
                   <TableRow key={month.monthKey}>
                     <TableCell className="font-medium">{month.month}</TableCell>
-                    <TableCell className="text-right">{formatCurrency(month.baseAmount)}</TableCell>
-                    <TableCell className="text-right text-blue-600">{formatCurrency(month.gstAmount)}</TableCell>
-                    <TableCell className="text-right font-medium">{formatCurrency(month.totalInvoiced)}</TableCell>
-                    <TableCell className="text-right text-orange-600">{formatCurrency(month.tdsAmount)}</TableCell>
-                    <TableCell className="text-right font-medium text-green-600">{formatCurrency(month.netReceived)}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(month.baseAmount, currency)}</TableCell>
+                    <TableCell className="text-right text-blue-600">{formatCurrency(month.gstAmount, currency)}</TableCell>
+                    <TableCell className="text-right font-medium">{formatCurrency(month.totalInvoiced, currency)}</TableCell>
+                    <TableCell className="text-right text-orange-600">{formatCurrency(month.tdsAmount, currency)}</TableCell>
+                    <TableCell className="text-right font-medium text-green-600">{formatCurrency(month.netReceived, currency)}</TableCell>
                     <TableCell className="text-center">
                       <Badge 
                         variant="outline" 
@@ -191,11 +184,11 @@ export function MonthlyTaxSummary({ invoices, currency = "INR" }: MonthlyTaxSumm
                 {/* Totals Row */}
                 <TableRow className="bg-muted/50 font-medium">
                   <TableCell>Total</TableCell>
-                  <TableCell className="text-right">{formatCurrency(totals.baseAmount)}</TableCell>
-                  <TableCell className="text-right text-blue-600">{formatCurrency(totals.gstAmount)}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(totals.totalInvoiced)}</TableCell>
-                  <TableCell className="text-right text-orange-600">{formatCurrency(totals.tdsAmount)}</TableCell>
-                  <TableCell className="text-right text-green-600">{formatCurrency(totals.netReceived)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(totals.baseAmount, currency)}</TableCell>
+                  <TableCell className="text-right text-blue-600">{formatCurrency(totals.gstAmount, currency)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(totals.totalInvoiced, currency)}</TableCell>
+                  <TableCell className="text-right text-orange-600">{formatCurrency(totals.tdsAmount, currency)}</TableCell>
+                  <TableCell className="text-right text-green-600">{formatCurrency(totals.netReceived, currency)}</TableCell>
                   <TableCell />
                 </TableRow>
               </TableBody>

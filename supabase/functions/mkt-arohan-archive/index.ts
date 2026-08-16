@@ -13,8 +13,8 @@
  * Postgres. Nothing is lost, the live table just stops growing forever.
  */
 import { getSupabaseClient } from '../_shared/supabaseClient.ts';
-import { corsHeaders } from '../_shared/corsHeaders.ts';
 import { uploadToFilesR2 } from '../_shared/r2Files.ts';
+import { corsHeaders } from '../_shared/corsHeaders.ts';
 
 const RETENTION_DAYS = 30;
 const MAX_THREADS_PER_RUN = 50; // keeps each invocation well inside the function timeout

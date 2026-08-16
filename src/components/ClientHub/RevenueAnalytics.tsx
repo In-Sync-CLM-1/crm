@@ -9,6 +9,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
 import { TrendingUp, DollarSign, AlertTriangle, FileCheck, Clock, CalendarDays, X } from "lucide-react";
 import { startOfMonth, subMonths, startOfQuarter, startOfYear, isAfter, format, differenceInDays } from "date-fns";
 import { cn } from "@/lib/utils";
+import { formatCurrency } from "@/utils/currency";
 
 interface RevenueAnalyticsProps {
   invoices: any[];
@@ -109,15 +110,6 @@ export function RevenueAnalytics({ invoices }: RevenueAnalyticsProps) {
   };
 
   const monthlyData = getMonthlyData();
-
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat("en-IN", {
-      style: "currency",
-      currency: "INR",
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(value);
-  };
 
   const chartConfig = {
     invoiced: {

@@ -5,11 +5,8 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.58.0';
 import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 import { GOOGLE_ADS_API_VERSION } from '../_shared/googleAdsClient.ts';
+import { corsHeaders } from '../_shared/corsHeaders.ts';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
 
 async function getGoogleAccessToken(): Promise<string> {
   const response = await fetch('https://oauth2.googleapis.com/token', {

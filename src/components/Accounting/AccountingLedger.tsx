@@ -34,6 +34,7 @@ interface BillingDoc {
   balance_due: number;
   amount_paid: number;
   status: string;
+  seller_snapshot?: unknown;
 }
 
 interface BillingPayment {

@@ -13,11 +13,11 @@
  *
  * force=true bypasses the time window and posts the earliest pending draft.
  */
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { corsHeaders } from '../_shared/corsHeaders.ts';
 import { uploadImageToLinkedIn, uploadVideoToLinkedIn, uploadDocumentToLinkedIn } from '../_shared/linkedinMedia.ts';
 import { buildCarouselPdf } from '../_shared/carouselPdf.ts';
 import { getLinkedInIdentity } from '../_shared/linkedinAuth.ts';
+import { corsHeaders } from '../_shared/corsHeaders.ts';
+import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 
 const LINKEDIN_VERSION = '202503';
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
@@ -139,10 +139,7 @@ function err(status: number, message: string) {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
-  const supabase = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-  );
+  const supabase = getSupabaseClient();
 
   try {
     // 1. Load active config

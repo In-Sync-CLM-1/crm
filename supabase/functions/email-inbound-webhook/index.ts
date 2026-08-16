@@ -1,10 +1,6 @@
 import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 import { hardSuppressContact, softBounceContact } from '../_shared/emailSuppression.ts';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { corsHeaders } from '../_shared/corsHeaders.ts';
 
 // Verify webhook signature using Web Crypto API
 async function verifyWebhookSignature(

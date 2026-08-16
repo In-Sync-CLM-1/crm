@@ -28,8 +28,9 @@
  * largest bounce source in an aged B2B list, and they cost nothing to detect.
  */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { corsHeaders } from '../_shared/corsHeaders.ts';
 import { FOLLOW_CAMPAIGNS } from '../_shared/followRequestEmail.ts';
+import { corsHeaders } from '../_shared/corsHeaders.ts';
+import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 
 const RMPL_URL = 'https://ufwvyybrctjpwipbveqe.supabase.co';
 
@@ -199,13 +200,10 @@ function classify(designation: string | null, jobLevel: string | null): 'leader'
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
-
-  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   const rmplKey = Deno.env.get('RMPL_SERVICE_KEY');
   if (!rmplKey) return err(500, 'RMPL_SERVICE_KEY not configured');
 
-  const supabase = createClient(supabaseUrl, serviceKey);
+  const supabase = getSupabaseClient();
   const rmpl = createClient(RMPL_URL, rmplKey);
 
   const body = await req.json().catch(() => ({}));

@@ -25,9 +25,7 @@
  *
  * Can also be triggered manually by Arohan chat (force=true, product_key optional).
  */
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { callLLMJson } from '../_shared/llmClient.ts';
-import { corsHeaders } from '../_shared/corsHeaders.ts';
 import { renderSlideImage } from '../_shared/slideImage.ts';
 import { uploadToMarketingR2 } from '../_shared/r2Marketing.ts';
 import { buildImagePrompt, generateGeminiImage, GeminiAspect, ImageStyle, IMAGE_STYLES } from '../_shared/geminiImage.ts';
@@ -35,6 +33,8 @@ import { brandImageUrl, LOGO_MARK_URL } from '../_shared/brandLogo.ts';
 import { PERSONA_DAY_SEQ, PERSONA_SLOT_INDEX, PERSONA_BACKSTORY, generatePersonaPost } from '../_shared/personaVoice.ts';
 import { BRAND_STORY } from '../_shared/brandVoice.ts';
 import { generatePoll } from '../_shared/pollVoice.ts';
+import { corsHeaders } from '../_shared/corsHeaders.ts';
+import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 
 const LINKEDIN_ORG_ID = Deno.env.get('LINKEDIN_ORG_ID') || '35932282';
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000; // UTC+5:30
@@ -788,10 +788,7 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
   const startedAt = Date.now();
-  const supabase = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-  );
+  const supabase = getSupabaseClient();
 
   try {
     let forceProductKey: string | null = null;

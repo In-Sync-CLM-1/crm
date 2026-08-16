@@ -18,8 +18,8 @@
  *         chars], descriptions[2-4, <=90 chars], keywords[{text}] }
  * Returns: { campaign_id, budget_id, ad_group_id }
  */
-import { corsHeaders } from '../_shared/corsHeaders.ts';
 import { loadGoogleAdsConfig, getGoogleAccessToken, mutateGoogleAds, resourceId } from '../_shared/googleAdsClient.ts';
+import { corsHeaders } from '../_shared/corsHeaders.ts';
 
 function ok(data: unknown) {
   return new Response(JSON.stringify(data), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });

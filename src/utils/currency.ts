@@ -12,6 +12,14 @@ export function formatCompactINR(value: number): string {
   return `₹${value.toLocaleString("en-IN")}`;
 }
 
+/** Compact Indian notation without a symbol, one decimal: 1.3Cr / 3.4L / 12K */
+export function formatCompactNumber(value: number): string {
+  if (value >= 10000000) return `${(value / 10000000).toFixed(1)}Cr`;
+  if (value >= 100000) return `${(value / 100000).toFixed(1)}L`;
+  if (value >= 1000) return `${(value / 1000).toFixed(0)}K`;
+  return value.toString();
+}
+
 /** Full amount with currency symbol and no decimals: ₹12,34,567 */
 export function formatCurrency(value: number, currency = "INR"): string {
   return new Intl.NumberFormat("en-IN", {

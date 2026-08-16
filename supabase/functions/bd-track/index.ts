@@ -13,8 +13,9 @@
  *   POST {}
  */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { corsHeaders } from '../_shared/corsHeaders.ts';
 import { BD_ORG_ID } from '../_shared/bdPipeline.ts';
+import { corsHeaders } from '../_shared/corsHeaders.ts';
+import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 
 const ok = (d: unknown) => new Response(JSON.stringify(d), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 const err = (s: number, m: string) => new Response(JSON.stringify({ error: m }), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -22,7 +23,7 @@ const err = (s: number, m: string) => new Response(JSON.stringify({ error: m }),
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
-  const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+  const supabase = getSupabaseClient();
   const gcUrl = Deno.env.get('GLOBALCRM_SUPABASE_URL');
   const gcKey = Deno.env.get('GLOBALCRM_SERVICE_KEY');
   if (!gcUrl || !gcKey) return err(500, 'GLOBALCRM_SUPABASE_URL / GLOBALCRM_SERVICE_KEY not configured');

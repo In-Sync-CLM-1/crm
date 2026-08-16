@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { ExternalLink } from "lucide-react";
 import { format } from "date-fns";
 import type { RevenueCardType } from "./DashboardRevenueCards";
+import { formatCompactINR } from "@/utils/currency";
 
 interface Invoice {
   id: string;
@@ -45,13 +46,7 @@ const cardLabels: Record<RevenueCardType, string> = {
   pending: "Pending Invoices",
   gst: "GST Details",
   tds: "TDS Details",
-};
-
-const formatCompact = (value: number): string => {
-  if (value >= 10000000) return `₹${(value / 10000000).toFixed(2)}Cr`;
-  if (value >= 100000) return `₹${(value / 100000).toFixed(2)}L`;
-  if (value >= 1000) return `₹${(value / 1000).toFixed(0)}K`;
-  return `₹${value.toLocaleString("en-IN")}`;
+  gst_due_dept: "GST Due to Department",
 };
 
 export function RevenueCardDialog({
@@ -122,16 +117,16 @@ export function RevenueCardDialog({
                       {format(new Date(getDate(inv)), "dd MMM yyyy")}
                     </TableCell>
                     <TableCell className="text-xs text-right font-medium">
-                      {formatCompact(inv.amount)}
+                      {formatCompactINR(inv.amount)}
                     </TableCell>
                     {showGST && (
                       <TableCell className="text-xs text-right font-medium text-blue-600">
-                        {formatCompact(inv.tax_amount || 0)}
+                        {formatCompactINR(inv.tax_amount || 0)}
                       </TableCell>
                     )}
                     {showTDS && (
                       <TableCell className="text-xs text-right font-medium text-orange-600">
-                        {formatCompact(inv.tds_amount || 0)}
+                        {formatCompactINR(inv.tds_amount || 0)}
                       </TableCell>
                     )}
                     <TableCell className="text-xs capitalize">{inv.status}</TableCell>

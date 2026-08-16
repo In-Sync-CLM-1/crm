@@ -1,9 +1,6 @@
 import { getSupabaseClient } from '../_shared/supabaseClient.ts';
+import { corsHeaders } from '../_shared/corsHeaders.ts';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {

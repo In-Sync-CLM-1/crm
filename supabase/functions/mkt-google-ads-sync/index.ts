@@ -1,11 +1,8 @@
 import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 import { createEngineLogger } from '../_shared/engineLogger.ts';
 import { GOOGLE_ADS_API_VERSION } from '../_shared/googleAdsClient.ts';
+import { corsHeaders } from '../_shared/corsHeaders.ts';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
 
 /**
  * Syncs Google Ads campaign metrics and pushes offline conversions to GA4.

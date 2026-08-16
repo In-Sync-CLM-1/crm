@@ -33,6 +33,9 @@ export interface SupportTicket {
   contact_email: string | null;
   company_name: string | null;
   due_at: string | null;
+  source: string;
+  client_notified: boolean;
+  client_notified_at: string | null;
   attachments: { name: string; url: string; type: string; size: number }[] | null;
   created_at: string;
   updated_at: string;
@@ -87,7 +90,7 @@ async function uploadTicketAttachments(orgId: string, ticketId: string, files: F
   return uploaded;
 }
 
-export function useSupportTickets(filters?: { status?: string; priority?: string; category?: string; search?: string }) {
+export function useSupportTickets(filters?: { status?: string; priority?: string; category?: string; source?: string; search?: string }) {
   const { user } = useAuth();
   const { effectiveOrgId: orgId } = useOrgContext();
   const queryClient = useQueryClient();

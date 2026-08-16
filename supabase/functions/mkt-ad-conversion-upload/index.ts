@@ -2,6 +2,7 @@ import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2.58.0';
 import { createEngineLogger } from '../_shared/engineLogger.ts';
 import { GOOGLE_ADS_API_VERSION } from '../_shared/googleAdsClient.ts';
+import { corsHeaders } from '../_shared/corsHeaders.ts';
 
 /**
  * OFFLINE CONVERSION FEEDBACK LOOP — Phase 1 (qualified leads).
@@ -24,10 +25,6 @@ import { GOOGLE_ADS_API_VERSION } from '../_shared/googleAdsClient.ts';
  * errors; never emits success pings.
  */
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
 
 const CUSTOMER_ID = (Deno.env.get('GOOGLE_ADS_CUSTOMER_ID') || '6785487693').replace(/-/g, '');
 const QUALIFIED_CONVERSION =

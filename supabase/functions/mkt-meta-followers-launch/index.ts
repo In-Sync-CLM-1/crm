@@ -13,10 +13,9 @@
  *         duration_days, primary_text, targeting_interests?: string[] }
  * Returns: { campaign_id, adset_id, ad_id, end_date }
  */
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { corsHeaders } from '../_shared/corsHeaders.ts';
-
 import { DEFAULT_INTERESTS, fbPost } from '../_shared/metaAds.ts';
+import { corsHeaders } from '../_shared/corsHeaders.ts';
+import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 
 function ok(data: unknown) {
   return new Response(JSON.stringify(data), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -45,7 +44,7 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
   if (req.method !== 'POST') return err(405, 'POST only');
 
-  const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+  const supabase = getSupabaseClient();
 
   try {
     const body = (await req.json()) as LaunchBody;

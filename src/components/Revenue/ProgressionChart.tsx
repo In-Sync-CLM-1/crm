@@ -10,11 +10,9 @@ import {
   Legend,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatCompactNumber } from "@/utils/currency";
 
 interface MonthlyData {
-  qualified: number;
-  proposals: number;
-  deals: number;
   invoiced: number;
   received: number;
 }
@@ -41,13 +39,6 @@ const monthlyTargets: Record<string, { revenue: number }> = {
   DEC: { revenue: 1200000 },
 };
 
-const formatCompact = (value: number): string => {
-  if (value >= 10000000) return `${(value / 10000000).toFixed(1)}Cr`;
-  if (value >= 100000) return `${(value / 100000).toFixed(1)}L`;
-  if (value >= 1000) return `${(value / 1000).toFixed(0)}K`;
-  return value.toString();
-};
-
 export function ProgressionChart({ monthlyActuals }: ProgressionChartProps) {
   // Build cumulative progression data showing single target vs actual invoiced and received
   const chartData = useMemo(() => {
@@ -57,7 +48,7 @@ export function ProgressionChart({ monthlyActuals }: ProgressionChartProps) {
 
     return months.map((month) => {
       const target = monthlyTargets[month];
-      const actual = monthlyActuals[month] || { qualified: 0, proposals: 0, deals: 0, invoiced: 0, received: 0 };
+      const actual = monthlyActuals[month] || { invoiced: 0, received: 0 };
 
       cumTarget += target.revenue;
       cumActualInvoiced += actual.invoiced;
@@ -85,7 +76,7 @@ export function ProgressionChart({ monthlyActuals }: ProgressionChartProps) {
               />
               <span className="text-muted-foreground">{entry.name}:</span>
               <span className="font-medium text-foreground">
-                {formatCompact(entry.value)}
+                {formatCompactNumber(entry.value)}
               </span>
             </div>
           ))}
@@ -116,7 +107,7 @@ export function ProgressionChart({ monthlyActuals }: ProgressionChartProps) {
                 tickLine={{ className: "stroke-border" }}
               />
               <YAxis 
-                tickFormatter={formatCompact}
+                tickFormatter={formatCompactNumber}
                 tick={{ fontSize: 11 }}
                 className="text-muted-foreground"
                 axisLine={{ className: "stroke-border" }}

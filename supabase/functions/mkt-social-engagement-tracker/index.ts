@@ -13,9 +13,9 @@
  * Instagram: reach/likes/comments/saved/shares via media insights; same set
  * works for images, carousels, and reels.
  */
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { corsHeaders } from '../_shared/corsHeaders.ts';
 import { getXCreds, getOwnProfile, getTweetMetrics } from '../_shared/xClient.ts';
+import { corsHeaders } from '../_shared/corsHeaders.ts';
+import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 
 const FB_API_VERSION = 'v21.0';
 
@@ -165,10 +165,7 @@ async function fetchYtStatsBatch(videoIds: string[], accessToken: string): Promi
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
-  const supabase = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-  );
+  const supabase = getSupabaseClient();
 
   try {
     const { data: config } = await supabase

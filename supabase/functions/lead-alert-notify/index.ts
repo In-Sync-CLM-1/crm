@@ -9,11 +9,7 @@
 import { sendViaResend } from '../_shared/resendEmailClient.ts';
 import { sendViaExotel, buildExotelPayload, formatPhoneE164 } from '../_shared/exotelWhatsApp.ts';
 import { getSupabaseClient } from '../_shared/supabaseClient.ts';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { corsHeaders } from '../_shared/corsHeaders.ts';
 
 const OPS_EMAIL = 'a@in-sync.co.in';
 const OPS_PHONE = '+917738919680';

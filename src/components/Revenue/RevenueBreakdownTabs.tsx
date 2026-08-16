@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Search, Calendar, Users, FileText } from "lucide-react";
 import { format } from "date-fns";
+import { formatCurrency } from "@/utils/currency";
 
 interface Invoice {
   id: string;
@@ -45,14 +46,6 @@ interface RevenueBreakdownTabsProps {
   clientBreakdown: ClientBreakdown[];
   currency?: string;
 }
-
-const formatCurrency = (amount: number, currency: string = "INR") => {
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency,
-    maximumFractionDigits: 0,
-  }).format(amount);
-};
 
 const getStatusBadge = (status: string) => {
   const variants: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; label: string }> = {

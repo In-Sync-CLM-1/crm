@@ -1,7 +1,7 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { callLLM } from '../_shared/llmClient.ts';
-import { corsHeaders } from '../_shared/corsHeaders.ts';
 import { getLinkedInIdentity } from '../_shared/linkedinAuth.ts';
+import { corsHeaders } from '../_shared/corsHeaders.ts';
+import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 
 const LINKEDIN_VERSION = '202503';
 
@@ -390,10 +390,7 @@ function ok(data: unknown) {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
-  const supabase = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-  );
+  const supabase = getSupabaseClient();
 
   try {
     // 1. Load config

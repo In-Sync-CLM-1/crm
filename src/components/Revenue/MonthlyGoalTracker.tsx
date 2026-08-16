@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import type { MetricType } from "./InvoiceListDialog";
+import { formatCompactNumber } from "@/utils/currency";
 
 interface MonthlyActuals {
   invoiced: number;
@@ -37,13 +38,6 @@ const monthlyTargets: Record<string, number> = {
 };
 
 const months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
-
-const formatCompact = (value: number): string => {
-  if (value >= 10000000) return `${(value / 10000000).toFixed(1)}Cr`;
-  if (value >= 100000) return `${(value / 100000).toFixed(1)}L`;
-  if (value >= 1000) return `${(value / 1000).toFixed(0)}K`;
-  return value.toString();
-};
 
 export function MonthlyGoalTracker({ monthlyActuals, onCellClick }: MonthlyGoalTrackerProps) {
   const annualTotals = useMemo(() => ({
@@ -85,18 +79,18 @@ export function MonthlyGoalTracker({ monthlyActuals, onCellClick }: MonthlyGoalT
             return (
               <TableRow key={month} className="h-10">
                 <TableCell className="text-center font-semibold text-sm py-2">{month}</TableCell>
-                <TableCell className="text-center text-sm border-l py-2">{formatCompact(target)}</TableCell>
+                <TableCell className="text-center text-sm border-l py-2">{formatCompactNumber(target)}</TableCell>
                 <TableCell
                   className={cn("text-center text-sm font-medium py-2", getCellClass(actual.invoiced, target), clickableClass)}
                   onClick={() => onCellClick?.(month, "invoiced")}
                 >
-                  {formatCompact(actual.invoiced)}
+                  {formatCompactNumber(actual.invoiced)}
                 </TableCell>
                 <TableCell
                   className={cn("text-center text-sm font-medium py-2", getCellClass(actual.received, target), clickableClass)}
                   onClick={() => onCellClick?.(month, "received")}
                 >
-                  {formatCompact(actual.received)}
+                  {formatCompactNumber(actual.received)}
                 </TableCell>
               </TableRow>
             );
@@ -104,12 +98,12 @@ export function MonthlyGoalTracker({ monthlyActuals, onCellClick }: MonthlyGoalT
           {/* Annual total row */}
           <TableRow className="bg-primary/10 font-semibold h-10 border-t-2">
             <TableCell className="text-center text-sm py-2">YR</TableCell>
-            <TableCell className="text-center text-sm border-l py-2">{formatCompact(annualTotals.target)}</TableCell>
+            <TableCell className="text-center text-sm border-l py-2">{formatCompactNumber(annualTotals.target)}</TableCell>
             <TableCell className={cn("text-center text-sm font-bold py-2", getCellClass(annualTotals.invoiced, annualTotals.target))}>
-              {formatCompact(annualTotals.invoiced)}
+              {formatCompactNumber(annualTotals.invoiced)}
             </TableCell>
             <TableCell className={cn("text-center text-sm font-bold py-2", getCellClass(annualTotals.received, annualTotals.target))}>
-              {formatCompact(annualTotals.received)}
+              {formatCompactNumber(annualTotals.received)}
             </TableCell>
           </TableRow>
         </TableBody>

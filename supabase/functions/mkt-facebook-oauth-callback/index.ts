@@ -10,7 +10,7 @@
  * ~60-day LinkedIn-style renewal needed) as long as the connection isn't
  * revoked, so this is a one-time setup, not a recurring task.
  */
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 
 const REDIRECT_URI = 'https://mlvgqudcwlkolsbighnn.supabase.co/functions/v1/mkt-facebook-oauth-callback';
 const FB_API_VERSION = 'v19.0';
@@ -94,10 +94,7 @@ Deno.serve(async (req) => {
     const igUserId: string | null = igData?.instagram_business_account?.id || null;
 
     // 5. Store on the active config row
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-    );
+    const supabase = getSupabaseClient();
 
     const { data: linkedinConfig } = await supabase
       .from('mkt_linkedin_config')

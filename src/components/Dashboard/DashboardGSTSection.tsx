@@ -18,6 +18,7 @@ import { Download, ChevronDown, ChevronUp, Receipt, AlertTriangle, Clock, CheckC
 import { LoadingState } from "@/components/common/LoadingState";
 import { format, parseISO, isAfter, differenceInDays } from "date-fns";
 import { toast } from "sonner";
+import { formatCurrency } from "@/utils/currency";
 
 interface DashboardGSTSectionProps {
   dateRange: { from: Date; to: Date };
@@ -727,14 +728,6 @@ export function DashboardGSTSection({ dateRange }: DashboardGSTSectionProps) {
     link.download = `gst-summary-${format(new Date(), "yyyy-MM-dd")}.csv`;
     link.click();
     URL.revokeObjectURL(url);
-  };
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-IN", {
-      style: "currency",
-      currency: "INR",
-      maximumFractionDigits: 0,
-    }).format(amount);
   };
 
   const renderPaymentStatusBadge = (monthNum: number, year: number, gstCollected: number) => {

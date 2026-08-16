@@ -8,8 +8,8 @@
  * IG user ID + Page access token come from mkt_social_config, populated by
  * mkt-facebook-oauth-callback — shared Meta app with Facebook, same token.
  */
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/corsHeaders.ts';
+import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 
 const FB_API_VERSION = 'v19.0';
 const POLL_INTERVAL_MS = 10_000;
@@ -163,10 +163,7 @@ async function publishReel(
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
-  const supabase = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-  );
+  const supabase = getSupabaseClient();
 
   try {
     const { data: socialConfig } = await supabase

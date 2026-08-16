@@ -1,12 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { getSupabaseClient } from "../_shared/supabaseClient.ts";
 import { replaceVariables } from "../_shared/templateVariables.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders } from '../_shared/corsHeaders.ts';
 
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
 const BATCH_SIZE = 50; // Process 50 emails per batch

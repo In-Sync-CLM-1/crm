@@ -11,8 +11,8 @@
  * Page token, generated in Meta Business Settings — see
  * mkt-facebook-oauth-callback for the OAuth alternative).
  */
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/corsHeaders.ts';
+import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 
 const FB_API_VERSION = 'v19.0';
 
@@ -103,10 +103,7 @@ async function postVideo(pageId: string, token: string, videoUrl: string, descri
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
-  const supabase = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-  );
+  const supabase = getSupabaseClient();
 
   try {
     const { data: socialConfig } = await supabase

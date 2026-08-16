@@ -20,10 +20,10 @@
  * "review" it, per the brief) and gates mkt-ad-campaign-generator's Meta
  * path (no Meta campaign launches until at least one snapshot exists).
  */
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { corsHeaders } from '../_shared/corsHeaders.ts';
 import { getLinkedInIdentity } from '../_shared/linkedinAuth.ts';
 import { buildTaxonomyResolver } from '../_shared/linkedinTaxonomy.ts';
+import { corsHeaders } from '../_shared/corsHeaders.ts';
+import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 
 const LINKEDIN_VERSION = '202503';
 
@@ -54,7 +54,7 @@ function topN(rows: Array<{ label: string; count: number }>, n = 15) {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
-  const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+  const supabase = getSupabaseClient();
 
   try {
     const { data: configs, error: cfgErr } = await supabase
