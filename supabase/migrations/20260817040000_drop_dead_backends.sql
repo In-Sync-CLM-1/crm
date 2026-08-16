@@ -18,7 +18,31 @@
 --    dropped on 2026-07-15.
 -- 5. Tables belonging only to those removed features.
 
--- 1-3. Triggers
+-- 1. Tables of removed features (their own triggers go with them)
+DROP TABLE IF EXISTS public.outbound_webhook_logs CASCADE;
+DROP TABLE IF EXISTS public.outbound_webhooks CASCADE;
+DROP TABLE IF EXISTS public.whatsapp_settings CASCADE;
+DROP TABLE IF EXISTS public.operation_queue CASCADE;
+DROP TABLE IF EXISTS public.import_staging CASCADE;
+DROP TABLE IF EXISTS public.bulk_import_records CASCADE;
+DROP TABLE IF EXISTS public.bulk_import_history CASCADE;
+DROP TABLE IF EXISTS public.import_jobs CASCADE;
+DROP TABLE IF EXISTS public.google_oauth_tokens CASCADE;
+DROP TABLE IF EXISTS public.form_fields CASCADE;
+DROP TABLE IF EXISTS public.forms CASCADE;
+DROP TABLE IF EXISTS public.connector_logs CASCADE;
+DROP TABLE IF EXISTS public.saved_reports CASCADE;
+DROP TABLE IF EXISTS public.exotel_exophones CASCADE;
+DROP TABLE IF EXISTS public.contact_enrichment_logs CASCADE;
+DROP TABLE IF EXISTS public.contact_enrichment_runs CASCADE;
+DROP TABLE IF EXISTS public.contacts_with_stages CASCADE;
+DROP TABLE IF EXISTS public.api_key_usage_logs CASCADE;
+DROP TABLE IF EXISTS public.api_keys CASCADE;
+DROP TABLE IF EXISTS public.mkt_ga4_traffic CASCADE;
+DROP TABLE IF EXISTS public.monthly_actuals_snapshot CASCADE;
+DROP TABLE IF EXISTS public.carry_forward_snapshot CASCADE;
+
+-- 2. Triggers on tables that stay
 DROP TRIGGER IF EXISTS webhook_blog_posts_delete ON public.blog_posts;
 DROP TRIGGER IF EXISTS webhook_blog_posts_insert ON public.blog_posts;
 DROP TRIGGER IF EXISTS webhook_blog_posts_update ON public.blog_posts;
@@ -67,7 +91,7 @@ DROP TRIGGER IF EXISTS webhook_whatsapp_messages_delete ON public.whatsapp_messa
 DROP TRIGGER IF EXISTS webhook_whatsapp_messages_insert ON public.whatsapp_messages;
 DROP TRIGGER IF EXISTS webhook_whatsapp_messages_update ON public.whatsapp_messages;
 
--- 4. Routines
+-- 3. Routines with no remaining caller
 DROP FUNCTION IF EXISTS public.advance_enrollment_step(p_enrollment_id uuid, p_current_step integer);
 DROP FUNCTION IF EXISTS public.bulk_delete_verified(_table_name text, _record_ids uuid[], _org_id uuid, _user_id uuid);
 DROP FUNCTION IF EXISTS public.calculate_monthly_amount(_org_id uuid);
@@ -132,27 +156,3 @@ DROP FUNCTION IF EXISTS public.trigger_outbound_webhook();
 DROP FUNCTION IF EXISTS public.trigger_outbound_webhook_generic();
 DROP FUNCTION IF EXISTS public.trigger_retry_failed_whatsapp();
 DROP FUNCTION IF EXISTS public.update_lead_score(_contact_id uuid, _org_id uuid, _score_delta integer, _reason text);
-
--- 5. Tables of removed features
-DROP TABLE IF EXISTS public.outbound_webhook_logs CASCADE;
-DROP TABLE IF EXISTS public.outbound_webhooks CASCADE;
-DROP TABLE IF EXISTS public.whatsapp_settings CASCADE;
-DROP TABLE IF EXISTS public.operation_queue CASCADE;
-DROP TABLE IF EXISTS public.import_staging CASCADE;
-DROP TABLE IF EXISTS public.bulk_import_records CASCADE;
-DROP TABLE IF EXISTS public.bulk_import_history CASCADE;
-DROP TABLE IF EXISTS public.import_jobs CASCADE;
-DROP TABLE IF EXISTS public.google_oauth_tokens CASCADE;
-DROP TABLE IF EXISTS public.form_fields CASCADE;
-DROP TABLE IF EXISTS public.forms CASCADE;
-DROP TABLE IF EXISTS public.connector_logs CASCADE;
-DROP TABLE IF EXISTS public.saved_reports CASCADE;
-DROP TABLE IF EXISTS public.exotel_exophones CASCADE;
-DROP TABLE IF EXISTS public.contact_enrichment_logs CASCADE;
-DROP TABLE IF EXISTS public.contact_enrichment_runs CASCADE;
-DROP TABLE IF EXISTS public.contacts_with_stages CASCADE;
-DROP TABLE IF EXISTS public.api_key_usage_logs CASCADE;
-DROP TABLE IF EXISTS public.api_keys CASCADE;
-DROP TABLE IF EXISTS public.mkt_ga4_traffic CASCADE;
-DROP TABLE IF EXISTS public.monthly_actuals_snapshot CASCADE;
-DROP TABLE IF EXISTS public.carry_forward_snapshot CASCADE;
