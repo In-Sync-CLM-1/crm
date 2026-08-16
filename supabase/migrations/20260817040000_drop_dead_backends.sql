@@ -35,7 +35,7 @@ DROP TABLE IF EXISTS public.saved_reports CASCADE;
 DROP TABLE IF EXISTS public.exotel_exophones CASCADE;
 DROP TABLE IF EXISTS public.contact_enrichment_logs CASCADE;
 DROP TABLE IF EXISTS public.contact_enrichment_runs CASCADE;
-DROP TABLE IF EXISTS public.contacts_with_stages CASCADE;
+DROP MATERIALIZED VIEW IF EXISTS public.contacts_with_stages CASCADE;
 DROP TABLE IF EXISTS public.api_key_usage_logs CASCADE;
 DROP TABLE IF EXISTS public.api_keys CASCADE;
 DROP TABLE IF EXISTS public.mkt_ga4_traffic CASCADE;
