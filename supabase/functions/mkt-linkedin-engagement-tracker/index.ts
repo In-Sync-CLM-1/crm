@@ -8,11 +8,26 @@ const LINKEDIN_VERSION = '202503';
 // ── Engagement fetch ───────────────────────────────────────────────────────────
 
 interface Engagement {
-  impressions: number;
+  // null = this source cannot report reach at all. It must never be written as
+  // 0: a real zero and "we couldn't measure it" look identical on a chart, and
+  // writing the fake zero destroys a figure LinkedIn already gave us.
+  impressions: number | null;
   likes: number;
   comments: number;
   reposts: number;
   clicks: number;
+}
+
+/**
+ * LinkedIn enforces a per-day call ceiling per API resource. Once it is hit
+ * every further call returns 429 until the counter rolls over. That is a
+ * temporary outage, not an answer — so it aborts the sweep instead of letting
+ * the caller fall through to a weaker source and record its blanks as data.
+ */
+class LinkedInThrottled extends Error {
+  constructor(resource: string) {
+    super(`LinkedIn daily throttle reached on ${resource}`);
+  }
 }
 
 /**
@@ -34,6 +49,8 @@ async function fetchOrgShareStats(postUrn: string, orgUrn: string, token: string
       signal: AbortSignal.timeout(15_000),
     },
   );
+
+  if (res.status === 429) throw new LinkedInThrottled('organizationalEntityShareStatistics');
 
   if (!res.ok) {
     console.warn(`[engagement-tracker] shareStatistics ${res.status} for ${postUrn}: ${await res.text()}`);
@@ -78,6 +95,7 @@ async function fetchMemberPostStats(postUrn: string, token: string): Promise<Eng
         signal: AbortSignal.timeout(15_000),
       },
     );
+    if (res.status === 429) throw new LinkedInThrottled('memberCreatorPostAnalytics');
     if (!res.ok) {
       console.warn(`[engagement-tracker] memberCreatorPostAnalytics ${res.status} (${metric}) for ${postUrn}`);
       return null;
@@ -102,6 +120,9 @@ async function fetchEngagement(postUrn: string, token: string): Promise<Engageme
   // legacy member-token app (verified 2026-07-15), but allowed for a
   // Community Management token on the org's own posts. Returns null when
   // unavailable so the caller records "unknown", never a fake zero.
+  //
+  // This endpoint carries no reach at all, so impressions come back null — it
+  // is a likes/comments source only, and must not be read as "reach was 0".
   const encodedUrn = encodeURIComponent(postUrn);
   const res = await fetch(
     `https://api.linkedin.com/rest/socialActions/${encodedUrn}?fields=likesSummary,commentsSummary`,
@@ -115,6 +136,8 @@ async function fetchEngagement(postUrn: string, token: string): Promise<Engageme
     },
   );
 
+  if (res.status === 429) throw new LinkedInThrottled('socialActions');
+
   if (!res.ok) {
     console.warn(`[engagement-tracker] socialActions ${res.status} for ${postUrn} — engagement not available at this access level`);
     return null;
@@ -122,7 +145,7 @@ async function fetchEngagement(postUrn: string, token: string): Promise<Engageme
 
   const data = await res.json();
   return {
-    impressions: 0,
+    impressions: null,
     likes: data?.likesSummary?.totalLikes ?? 0,
     comments: data?.commentsSummary?.totalFirstLevelComments ?? 0,
     reposts: 0,
@@ -445,13 +468,21 @@ Deno.serve(async (req) => {
     // every row at a 48-hour snapshot and made the reporting understate real
     // performance. Same window the Meta tracker uses; the newest value
     // overwrites the previous one.
+    //
+    // At most one re-read per post per day. This function runs hourly (for
+    // comment replies), and re-reading all 20 posts on every run spent ~480
+    // statistics calls a day against LinkedIn's per-resource daily ceiling —
+    // it ran out mid-morning and every later run got 429s. Once a day is all
+    // the daily charts need, and it keeps the sweep inside the ceiling.
     const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+    const staleAfter = new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString();
     const { data: pendingPosts } = await supabase
       .from('blog_posts')
       .select('id, linkedin_post_urn, linkedin_slot_index, linkedin_cycle')
       .eq('org_id', config.org_id)
       .not('linkedin_post_urn', 'is', null)
       .gte('posted_timestamp', fourteenDaysAgo)
+      .or(`linkedin_engagement_fetched_at.is.null,linkedin_engagement_fetched_at.lt.${staleAfter}`)
       .order('posted_timestamp', { ascending: false })
       .limit(20);
 
@@ -466,9 +497,20 @@ Deno.serve(async (req) => {
         // (persona stream + member-era rows) → memberCreatorPostAnalytics.
         // socialActions is the last resort; a post none of them cover stays
         // NULL ("unknown"), never a fake zero.
-        const eng = (orgUrn ? await fetchOrgShareStats(post.linkedin_post_urn, orgUrn, token) : null)
-          ?? (await fetchMemberPostStats(post.linkedin_post_urn, token))
-          ?? (await fetchEngagement(post.linkedin_post_urn, token));
+        let eng: Engagement | null;
+        try {
+          eng = (orgUrn ? await fetchOrgShareStats(post.linkedin_post_urn, orgUrn, token) : null)
+            ?? (await fetchMemberPostStats(post.linkedin_post_urn, token))
+            ?? (await fetchEngagement(post.linkedin_post_urn, token));
+        } catch (e) {
+          if (e instanceof LinkedInThrottled) {
+            // Out of quota for today. Leave every remaining post untouched —
+            // it keeps yesterday's real figures and is picked up tomorrow.
+            console.warn(`[engagement-tracker] ${e.message} — stopping this sweep, ${pendingPosts.length - pendingPosts.indexOf(post)} post(s) left for the next run`);
+            break;
+          }
+          throw e;
+        }
         if (!eng) {
           // Metrics unavailable (LinkedIn partner-gated) — record the attempt
           // but leave every metric NULL: "unknown" must stay distinguishable
@@ -481,10 +523,13 @@ Deno.serve(async (req) => {
         }
         const score = eng.likes * 1 + eng.comments * 3 + eng.reposts * 5;
 
+        // Reach is written only when the source actually measured it. When it
+        // didn't, the column keeps whatever a stronger source recorded before
+        // rather than being flattened to 0.
         await supabase
           .from('blog_posts')
           .update({
-            linkedin_impressions: eng.impressions,
+            ...(eng.impressions !== null ? { linkedin_impressions: eng.impressions } : {}),
             linkedin_likes: eng.likes,
             linkedin_comments: eng.comments,
             linkedin_reposts: eng.reposts,
@@ -503,7 +548,7 @@ Deno.serve(async (req) => {
             post_id: post.id,
             stat_date: new Date().toISOString().slice(0, 10),
             channel: 'linkedin',
-            reach: eng.impressions,
+            ...(eng.impressions !== null ? { reach: eng.impressions } : {}),
             interactions: eng.likes + eng.comments + eng.reposts,
             updated_at: new Date().toISOString(),
           }, { onConflict: 'post_id,channel,stat_date' });

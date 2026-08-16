@@ -266,7 +266,11 @@ export default function SocialPerformance() {
       const prevByPost = new Map<string, number>();
       const perDay = new Map<string, number>(days.map((d) => [d, 0]));
       for (const r of [...rows].sort((a, b) => a.stat_date.localeCompare(b.stat_date))) {
-        const value = Number(r[metric] ?? 0);
+        // NULL means the channel couldn't report this metric that day, not
+        // that it was zero. Skipping keeps the running total intact, so the
+        // next real reading differences against the last real one.
+        if (r[metric] === null || r[metric] === undefined) continue;
+        const value = Number(r[metric]);
         const prev = prevByPost.get(r.post_id);
         const delta = prev === undefined ? value : Math.max(0, value - prev);
         prevByPost.set(r.post_id, value);
