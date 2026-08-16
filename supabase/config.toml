@@ -56,12 +56,6 @@ verify_jwt = false
 [functions.outbound-webhook-handler]
 verify_jwt = false
 
-[functions.manage-user]
-verify_jwt = true
-
-[functions.submit-public-form]
-verify_jwt = false
-
 [functions.manage-resend-domain]
 verify_jwt = true
 
@@ -69,12 +63,6 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.send-email]
-verify_jwt = true
-
-[functions.webhook-receiver]
-verify_jwt = false
-
-[functions.queue-manager]
 verify_jwt = true
 
 [functions.sync-exotel-whatsapp-templates]
@@ -86,9 +74,6 @@ verify_jwt = true
 [functions.whatsapp-webhook]
 verify_jwt = false
 
-[functions.exotel-list-exophones]
-verify_jwt = true
-
 [functions.bulk-whatsapp-sender]
 verify_jwt = true
 
@@ -98,37 +83,7 @@ verify_jwt = false
 [functions.email-inbound-webhook]
 verify_jwt = false
 
-[functions.exotel-make-call]
-verify_jwt = true
-
-[functions.exotel-webhook]
-verify_jwt = false
-
-[functions.exotel-get-recording]
-verify_jwt = true
-
-[functions.exotel-sync-call-logs]
-verify_jwt = true
-
-[functions.bulk-import-trigger]
-verify_jwt = true
-
-[functions.process-bulk-import]
-verify_jwt = false
-
-[functions.rollback-bulk-import]
-verify_jwt = true
-
-[functions.crm-bridge-api]
-verify_jwt = false
-
 [functions.chat-campaign-assistant]
-verify_jwt = true
-
-[functions.delete-user]
-verify_jwt = true
-
-[functions.google-calendar-oauth]
 verify_jwt = true
 
 [functions.automation-trigger-handler]
@@ -149,15 +104,6 @@ verify_jwt = false
 [functions.lead-alert-call-webhook]
 verify_jwt = false
 
-[functions.analyze-campaign-performance]
-verify_jwt = false
-
-[functions.analyze-pipeline-performance]
-verify_jwt = false
-
-[functions.send-sms]
-verify_jwt = true
-
 [functions.sms-webhook]
 verify_jwt = false
 
@@ -170,28 +116,7 @@ verify_jwt = true
 [functions.process-invoice-import]
 verify_jwt = true
 
-[functions.capture-carry-forward]
-verify_jwt = true
-
-[functions.freeze-monthly-actuals]
-verify_jwt = false
-
-[functions.get-monthly-actuals]
-verify_jwt = true
-
-[functions.auto-sync-stale-calls]
-verify_jwt = true
-
 [functions.create-exotel-whatsapp-template]
-verify_jwt = false
-
-[functions.submit-help-ticket]
-verify_jwt = false
-
-[functions.track-ticket]
-verify_jwt = false
-
-[functions.ticket-status-notify]
 verify_jwt = false
 
 [functions.ticket-email-reply]
@@ -209,14 +134,8 @@ verify_jwt = true
 [functions.upload-whatsapp-template-media]
 verify_jwt = true
 
-[functions.upload-import-file]
-verify_jwt = true
-
 [functions.upload-ticket-attachment]
 verify_jwt = true
 
 [functions.upload-ticket-escalation-attachment]
 verify_jwt = true
-
-[functions.backfill-invoice-meta]
-verify_jwt = false

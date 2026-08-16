@@ -45,3 +45,8 @@ bd-contacts|bd-contacts|{"limit":10}|30 2 * * *
 bd-draft|bd-draft|{"limit":5}|0 3 * * *
 bd-schedule|bd-schedule||15 11 * * 2,3,4
 bd-track|bd-track||0 * * * *
+
+# Google Ads offline-conversion feedback. The function documents itself as
+# hourly but had no schedule at all, so mkt_google_ads_feedback never filled
+# and mkt-google-ads-sync had nothing to read. Restored 2026-08-16.
+ad-conversion-upload|mkt-ad-conversion-upload||10 * * * *
