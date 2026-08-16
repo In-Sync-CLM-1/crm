@@ -59,7 +59,6 @@ const BDOutreach = lazy(() => import("./pages/BDOutreach"));
 
 // Lazy loaded pages - Admin
 const ApprovalMatrix = lazy(() => import("./pages/ApprovalMatrix"));
-const WhatsAppSettings = lazy(() => import("./pages/WhatsAppSettings"));
 const EmailSettings = lazy(() => import("./pages/EmailSettings"));
 
 // Lazy loaded pages - Other
@@ -270,12 +269,6 @@ const App = () => (
           <Route path="/admin/approval-matrix" element={
             <ProtectedRoute requiredRole="admin">
               <ApprovalMatrix />
-            </ProtectedRoute>
-          } />
-
-          <Route path="/whatsapp-settings" element={
-            <ProtectedRoute requiredRole="admin">
-              <WhatsAppSettings />
             </ProtectedRoute>
           } />
 

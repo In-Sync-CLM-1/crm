@@ -50,9 +50,6 @@ verify_jwt = false
 [functions.mkt-ad-funnel]
 verify_jwt = false
 
-[functions.check-next-actions]
-verify_jwt = false
-
 [functions.outbound-webhook-handler]
 verify_jwt = false
 
@@ -76,9 +73,6 @@ verify_jwt = false
 
 [functions.bulk-whatsapp-sender]
 verify_jwt = true
-
-[functions.retry-failed-whatsapp]
-verify_jwt = false
 
 [functions.email-inbound-webhook]
 verify_jwt = false

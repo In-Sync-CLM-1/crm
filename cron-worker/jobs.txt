@@ -1,4 +1,3 @@
-retry-failed-whatsapp-messages|rpc:trigger_retry_failed_whatsapp||0 * * * *
 automation-email-sender|automation-email-sender||*/5 * * * *
 aggregate-automation-performance|rpc:aggregate_automation_performance_daily||0 1 * * *
 sync-platform-email-list-daily|rpc:sync_platform_email_list||0 2 * * *
