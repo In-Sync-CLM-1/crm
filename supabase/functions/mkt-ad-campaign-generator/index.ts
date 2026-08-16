@@ -22,9 +22,9 @@
  * video) happens through the review surface + Arohan chat, not this loop.
  */
 import { getSupabaseClient } from '../_shared/supabaseClient.ts';
-import { corsHeaders } from '../_shared/corsHeaders.ts';
 import { generateAdCampaign } from '../_shared/adCampaignVoice.ts';
 import { buildImagePrompt, generateGeminiImage } from '../_shared/geminiImage.ts';
+import { corsHeaders } from '../_shared/corsHeaders.ts';
 
 function ok(data: unknown) {
   return new Response(JSON.stringify(data), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });

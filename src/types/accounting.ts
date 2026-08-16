@@ -98,6 +98,7 @@ export interface JournalEntryLine {
 export interface NewJournalEntry {
   entry_date: string;
   narration: string;
+  reference?: string;
   source: JournalSource;
   bank_transaction_id?: string;
   billing_document_id?: string;

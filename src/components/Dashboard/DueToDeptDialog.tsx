@@ -16,6 +16,7 @@ import { IndianRupee, CheckCircle2 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { LoadingState } from "@/components/common/LoadingState";
 import { toast } from "sonner";
+import { formatCurrency } from "@/utils/currency";
 
 interface DueToDeptDialogProps {
   open: boolean;
@@ -235,14 +236,6 @@ export function DueToDeptDialog({ open, onClose, dateRange }: DueToDeptDialogPro
       { gstCollected: 0, amountPaid: 0, amountDue: 0 }
     );
   }, [monthlyBreakdown]);
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 0,
-    }).format(amount);
-  };
 
   const handleUpdatePayment = (month: MonthBreakdown) => {
     setSelectedMonth(month);

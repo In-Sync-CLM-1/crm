@@ -10,9 +10,9 @@
  * Body {"smoke":true} posts one branded line and deletes it — verifies the
  * deployed signing/billing path without leaving anything on the timeline.
  */
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { corsHeaders } from '../_shared/corsHeaders.ts';
 import { getXCreds, postTweet, deleteTweet, uploadImage, uploadVideo } from '../_shared/xClient.ts';
+import { corsHeaders } from '../_shared/corsHeaders.ts';
+import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 
 const MAX_LEN = 275;
 
@@ -58,10 +58,7 @@ Deno.serve(async (req) => {
   const creds = getXCreds();
   if (!creds) return ok({ skip: 'X credentials not configured' });
 
-  const supabase = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-  );
+  const supabase = getSupabaseClient();
 
   try {
     const body = await req.json().catch(() => ({}));

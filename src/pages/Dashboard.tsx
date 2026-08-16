@@ -25,6 +25,7 @@ import { ProgressionChart } from "@/components/Revenue/ProgressionChart";
 import { RevenueBreakdownTabs } from "@/components/Revenue/RevenueBreakdownTabs";
 import { InvoiceListDialog, type MetricType } from "@/components/Revenue/InvoiceListDialog";
 import { DashboardGSTSection } from "@/components/Dashboard/DashboardGSTSection";
+import { formatCurrency } from "@/utils/currency";
 
 type DashboardView = "main" | "revenue" | "gst";
 
@@ -853,49 +854,6 @@ export default function Dashboard() {
     setDialogData(data);
   };
 
-  // Calculate YTD totals for QuickSummaryPills
-  const ytdTotals = useMemo(() => {
-    const monthNames = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
-    const currentMonth = new Date().getMonth();
-    
-    let ytdDeals = 0, ytdProposals = 0, ytdRevenue = 0;
-    let ytdDealsTarget = 0, ytdProposalsTarget = 0, ytdRevenueTarget = 0;
-    const monthlyRevenueTrend: number[] = [];
-    
-    const monthlyTargets: Record<string, { qualified: number; proposals: number; deals: number; revenue: number }> = {
-      JAN: { qualified: 2, proposals: 1, deals: 0, revenue: 200000 },
-      FEB: { qualified: 3, proposals: 2, deals: 1, revenue: 400000 },
-      MAR: { qualified: 4, proposals: 2, deals: 2, revenue: 800000 },
-      APR: { qualified: 4, proposals: 2, deals: 2, revenue: 700000 },
-      MAY: { qualified: 5, proposals: 2, deals: 2, revenue: 900000 },
-      JUN: { qualified: 5, proposals: 3, deals: 2, revenue: 1000000 },
-      JUL: { qualified: 6, proposals: 3, deals: 2, revenue: 900000 },
-      AUG: { qualified: 6, proposals: 3, deals: 2, revenue: 1100000 },
-      SEP: { qualified: 6, proposals: 3, deals: 2, revenue: 900000 },
-      OCT: { qualified: 7, proposals: 3, deals: 2, revenue: 1100000 },
-      NOV: { qualified: 7, proposals: 3, deals: 2, revenue: 1100000 },
-      DEC: { qualified: 7, proposals: 3, deals: 3, revenue: 1200000 },
-    };
-
-    for (let i = 0; i <= currentMonth; i++) {
-      const month = monthNames[i];
-      const actual = monthlyActuals[month] || { qualified: 0, proposals: 0, deals: 0, invoiced: 0, received: 0 };
-      const target = monthlyTargets[month];
-      
-      ytdDeals += actual.deals;
-      ytdProposals += actual.proposals;
-      ytdRevenue += actual.received;
-      
-      ytdDealsTarget += target.deals;
-      ytdProposalsTarget += target.proposals;
-      ytdRevenueTarget += target.revenue;
-      
-      monthlyRevenueTrend.push(ytdRevenue);
-    }
-
-    return { ytdDeals, ytdProposals, ytdRevenue, ytdDealsTarget, ytdProposalsTarget, ytdRevenueTarget, monthlyRevenueTrend };
-  }, [monthlyActuals]);
-
 
   const loading = orgLoading || revenueLoading || actualsLoading;
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -992,13 +950,6 @@ export default function Dashboard() {
   }, [selectedCardType, invoicedData, paymentsData, billingDocsData, billingDocsPaidData, billingPaymentsData]);
 
   // Format currency in Indian format
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 0,
-    }).format(amount);
-  };
 
   // Process stats from database function
   // Process pipeline data

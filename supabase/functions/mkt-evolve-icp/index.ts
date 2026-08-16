@@ -1,7 +1,7 @@
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2.58.0';
 import { getSupabaseClient } from '../_shared/supabaseClient.ts';
-import { corsHeaders } from '../_shared/corsHeaders.ts';
 import { createEngineLogger } from '../_shared/engineLogger.ts';
+import { corsHeaders } from '../_shared/corsHeaders.ts';
 
 // ---------------------------------------------------------------------------
 // Types

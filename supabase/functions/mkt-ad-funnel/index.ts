@@ -1,5 +1,6 @@
 import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2.58.0';
+import { corsHeaders } from '../_shared/corsHeaders.ts';
 
 /**
  * Marketing / Ad Analytics funnel for the in-CRM dashboard.
@@ -13,10 +14,6 @@ import { createClient } from 'npm:@supabase/supabase-js@2.58.0';
  * money value lights up in Phase 2 once payments are linked back to the gclid.
  */
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });

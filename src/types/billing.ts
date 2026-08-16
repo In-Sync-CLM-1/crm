@@ -74,6 +74,7 @@ export interface BillingDocument {
     company: string;
     first_name: string;
     last_name: string;
+    email?: string;
     invoice_company_name?: string;
     gstin?: string;
     pan?: string;

@@ -1,7 +1,7 @@
 import { getSupabaseClient } from '../_shared/supabaseClient.ts';
-import { corsHeaders } from '../_shared/corsHeaders.ts';
 import { jsonResponse, errorResponse, handleCors } from '../_shared/responseHelpers.ts';
 import { getUserFromRequest } from '../_shared/authHelpers.ts';
+import { corsHeaders } from '../_shared/corsHeaders.ts';
 import {
   formatPhoneE164,
   buildExotelPayload,

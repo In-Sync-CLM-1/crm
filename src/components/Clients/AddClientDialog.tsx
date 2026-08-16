@@ -31,13 +31,17 @@ export function AddClientDialog() {
       if (!form.first_name.trim()) throw new Error("First name is required");
 
       const { data: user } = await supabase.auth.getUser();
+      const trimmedForm = Object.fromEntries(
+        Object.entries(form).map(([k, v]) => [k, v.trim() || null]),
+      ) as Record<string, string | null>;
       const { error } = await supabase.from("clients").insert({
         org_id: effectiveOrgId,
         contact_id: null,
         converted_by: user.user?.id,
         converted_at: new Date().toISOString(),
         status: "active",
-        ...Object.fromEntries(Object.entries(form).map(([k, v]) => [k, v.trim() || null])),
+        ...trimmedForm,
+        first_name: form.first_name.trim(),
       });
       if (error) throw error;
     },

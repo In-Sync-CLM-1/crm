@@ -1,9 +1,5 @@
 import { getSupabaseClient } from '../_shared/supabaseClient.ts';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { corsHeaders } from '../_shared/corsHeaders.ts';
 
 const MAX_RECIPIENTS_PER_CAMPAIGN = 50000;
 const MAX_BATCH_SIZE = 500;

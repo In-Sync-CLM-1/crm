@@ -1,11 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { getSupabaseClient } from '../_shared/supabaseClient.ts';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { corsHeaders } from '../_shared/corsHeaders.ts';
 
 interface DomainRequest {
   action: 'create-domain' | 'verify-domain' | 'get-domain' | 'delete-domain';

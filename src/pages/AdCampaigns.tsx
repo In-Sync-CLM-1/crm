@@ -198,7 +198,7 @@ export default function AdCampaigns() {
         .eq("org_id", effectiveOrgId)
         .order("created_at", { ascending: false });
       if (error) throw error;
-      return data as AdCampaign[];
+      return data as unknown as AdCampaign[];
     },
     enabled: !!effectiveOrgId,
   });

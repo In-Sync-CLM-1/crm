@@ -2,11 +2,7 @@
 // Enforces: at most one call attempt in flight per lead, up to 3 attempts total,
 // stop the instant one is answered. Bolna has no reliable native retry — this is it.
 import { getSupabaseClient } from '../_shared/supabaseClient.ts';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { corsHeaders } from '../_shared/corsHeaders.ts';
 
 const BOLNA_AGENT = () => Deno.env.get('LEAD_ALERT_BOLNA_AGENT')!;
 const BOLNA_FROM = '+911169323462';

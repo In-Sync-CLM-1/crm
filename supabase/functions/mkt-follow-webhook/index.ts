@@ -17,7 +17,7 @@
  * so most deliveries it sees belong to other products. Anything whose message
  * id isn't in this campaign is acknowledged and ignored.
  */
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 
 const TABLE = 'mkt_follow_campaign';
 
@@ -88,7 +88,7 @@ Deno.serve(async (req) => {
   const messageId = String((data as { email_id?: string }).email_id || '');
   if (!messageId) return new Response(JSON.stringify({ ignored: 'no email_id' }), { status: 200 });
 
-  const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+  const supabase = getSupabaseClient();
 
   // The message id lands in one of two columns depending on whether this was
   // the first send or the single reminder.

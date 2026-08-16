@@ -2,11 +2,7 @@ import { createClient, SupabaseClient } from 'npm:@supabase/supabase-js@2.58.0';
 import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 import { createEngineLogger } from '../_shared/engineLogger.ts';
 import { callLLMJson } from '../_shared/llmClient.ts';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { corsHeaders } from '../_shared/corsHeaders.ts';
 
 // ---------------------------------------------------------------------------
 // Types

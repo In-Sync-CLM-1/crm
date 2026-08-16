@@ -18,6 +18,7 @@ interface OutstandingDoc {
   amount_paid: number;
   balance_due: number;
   status: string;
+  seller_snapshot?: unknown;
 }
 
 type AgeBucket = "current" | "1_30" | "31_60" | "61_90" | "90_plus";

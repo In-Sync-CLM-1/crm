@@ -1,9 +1,5 @@
-import { createClient } from 'npm:@supabase/supabase-js@2.58.0';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { corsHeaders } from '../_shared/corsHeaders.ts';
+import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 
 function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -17,11 +13,7 @@ function errorResponse(error: unknown, status = 500): Response {
   });
 }
 function getSupabaseClient() {
-  return createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-    { auth: { persistSession: false, autoRefreshToken: false } }
-  );
+  return getSupabaseClient();
 }
 
 function buildComponents(template: Record<string, any>): unknown[] {

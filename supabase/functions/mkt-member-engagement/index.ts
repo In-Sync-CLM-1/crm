@@ -11,10 +11,10 @@
  * the founder always amplifies content that has already proven itself.
  * Body {"dry_run":true} selects + drafts but does not touch LinkedIn.
  */
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { callLLM } from '../_shared/llmClient.ts';
-import { corsHeaders } from '../_shared/corsHeaders.ts';
 import { getLinkedInIdentity } from '../_shared/linkedinAuth.ts';
+import { corsHeaders } from '../_shared/corsHeaders.ts';
+import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 
 const LINKEDIN_VERSION = '202503';
 
@@ -95,10 +95,7 @@ async function commentAsMember(postUrn: string, line: string, memberUrn: string,
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
-  const supabase = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-  );
+  const supabase = getSupabaseClient();
 
   try {
     const body = await req.json().catch(() => ({}));

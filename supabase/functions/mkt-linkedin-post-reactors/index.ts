@@ -18,9 +18,9 @@
  *
  * Body: { blog_post_id } → { reactors: [{ urn, name, headline, reaction_type }] }
  */
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { corsHeaders } from '../_shared/corsHeaders.ts';
 import { getLinkedInIdentity } from '../_shared/linkedinAuth.ts';
+import { corsHeaders } from '../_shared/corsHeaders.ts';
+import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 
 const LINKEDIN_VERSION = '202503';
 const MAX_REACTORS = 20; // caps profile-lookup volume per click
@@ -61,7 +61,7 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
   if (req.method !== 'POST') return err(405, 'POST only');
 
-  const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+  const supabase = getSupabaseClient();
 
   try {
     const { blog_post_id } = await req.json();

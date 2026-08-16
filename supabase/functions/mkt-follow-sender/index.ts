@@ -25,10 +25,10 @@
  * left alone — retrying into an already-unhappy mailbox is how a soft problem
  * becomes a blocklisting.
  */
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { corsHeaders } from '../_shared/corsHeaders.ts';
 import { sendViaResend, buildUnsubscribeHeaders } from '../_shared/resendEmailClient.ts';
 import { buildFollowEmail, FOLLOW_CAMPAIGNS, type FollowSegment } from '../_shared/followRequestEmail.ts';
+import { corsHeaders } from '../_shared/corsHeaders.ts';
+import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 
 /** Emails that must actually LAND, per tier, per day. */
 const DAILY_DELIVERY_TARGET = 100;
@@ -153,7 +153,7 @@ function plannedSendCount(target: number, sent: number, delivered: number): Send
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
-  const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+  const supabase = getSupabaseClient();
 
   const body = await req.json().catch(() => ({}));
   const dryRun = body.dry_run === true;

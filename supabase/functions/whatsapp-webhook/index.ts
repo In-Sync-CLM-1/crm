@@ -1,9 +1,5 @@
 import { getSupabaseClient } from '../_shared/supabaseClient.ts';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { corsHeaders } from '../_shared/corsHeaders.ts';
 
 const RATE_LIMIT_WEBHOOKS_PER_MINUTE = 100;
 

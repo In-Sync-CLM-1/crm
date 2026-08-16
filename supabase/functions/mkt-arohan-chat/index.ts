@@ -36,11 +36,11 @@
  * fed back into buildContext().
  */
 import { getSupabaseClient } from '../_shared/supabaseClient.ts';
-import { corsHeaders } from '../_shared/corsHeaders.ts';
 import { callLLM, callLLMJson } from '../_shared/llmClient.ts';
 import { PERSONA_DAY_SEQ, PERSONA_SLOT_INDEX, personaIdeaTurn } from '../_shared/personaVoice.ts';
 import { CHANNEL_ALIASES, CHANNEL_LABEL, TrendChannel, trendPostTurn } from '../_shared/trendPost.ts';
 import { buildImagePrompt, generateGeminiImage } from '../_shared/geminiImage.ts';
+import { corsHeaders } from '../_shared/corsHeaders.ts';
 
 interface ChatBody {
   org_id: string;

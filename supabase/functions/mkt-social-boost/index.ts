@@ -17,8 +17,8 @@
  * Manager (interactive, outside API reach) and a token carrying
  * ads_management scope for that account.
  */
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/corsHeaders.ts';
+import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 import {
   buildTargeting,
   describeMetaError,
@@ -61,10 +61,7 @@ interface Candidate {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
-  const supabase = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-  );
+  const supabase = getSupabaseClient();
 
   try {
     const { data: config } = await supabase

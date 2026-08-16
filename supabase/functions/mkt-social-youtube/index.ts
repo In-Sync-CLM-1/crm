@@ -13,8 +13,8 @@
  * (YOUTUBE_REFRESH_TOKEN is the youtube.upload-scoped token; the generic
  * GOOGLE_REFRESH_TOKEN name is accepted as a fallback for compatibility.)
  */
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/corsHeaders.ts';
+import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 
 const YT_API = 'https://www.googleapis.com/youtube/v3';
 const YT_UPLOAD_API = 'https://www.googleapis.com/upload/youtube/v3';
@@ -161,10 +161,7 @@ Deno.serve(async (req) => {
     return ok({ skip: 'GOOGLE_CLIENT_ID or YOUTUBE_REFRESH_TOKEN not configured' });
   }
 
-  const supabase = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-  );
+  const supabase = getSupabaseClient();
 
   try {
     const body = await req.json().catch(() => ({}));
