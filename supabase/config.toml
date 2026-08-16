@@ -50,9 +50,6 @@ verify_jwt = false
 [functions.mkt-ad-funnel]
 verify_jwt = false
 
-[functions.outbound-webhook-handler]
-verify_jwt = false
-
 [functions.manage-resend-domain]
 verify_jwt = true
 
