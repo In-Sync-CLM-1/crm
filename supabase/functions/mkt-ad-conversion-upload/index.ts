@@ -54,6 +54,10 @@ async function googleAccessToken(): Promise<string> {
   return (await r.json()).access_token;
 }
 
+// Google's "use the Data Manager API instead" rejection — permanent for this
+// account, so rows carrying it are not retried.
+const PERMANENT_REJECTION = /Data Manager API|limited to existing users/i;
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
@@ -129,13 +133,26 @@ Deno.serve(async (req) => {
     }
 
     // 4. Fetch unsent qualified conversions and upload to Google Ads.
-    const { data: pending } = await crm
+    //
+    // Google closed ConversionUploadService.UploadClickConversions to new
+    // integrations in 2026 — it now answers "Usage ... is limited to existing
+    // users. Please see the Data Manager API". That is a permanent rejection,
+    // not a transient one, so a row that has already collected it is never
+    // retried: otherwise every run re-uploads the same rows, fails all of
+    // them, and warns forever. Capture (steps 1-3) still runs, and those rows
+    // still reach GA4 through mkt-google-ads-sync's Measurement Protocol push,
+    // which is a different endpoint and unaffected.
+    const { data: pendingRows } = await crm
       .from('mkt_google_ads_feedback')
-      .select('id, gclid, conversion_at')
+      .select('id, gclid, conversion_at, google_ads_push_error')
       .eq('conversion_type', 'lead_qualified')
       .eq('pushed_to_google_ads', false)
       .not('gclid', 'is', null)
       .limit(200);
+
+    const isPermanentRejection = (e: string | null) => !!e && PERMANENT_REJECTION.test(e);
+    const blocked = (pendingRows || []).filter((p: { google_ads_push_error: string | null }) => isPermanentRejection(p.google_ads_push_error)).length;
+    const pending = (pendingRows || []).filter((p: { google_ads_push_error: string | null }) => !isPermanentRejection(p.google_ads_push_error));
 
     let uploaded = 0;
     let failed = 0;
@@ -190,10 +207,10 @@ Deno.serve(async (req) => {
       }
     }
 
-    await logger.info('upload-complete', { captured, uploaded, failed });
+    await logger.info('upload-complete', { captured, uploaded, failed, blocked });
     if (failed > 0) await logger.warn('upload-partial-failures', { failed });
 
-    return new Response(JSON.stringify({ ok: true, captured, uploaded, failed }), {
+    return new Response(JSON.stringify({ ok: true, captured, uploaded, failed, blocked }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {

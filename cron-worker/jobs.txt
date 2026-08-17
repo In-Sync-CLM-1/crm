@@ -48,4 +48,10 @@ bd-track|bd-track||0 * * * *
 # Google Ads offline-conversion feedback. The function documents itself as
 # hourly but had no schedule at all, so mkt_google_ads_feedback never filled
 # and mkt-google-ads-sync had nothing to read. Restored 2026-08-16.
+#
+# Note: only the CAPTURE half reaches Google. The first scheduled runs proved
+# that uploadClickConversions is now closed to new integrations ("limited to
+# existing users — use the Data Manager API"), so those 15 rows sit marked and
+# are no longer retried. The ledger they fill still reaches GA4 via
+# mkt-google-ads-sync's Measurement Protocol push, which is unaffected.
 ad-conversion-upload|mkt-ad-conversion-upload||10 * * * *
