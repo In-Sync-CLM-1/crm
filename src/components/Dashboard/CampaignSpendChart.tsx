@@ -1,35 +1,40 @@
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from "recharts";
+import { EChart } from "@/components/Marketing/EChart";
+import { lineChart, axisRupee, SLOT } from "@/components/Dashboard/chartStyle";
 import type { RevenueMonth } from "@/hooks/useDashboardOverview";
-import { formatCompactINR, formatCurrency } from "@/utils/currency";
+import { formatCompactINR } from "@/utils/currency";
 
 /**
- * Ad spend per month. Google only, because Meta has never actually spent —
- * a stacked "Meta" series would be a row of zeros pretending to be a channel.
+ * Ad spend per month. Google only for now — Meta's live promotion runs through
+ * Ads Center on an account the API credentials can't read, so putting a Meta
+ * series here would draw a flat zero that isn't true.
  */
-const BAR = "#eb6834"; // categorical slot 2
-
 export const CampaignSpendChart = memo(function CampaignSpendChart({
   data, isLoading,
 }: { data?: RevenueMonth[]; isLoading?: boolean }) {
+  const rows = data || [];
+  const option = useMemo(() => lineChart(
+    rows.map((r) => r.month),
+    [{ name: "Google Ads", data: rows.map((r) => Math.round(r.google_spend)), color: SLOT.orange, area: true }],
+    { valueFormatter: axisRupee },
+  ), [rows]);
+
   if (isLoading) {
     return (
       <Card className="p-4">
         <Skeleton className="h-4 w-36" />
-        <Skeleton className="h-[180px] w-full mt-3" />
+        <Skeleton className="h-[200px] w-full mt-3" />
       </Card>
     );
   }
 
-  const rows = data || [];
   const total = rows.reduce((s, r) => s + (r.google_spend || 0), 0);
-  const hasSpend = total > 0;
 
   return (
     <Card className="p-4">
-      <div className="mb-3 flex items-start justify-between gap-2">
+      <div className="mb-2 flex items-start justify-between gap-2">
         <div>
           <h3 className="text-sm font-semibold">Campaign spend</h3>
           <p className="text-[11px] text-muted-foreground">Google Ads billing per month</p>
@@ -40,29 +45,12 @@ export const CampaignSpendChart = memo(function CampaignSpendChart({
         </div>
       </div>
 
-      {!hasSpend ? (
-        <div className="h-[180px] flex items-center justify-center text-xs text-muted-foreground">
+      {total === 0 ? (
+        <div className="h-[200px] flex items-center justify-center text-xs text-muted-foreground">
           No ad spend recorded
         </div>
       ) : (
-        <ResponsiveContainer width="100%" height={180}>
-          <BarChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
-            <XAxis dataKey="month" tick={{ fontSize: 9 }} tickLine={false} axisLine={false} className="text-muted-foreground" />
-            <YAxis
-              tick={{ fontSize: 9 }} width={44} tickLine={false} axisLine={false}
-              className="text-muted-foreground" tickFormatter={(v) => formatCompactINR(Number(v))}
-            />
-            <Tooltip
-              cursor={{ fill: "hsl(var(--muted) / 0.4)" }}
-              contentStyle={{ fontSize: 11, borderRadius: 6 }}
-              formatter={(v: any) => [formatCurrency(Number(v)), "Google Ads"]}
-            />
-            <Bar dataKey="google_spend" radius={[4, 4, 0, 0]} maxBarSize={22}>
-              {rows.map((r) => <Cell key={r.month} fill={BAR} />)}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+        <EChart option={option} height={200} />
       )}
     </Card>
   );
