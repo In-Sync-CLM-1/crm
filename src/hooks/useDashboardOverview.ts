@@ -39,6 +39,7 @@ export interface DashboardOverview {
   bd: {
     sourced: number; graded_a: number; graded_b: number; researched: number;
     contactable: number; drafted: number; pending_review: number;
+    approved: number; rejected: number; last_reviewed_at: string | null;
     sequences_live: number; sequences_stopped: number; excluded: number;
   };
   tickets: {
