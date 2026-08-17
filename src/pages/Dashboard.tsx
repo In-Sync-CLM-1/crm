@@ -22,6 +22,7 @@ import { PaidCampaignsPanel } from "@/components/Dashboard/PaidCampaignsPanel";
 import { NewLeadsPanel } from "@/components/Dashboard/NewLeadsPanel";
 import { CampaignSpendChart } from "@/components/Dashboard/CampaignSpendChart";
 import { TicketsRaisedPanel } from "@/components/Dashboard/TicketsRaisedPanel";
+import { PredictionsPanel } from "@/components/Dashboard/PredictionsPanel";
 import { useDashboardOverview, useRecentLeads } from "@/hooks/useDashboardOverview";
 
 // Revenue Dashboard components
@@ -978,6 +979,9 @@ export default function Dashboard() {
             </div>
 
             <TicketsRaisedPanel data={overview?.tickets} isLoading={overviewLoading} />
+
+            {/* What next month looks like if nothing changes */}
+            <PredictionsPanel data={overview} isLoading={overviewLoading} />
 
           </>
         )}

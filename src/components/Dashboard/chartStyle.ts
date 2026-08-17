@@ -42,6 +42,8 @@ interface LineSpec {
   data: number[];
   color: string;
   area?: boolean;
+  /** Dashed = projected, not measured. Always label such a series clearly. */
+  dashed?: boolean;
 }
 
 /**
@@ -87,10 +89,11 @@ export function lineChart(
       // spend became a bell curve spanning three, and the revenue line dipped
       // below zero between points where nothing negative exists.
       smooth: false,
-      symbol: "circle" as const,
+      symbol: s.dashed ? ("emptyCircle" as const) : ("circle" as const),
       symbolSize: 5,
       showSymbol: true,
-      lineStyle: { width: 2 },
+      // Dashed = projected, not measured.
+      lineStyle: { width: 2, ...(s.dashed ? { type: "dashed" as const } : {}) },
       ...(s.area
         ? {
             areaStyle: {

@@ -43,10 +43,6 @@ const EmailCampaignDetail = lazy(() => import("./pages/EmailCampaignDetail"));
 const BulkEmailSender = lazy(() => import("./pages/BulkEmailSender"));
 const EmailAutomations = lazy(() => import("./pages/EmailAutomations"));
 const EmailAutomationSettings = lazy(() => import("./pages/EmailAutomationSettings"));
-const CampaignOverview = lazy(() => import("./pages/Campaigns/CampaignOverview"));
-const AIInsightsDashboard = lazy(() => import("./pages/Campaigns/AIInsightsDashboard"));
-const SocialPerformance = lazy(() => import("./pages/SocialPerformance"));
-const MarketingAdAnalytics = lazy(() => import("./pages/MarketingAdAnalytics"));
 const AdCampaigns = lazy(() => import("./pages/AdCampaigns"));
 const FollowCampaigns = lazy(() => import("./pages/FollowCampaigns"));
 const TemplateEditor = lazy(() => import("./pages/TemplateEditor"));
@@ -189,33 +185,6 @@ const App = () => (
             </ProtectedRoute>
           } />
 
-          <Route path="/campaigns/overview" element={
-            <ProtectedRoute>
-              <CampaignOverview />
-            </ProtectedRoute>
-          } />
-
-          <Route path="/campaigns/insights" element={
-            <ProtectedRoute>
-              <AIInsightsDashboard />
-            </ProtectedRoute>
-          } />
-
-          <Route path="/marketing" element={
-            <ProtectedRoute>
-              <SocialPerformance />
-            </ProtectedRoute>
-          } />
-          <Route path="/marketing/performance" element={
-            <ProtectedRoute>
-              <SocialPerformance />
-            </ProtectedRoute>
-          } />
-          <Route path="/marketing/ad-analytics" element={
-            <ProtectedRoute>
-              <MarketingAdAnalytics />
-            </ProtectedRoute>
-          } />
           <Route path="/marketing/ad-campaigns" element={
             <ProtectedRoute>
               <AdCampaigns />
