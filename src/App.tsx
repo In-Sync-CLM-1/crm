@@ -46,7 +46,6 @@ const EmailAutomationSettings = lazy(() => import("./pages/EmailAutomationSettin
 const AdCampaigns = lazy(() => import("./pages/AdCampaigns"));
 const FollowCampaigns = lazy(() => import("./pages/FollowCampaigns"));
 const TemplateEditor = lazy(() => import("./pages/TemplateEditor"));
-const ArohanChat = lazy(() => import("./pages/ArohanChat"));
 const EngineConfig = lazy(() => import("./pages/EngineConfig"));
 const ProductManagement = lazy(() => import("./pages/ProductManagement"));
 const ProductICP = lazy(() => import("./pages/ProductICP"));
@@ -213,12 +212,6 @@ const App = () => (
           <Route path="/marketing/products/:productKey/icp" element={
             <ProtectedRoute>
               <ProductICP />
-            </ProtectedRoute>
-          } />
-
-          <Route path="/marketing/arohan" element={
-            <ProtectedRoute>
-              <ArohanChat />
             </ProtectedRoute>
           } />
 

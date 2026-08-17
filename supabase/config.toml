@@ -14,9 +14,6 @@ verify_jwt = false
 [functions.mkt-product-manager]
 verify_jwt = false
 
-[functions.mkt-arohan-chat]
-verify_jwt = false
-
 # External webhooks — these endpoints are hit by third-party services
 # (Exotel, Resend, Razorpay) that don't send a Supabase JWT, so
 # JWT verification must be disabled. Without these entries the webhooks
