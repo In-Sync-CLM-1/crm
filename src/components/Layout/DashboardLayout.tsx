@@ -226,14 +226,6 @@ function DashboardLayout({ children }: DashboardLayoutProps) {
                 <span>BD Outreach</span>
               </Link>
               <Link
-                to="/marketing/arohan"
-                className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors"
-                onClick={() => setSidebarOpen(false)}
-              >
-                <Bot size={16} className="shrink-0 text-sidebar-muted" />
-                <span>Arohan</span>
-              </Link>
-              <Link
                 to="/marketing/templates"
                 className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors"
                 onClick={() => setSidebarOpen(false)}

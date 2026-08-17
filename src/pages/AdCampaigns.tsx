@@ -84,8 +84,8 @@ function BudgetPanel() {
       <CardHeader>
         <CardTitle>Budget</CardTitle>
         <p className="text-xs text-muted-foreground">
-          The only lever the engine can't pull itself. Set or change it in Arohan chat —
-          e.g. "Ad Budget Google: 500" (₹/day), or "Ad Budget Meta: off" to pause a channel.
+          The only lever the engine can't pull itself. Set on request; the engine
+          launches, runs and retires campaigns within whatever is set here.
         </p>
       </CardHeader>
       <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -209,7 +209,7 @@ export default function AdCampaigns() {
         <div>
           <h1 className="text-3xl font-bold">Ad Campaigns</h1>
           <p className="text-muted-foreground mt-1">
-            Fully autonomous — Arohan writes, launches, and retires these on its own within your budget.
+            Fully autonomous — the engine writes, launches and retires these on its own within your budget.
             This is a watch-and-intervene view, not an approval queue.
           </p>
         </div>
@@ -222,7 +222,7 @@ export default function AdCampaigns() {
           <Card>
             <CardContent className="py-10 text-center text-muted-foreground flex flex-col items-center gap-2">
               <Megaphone className="h-6 w-6" />
-              No campaigns yet. Set a budget in Arohan chat and the engine will take it from there.
+              No campaigns yet. Once a budget is set the engine will take it from there.
             </CardContent>
           </Card>
         ) : (
