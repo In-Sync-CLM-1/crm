@@ -82,10 +82,14 @@ export function lineChart(
     series: series.map((s) => ({
       name: s.name,
       type: "line" as const,
-      smooth: true,
+      // Straight segments with visible points. Spline smoothing on twelve
+      // monthly readings invents shape between them: a single month of ad
+      // spend became a bell curve spanning three, and the revenue line dipped
+      // below zero between points where nothing negative exists.
+      smooth: false,
       symbol: "circle" as const,
-      symbolSize: 6,
-      showSymbol: false,
+      symbolSize: 5,
+      showSymbol: true,
       lineStyle: { width: 2 },
       ...(s.area
         ? {
