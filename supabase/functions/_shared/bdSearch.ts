@@ -118,6 +118,8 @@ export async function searchWeb(query: string, max = 12): Promise<SearchHit[]> {
       const block = m[0];
       const href = block.match(/<h2[^>]*>[\s\S]{0,200}?<a[^>]+href="([^"]+)"/i);
       if (!href) continue;
+      // decodeHtml FIRST: the href arrives with &amp; between query params, so
+      // parsing before decoding loses the u= parameter entirely.
       const url = unwrapBing(decodeHtml(href[1]));
       if (!url || !/^https?:\/\//i.test(url) || /(^|\.)bing\.com/i.test(new URL(url).hostname)) continue;
       hits.push({
