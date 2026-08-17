@@ -46,7 +46,6 @@ const cardLabels: Record<RevenueCardType, string> = {
   pending: "Pending Invoices",
   gst: "GST Details",
   tds: "TDS Details",
-  gst_due_dept: "GST Due to Department",
 };
 
 export function RevenueCardDialog({

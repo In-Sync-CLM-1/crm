@@ -15,9 +15,14 @@ import { TrendingUp, IndianRupee, ArrowLeft, RefreshCw, Percent } from "lucide-r
 // Extracted Dashboard components
 import { DashboardRevenueCards, type RevenueCardType } from "@/components/Dashboard/DashboardRevenueCards";
 import { RevenueCardDialog } from "@/components/Dashboard/RevenueCardDialog";
-import { DueToDeptDialog } from "@/components/Dashboard/DueToDeptDialog";
 import { DashboardRevenueChart } from "@/components/Dashboard/DashboardRevenueChart";
-import { DashboardActivityChart } from "@/components/Dashboard/DashboardActivityChart";
+import { MoneyByMonthChart } from "@/components/Dashboard/MoneyByMonthChart";
+import { OrganicChannelsPanel } from "@/components/Dashboard/OrganicChannelsPanel";
+import { PaidCampaignsPanel } from "@/components/Dashboard/PaidCampaignsPanel";
+import { NewLeadsPanel } from "@/components/Dashboard/NewLeadsPanel";
+import { CampaignSpendChart } from "@/components/Dashboard/CampaignSpendChart";
+import { TicketsRaisedPanel } from "@/components/Dashboard/TicketsRaisedPanel";
+import { useDashboardOverview, useRecentLeads } from "@/hooks/useDashboardOverview";
 
 // Revenue Dashboard components
 import { MonthlyGoalTracker } from "@/components/Revenue/MonthlyGoalTracker";
@@ -35,7 +40,6 @@ interface RevenueStats {
   totalPending: number;
   totalGST: number;
   totalTDS: number;
-  gstDueToDept: number;
 }
 
 interface MonthlyRevenueData {
@@ -47,6 +51,8 @@ interface MonthlyRevenueData {
 export default function Dashboard() {
   const { effectiveOrgId, isLoading: orgLoading } = useOrgContext();
   const queryClient = useQueryClient();
+  const { data: overview, isLoading: overviewLoading } = useDashboardOverview(12);
+  const { data: recentLeads, isLoading: leadsLoading } = useRecentLeads();
   
   // Date range filter state - default to This Month
   const [datePreset, setDatePreset] = useState<DateRangePreset>("this_month");
@@ -63,64 +69,10 @@ export default function Dashboard() {
   // Dialog state for revenue card drill-down
   const [revenueCardDialogOpen, setRevenueCardDialogOpen] = useState(false);
   const [selectedCardType, setSelectedCardType] = useState<RevenueCardType>("invoiced");
-  const [dueToDeptDialogOpen, setDueToDeptDialogOpen] = useState(false);
 
   // Removed goal state - no longer needed with new MonthlyGoalTracker
 
   // Fetch communication activity from correct data sources
-  const { data: emailCampaigns, isLoading: emailLoading } = useQuery({
-    queryKey: ["email-campaigns-activity", effectiveOrgId, format(dateRange.from, "yyyy-MM-dd"), format(dateRange.to, "yyyy-MM-dd")],
-    queryFn: async () => {
-      if (!effectiveOrgId) throw new Error("No organization context");
-      
-      const { data, error } = await supabase
-        .from("email_bulk_campaigns")
-        .select("sent_count, created_at")
-        .eq("org_id", effectiveOrgId)
-        .gte("created_at", dateRange.from.toISOString())
-        .lte("created_at", dateRange.to.toISOString());
-      
-      if (error) throw error;
-      return data || [];
-    },
-    enabled: !!effectiveOrgId,
-  });
-
-  const { data: whatsappCampaigns, isLoading: whatsappLoading } = useQuery({
-    queryKey: ["whatsapp-campaigns-activity", effectiveOrgId, format(dateRange.from, "yyyy-MM-dd"), format(dateRange.to, "yyyy-MM-dd")],
-    queryFn: async () => {
-      if (!effectiveOrgId) throw new Error("No organization context");
-      
-      const { data, error } = await supabase
-        .from("whatsapp_bulk_campaigns")
-        .select("sent_count, created_at")
-        .eq("org_id", effectiveOrgId)
-        .gte("created_at", dateRange.from.toISOString())
-        .lte("created_at", dateRange.to.toISOString());
-      
-      if (error) throw error;
-      return data || [];
-    },
-    enabled: !!effectiveOrgId,
-  });
-
-  const { data: smsCampaigns, isLoading: smsLoading } = useQuery({
-    queryKey: ["sms-campaigns-activity", effectiveOrgId, format(dateRange.from, "yyyy-MM-dd"), format(dateRange.to, "yyyy-MM-dd")],
-    queryFn: async () => {
-      if (!effectiveOrgId) throw new Error("No organization context");
-      
-      const { data, error } = await supabase
-        .from("sms_bulk_campaigns")
-        .select("sent_count, created_at")
-        .eq("org_id", effectiveOrgId)
-        .gte("created_at", dateRange.from.toISOString())
-        .lte("created_at", dateRange.to.toISOString());
-      
-      if (error) throw error;
-      return data || [];
-    },
-    enabled: !!effectiveOrgId,
-  });
 
   // Fetch invoices by invoice_date for "Total Invoiced" and "Pending"
   const { data: invoicedData, isLoading: invoicedLoading } = useQuery({
@@ -402,78 +354,7 @@ export default function Dashboard() {
     return [...(yearlyClientInvoices || []), ...mappedBilling];
   }, [yearlyClientInvoices, yearlyBillingDocs]);
 
-  const activityLoading = emailLoading || whatsappLoading || smsLoading;
-
-  // Process communication activity data into daily timeline format
-  const dailyActivityData = useMemo(() => {
-    // Create a map of dates within range
-    const dateMap: Record<string, { emails: number; whatsapp: number; sms: number }> = {};
-    
-    // Initialize all dates in range
-    const start = new Date(dateRange.from);
-    const end = new Date(dateRange.to);
-    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      const dateKey = format(new Date(d), "yyyy-MM-dd");
-      dateMap[dateKey] = { emails: 0, whatsapp: 0, sms: 0 };
-    }
-
-    // Add email counts from campaigns
-    emailCampaigns?.forEach((campaign: any) => {
-      const dateKey = format(new Date(campaign.created_at), "yyyy-MM-dd");
-      if (dateMap[dateKey]) {
-        dateMap[dateKey].emails += campaign.sent_count || 0;
-      }
-    });
-
-    // Add whatsapp counts from campaigns
-    whatsappCampaigns?.forEach((campaign: any) => {
-      const dateKey = format(new Date(campaign.created_at), "yyyy-MM-dd");
-      if (dateMap[dateKey]) {
-        dateMap[dateKey].whatsapp += campaign.sent_count || 0;
-      }
-    });
-
-    // Add SMS counts from campaigns
-    smsCampaigns?.forEach((campaign: any) => {
-      const dateKey = format(new Date(campaign.created_at), "yyyy-MM-dd");
-      if (dateMap[dateKey]) {
-        dateMap[dateKey].sms += campaign.sent_count || 0;
-      }
-    });
-
-    // Convert to array and format dates for display
-    return Object.entries(dateMap)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, counts]) => ({
-        date: format(new Date(date), "MMM d"),
-        ...counts,
-      }));
-  }, [emailCampaigns, whatsappCampaigns, smsCampaigns, dateRange]);
-
   // Unpaid GST to department for the selected period (Prosync-only liability minus remittance)
-  const gstDueToDept = useMemo(() => {
-    const totalLiability =
-      gstDueSummary?.billingDocGst?.reduce((sum: number, r: any) => sum + (r.total_tax || 0), 0) || 0;
-
-    // Only count remittance logged against a month the selected range actually covers
-    const monthsInRange = new Set<string>();
-    const cursor = new Date(dateRange.from.getFullYear(), dateRange.from.getMonth(), 1);
-    const lastMonth = new Date(dateRange.to.getFullYear(), dateRange.to.getMonth(), 1);
-    while (cursor <= lastMonth) {
-      monthsInRange.add(`${cursor.getFullYear()}-${cursor.getMonth() + 1}`);
-      cursor.setMonth(cursor.getMonth() + 1);
-    }
-
-    const totalRemitted = gstDueSummary?.remittance?.reduce((sum: number, r: any) => {
-      const isRemitted = r.payment_status === "paid" || r.payment_status === "partial";
-      if (isRemitted && monthsInRange.has(`${r.year}-${r.month}`)) {
-        return sum + (r.amount_paid || 0);
-      }
-      return sum;
-    }, 0) || 0;
-
-    return Math.max(0, totalLiability - totalRemitted);
-  }, [gstDueSummary, dateRange]);
 
   // Process revenue stats - invoiced/pending from invoice_date, payments from payment_received_date
   // Includes both client_invoices and billing_documents
@@ -548,8 +429,8 @@ export default function Dashboard() {
       }
     });
 
-    return { totalInvoiced, totalReceived, totalPending, totalGST, totalTDS, gstDueToDept };
-  }, [invoicedData, paymentsData, billingDocsData, billingDocsPaidData, billingPaymentsData, gstDueToDept]);
+    return { totalInvoiced, totalReceived, totalPending, totalGST, totalTDS };
+  }, [invoicedData, paymentsData, billingDocsData, billingDocsPaidData, billingPaymentsData]);
 
   // Process monthly revenue data by client for trend chart
   const { clientRevenueData, uniqueClients } = useMemo(() => {
@@ -854,7 +735,6 @@ export default function Dashboard() {
     setDialogData(data);
   };
 
-
   const loading = orgLoading || revenueLoading || actualsLoading;
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -862,9 +742,6 @@ export default function Dashboard() {
     setIsRefreshing(true);
     await queryClient.invalidateQueries({ queryKey: ["revenue-stats"] });
     await queryClient.invalidateQueries({ queryKey: ["monthly-actuals-backend-v2"] });
-    await queryClient.invalidateQueries({ queryKey: ["email-campaigns-activity"] });
-    await queryClient.invalidateQueries({ queryKey: ["whatsapp-campaigns-activity"] });
-    await queryClient.invalidateQueries({ queryKey: ["sms-campaigns-activity"] });
     await queryClient.invalidateQueries({ queryKey: ["billing-docs-revenue"] });
     await queryClient.invalidateQueries({ queryKey: ["billing-docs-paid-revenue"] });
     setIsRefreshing(false);
@@ -872,10 +749,6 @@ export default function Dashboard() {
 
   // Handle revenue card click to show drill-down dialog
   const handleRevenueCardClick = (cardType: RevenueCardType) => {
-    if (cardType === "gst_due_dept") {
-      setDueToDeptDialogOpen(true);
-      return;
-    }
     setSelectedCardType(cardType);
     setRevenueCardDialogOpen(true);
   };
@@ -1043,21 +916,6 @@ export default function Dashboard() {
               onCardClick={handleRevenueCardClick}
             />
 
-            {/* Revenue Card Drill-down Dialog */}
-            <RevenueCardDialog
-              open={revenueCardDialogOpen}
-              onClose={() => setRevenueCardDialogOpen(false)}
-              cardType={selectedCardType}
-              invoices={getRevenueCardInvoices}
-              dateRangeLabel={`${format(dateRange.from, "MMM d, yyyy")} - ${format(dateRange.to, "MMM d, yyyy")}`}
-            />
-
-            {/* GST Due to Dept (Prosync, selected period) breakdown */}
-            <DueToDeptDialog
-              open={dueToDeptDialogOpen}
-              onClose={() => setDueToDeptDialogOpen(false)}
-              dateRange={dateRange}
-            />
 
             {/* Progression Chart - Full Page Animated */}
             <ProgressionChart monthlyActuals={monthlyActuals} />
@@ -1094,12 +952,6 @@ export default function Dashboard() {
         ) : (
           <>
 
-            {/* Revenue Metrics */}
-            <DashboardRevenueCards
-              revenueStats={revenueStats}
-              formatCurrency={formatCurrency}
-              onCardClick={handleRevenueCardClick}
-            />
 
             {/* Revenue Card Drill-down Dialog */}
             <RevenueCardDialog
@@ -1110,21 +962,22 @@ export default function Dashboard() {
               dateRangeLabel={`${format(dateRange.from, "MMM d, yyyy")} - ${format(dateRange.to, "MMM d, yyyy")}`}
             />
 
-            {/* GST Due to Dept (Prosync, selected period) breakdown */}
-            <DueToDeptDialog
-              open={dueToDeptDialogOpen}
-              onClose={() => setDueToDeptDialogOpen(false)}
-              dateRange={dateRange}
-            />
+            {/* The six things worth knowing, and nothing else. Everything here
+                is 12-month or 30-day and does not follow the date filter, which
+                governs the Revenue and GST views. */}
+            <div className="grid gap-3 lg:grid-cols-2">
+              <OrganicChannelsPanel data={overview?.organic} isLoading={overviewLoading} />
+              <PaidCampaignsPanel data={overview?.paid} isLoading={overviewLoading} />
+            </div>
 
-            {/* Monthly Revenue by Client Chart */}
-            <DashboardRevenueChart 
-              data={clientRevenueData} 
-              clients={uniqueClients}
-              formatCurrency={formatCurrency} 
-            />
-            {/* Communication Activity */}
-            <DashboardActivityChart data={dailyActivityData} isLoading={activityLoading} />
+            <MoneyByMonthChart data={overview?.revenue_months || []} isLoading={overviewLoading} />
+
+            <div className="grid gap-3 lg:grid-cols-2">
+              <NewLeadsPanel data={recentLeads} isLoading={leadsLoading} />
+              <CampaignSpendChart data={overview?.revenue_months} isLoading={overviewLoading} />
+            </div>
+
+            <TicketsRaisedPanel data={overview?.tickets} isLoading={overviewLoading} />
 
           </>
         )}
