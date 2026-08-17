@@ -6,9 +6,18 @@ import type { DashboardOverview } from "@/hooks/useDashboardOverview";
 import { formatCurrency } from "@/utils/currency";
 
 /**
- * Paid outcome, last 30 days. Meta is reported as attempted rather than spent:
- * every boost so far came back blocked or failed, so showing its budget as
- * spend would invent money that never left the account.
+ * Paid outcome, last 30 days.
+ *
+ * Google is read from the synced keyword metrics, which land a day behind —
+ * the sync pulls yesterday, so "today" is never in here.
+ *
+ * Meta is deliberately NOT reported as zero. There IS a live promotion (Ads
+ * Center, page-follows objective) that Meta's own UI shows spending, but it
+ * runs on an ad account our page token cannot read: the business owns exactly
+ * one ad account, act_1503032350759926, and through the API that account has
+ * no spend and two campaigns from 7 Aug with no ads attached. Printing ₹0
+ * would state something false, so the panel says the figure is unavailable and
+ * why.
  */
 function Figure({ label, value, muted }: { label: string; value: string; muted?: boolean }) {
   return (
@@ -59,19 +68,17 @@ export const PaidCampaignsPanel = memo(function PaidCampaignsPanel({
 
         <div className="rounded-lg border border-border p-3">
           <div className="text-[11px] font-medium mb-2">Meta</div>
-          <div className="grid grid-cols-2 gap-y-2.5">
-            <Figure label="Spend" value={formatCurrency(m.spend)} muted={!m.spend} />
-            <Figure label="Live campaigns" value={String(m.live || 0)} muted={!m.live} />
-            <Figure label="Budget attempted" value={formatCurrency(m.attempted_budget)} muted />
-            <Figure label="Blocked / failed" value={String(metaStuck)} muted={!metaStuck} />
-          </div>
-          {metaStuck > 0 && (
-            <p className="mt-2 text-[10px] text-amber-600 dark:text-amber-400 flex items-start gap-1">
-              <AlertTriangle className="h-3 w-3 mt-px shrink-0" />
-              Nothing has ever spent on Meta — {m.blocked} boost{m.blocked === 1 ? "" : "s"} blocked
-              and {m.failed} failed{m.last_attempt ? `, last tried ${m.last_attempt}` : ""}.
-            </p>
-          )}
+          <div className="text-sm font-medium text-muted-foreground">Spend not readable</div>
+          <p className="mt-1.5 text-[10px] text-muted-foreground">
+            A promotion is live in Ads Center, but it runs on an ad account these
+            credentials can't see. The one account the business owns
+            (act_…759926) reports no spend and {metaStuck} campaign{metaStuck === 1 ? "" : "s"} with
+            no ads attached{m.last_attempt ? `, last touched ${m.last_attempt}` : ""}.
+          </p>
+          <p className="mt-1.5 text-[10px] text-amber-600 dark:text-amber-400 flex items-start gap-1">
+            <AlertTriangle className="h-3 w-3 mt-px shrink-0" />
+            Give the Meta app access to that ad account and this fills in by itself.
+          </p>
         </div>
       </div>
     </Card>
