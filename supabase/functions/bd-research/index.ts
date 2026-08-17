@@ -10,9 +10,30 @@
  * after clearing every automated filter, which is exactly why a human reads
  * them.
  *
- *   POST { limit: 25 }        research the next N unresearched A/B firms
+ *   POST { limit: 8 }         research the next N unresearched A/B firms
  *   POST { firm_ids: [...] }  research specific firms
  *   POST { no_continue: true } do not self-continue after the deadline
+ *
+ * DEPTH over speed (Amit, 2026-08-17: "You are focusing on speed more than the
+ * depth of research. Do one at a time but go through as much as you can.").
+ * Each firm now goes through five sources before the next firm starts:
+ *
+ *   1. Bing web search        -> discovers the real domain, which only 10 of
+ *                                270 rows arrived with; guessing firmname.com
+ *                                sent the crawl to the wrong company often
+ *   2. Apollo org enrichment  -> headcount, founding year, industry, tech
+ *                                stack, LinkedIn URL, description. This is the
+ *                                LinkedIn substitute: LinkedIn's own API
+ *                                returns nothing for companies we do not
+ *                                administer (tested), and its public pages
+ *                                answer HTTP 999
+ *   3. The firm's own site    -> 16 paths instead of 8
+ *   4. Directory profiles     -> Clutch / Crunchbase / GoodFirms pages found
+ *                                in step 1, read in full
+ *   5. Google News            -> items naming the firm verbatim
+ *
+ * Fewer firms per run, far more evidence each. The deadline plus
+ * self-continuation means a long run is never cut off mid-firm.
  *
  * Throughput (reworked 2026-08-17 — 161 graded firms were queued behind a
  * 6-per-run cap, about a fortnight of waiting):
@@ -26,13 +47,24 @@
  *     timeout leaving a half-written row.
  */
 import { BD_ORG_ID, disqualifierFlags, CONFIG } from '../_shared/bdPipeline.ts';
+import {
+  searchWeb, searchNews, pickOwnDomain, fetchPage as fetchOne,
+  NOT_OWN_SITE, DIRECTORY_WORTH_READING,
+} from '../_shared/bdSearch.ts';
 import { corsHeaders } from '../_shared/corsHeaders.ts';
 import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 
 const ok = (d: unknown) => new Response(JSON.stringify(d), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 const err = (s: number, m: string) => new Response(JSON.stringify({ error: m }), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-const PATHS = ['', '/case-studies', '/work', '/portfolio', '/about', '/services', '/clients', '/team'];
+// Crawl surface. Widened from 8 to 16: the extra paths are where client
+// names and case studies actually live on agency sites.
+const PATHS = [
+  '', '/about', '/about-us', '/services', '/what-we-do',
+  '/work', '/our-work', '/portfolio', '/projects',
+  '/case-studies', '/case-study', '/clients', '/customers',
+  '/team', '/industries', '/expertise',
+];
 
 /** Strip tags and collapse whitespace — we want readable prose, not markup. */
 function textOf(html: string): string {
@@ -172,6 +204,43 @@ function extractFacts(text: string, firmName: string) {
   return facts;
 }
 
+/**
+ * Apollo organisation enrichment — the practical stand-in for LinkedIn.
+ *
+ * LinkedIn's API returns companies we administer and nothing else (verified:
+ * a vanityName lookup for a target firm answers 200 with total 0), and its
+ * public pages answer 999 to any unauthenticated fetch. Apollo returns the
+ * same shape of firmographics for any domain, and the key is already in use
+ * by bd-contacts.
+ */
+async function apolloOrg(domain: string): Promise<Record<string, unknown> | null> {
+  const key = Deno.env.get('APOLLO_API_KEY');
+  if (!key) return null;
+  try {
+    const host = domain.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+    const res = await fetch(
+      'https://api.apollo.io/api/v1/organizations/enrich?domain=' + encodeURIComponent(host),
+      { headers: { 'Content-Type': 'application/json', 'x-api-key': key }, signal: AbortSignal.timeout(15_000) },
+    );
+    if (!res.ok) return null;
+    const j = await res.json();
+    const o = j?.organization;
+    if (!o) return null;
+    return {
+      name: o.name ?? null,
+      industry: o.industry ?? null,
+      headcount: o.estimated_num_employees ?? null,
+      founded_year: o.founded_year ?? null,
+      linkedin_url: o.linkedin_url ?? null,
+      city: o.city ?? null,
+      state: o.state ?? null,
+      keywords: Array.isArray(o.keywords) ? o.keywords.slice(0, 15) : [],
+      technologies: Array.isArray(o.technology_names) ? o.technology_names.slice(0, 25) : [],
+      description: typeof o.short_description === 'string' ? o.short_description.slice(0, 600) : null,
+    };
+  } catch { return null; }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -185,7 +254,11 @@ Deno.serve(async (req) => {
     const startedAt = Date.now();
     const DEADLINE_MS = 95_000;
     const outOfTime = () => Date.now() - startedAt > DEADLINE_MS;
-    const limit = Math.min(Number(body.limit) || 25, 60);
+    // Depth, not volume: each firm now costs five sources, so the batch is
+    // smaller and the self-continuation carries the rest.
+    // Five sources per firm at ~20-40s each: 5 per run keeps a run inside
+    // its deadline, and the self-continuation carries the rest.
+    const limit = Math.min(Number(body.limit) || 5, 12);
     const COLS = 'id, firm_name, city, state, website, other_services, research_facts, researched_at';
 
     const query = body.firm_ids?.length
@@ -204,18 +277,56 @@ Deno.serve(async (req) => {
     let ranOutOfTime = false;
     for (const f of firms) {
       if (outOfTime()) { ranOutOfTime = true; break; }
-      const domain = (f as { website?: string }).website
-        || `https://${String(f.firm_name).toLowerCase().replace(/[^a-z0-9]/g, '')}.com`;
 
+      const sources: string[] = [];
       let combined = '';
       let reachedAny = false;
       let redirectedTo: string | null = null;
 
+      // ── 1. Web search ─────────────────────────────────────────────────────
+      // Runs first because it answers "where does this firm actually live".
+      //
+      // The query is the BARE firm name. Measured on four firms: bare returned
+      // 12 hits and the correct domain for both firms that have one, while
+      // quoting the name dropped it to 9/4 hits with no domain, and adding
+      // "software development company clients case study" left only directory
+      // pages. The extra words push the firm's own homepage off the first page.
+      // Brave serves a result-less page after several rapid requests, so firms
+      // are spaced. Depth per firm is the goal, not firms per second.
+      if (results.length > 0) await new Promise((r) => setTimeout(r, 2500));
+      const hits = await searchWeb(String(f.firm_name));
+      const discovered = pickOwnDomain(String(f.firm_name), hits);
+      if (hits.length) sources.push('search:' + hits.length);
+
+      const stored = (f as { website?: string }).website;
+      const domain = stored
+        || discovered
+        || 'https://' + String(f.firm_name).toLowerCase().replace(/[^a-z0-9]/g, '') + '.com';
+      const domainSource = stored ? 'stored' : discovered ? 'search' : 'guessed';
+
+      // Search snippets are verbatim third-party text, so they are safe to
+      // feed the extractor — it never infers, it only quotes.
+      const snippets = hits.slice(0, 8).map((h) => h.title + '. ' + h.snippet).join(' ');
+      if (snippets) combined += ' ' + snippets;
+
+      // ── 2. Apollo firmographics ───────────────────────────────────────────
+      const apollo = await apolloOrg(domain);
+      if (apollo) {
+        sources.push('apollo');
+        // Fold the description and keywords into the extractor's input; the
+        // structured fields are stored separately below.
+        combined += ' ' + [apollo.description, (apollo.keywords as string[]).join(', ')]
+          .filter(Boolean).join('. ');
+      }
+
+      // ── 3. The firm's own site ────────────────────────────────────────────
       const base = domain.replace(/\/$/, '');
-      const pages = await fetchAll(PATHS.map((p) => base + p), 3);
+      const pages = await fetchAll(PATHS.map((path) => base + path), 3);
+      let ownPages = 0;
       for (const page of pages) {
         if (!page) continue;
         reachedAny = true;
+        ownPages++;
         combined += ' ' + page.text.slice(0, 20_000);
         // A redirect landing on a different company name is an acquisition.
         try {
@@ -224,14 +335,55 @@ Deno.serve(async (req) => {
           if (host !== expected) redirectedTo = host;
         } catch { /* malformed URL — not a redirect signal */ }
       }
+      if (ownPages) sources.push('site:' + ownPages);
 
-      if (!reachedAny) {
+      // ── 4. Directory profiles ─────────────────────────────────────────────
+      // Clutch and Crunchbase list clients and project detail the firm's own
+      // marketing pages often leave out.
+      const directories = hits
+        .filter((h) => DIRECTORY_WORTH_READING.test(h.url))
+        .slice(0, 3);
+      let dirPages = 0;
+      for (const d of directories) {
+        if (outOfTime()) break;
+        const page = await fetchOne(d.url);
+        if (!page) continue;
+        dirPages++;
+        combined += ' ' + page.text.slice(0, 15_000);
+      }
+      if (dirPages) sources.push('directory:' + dirPages);
+
+      // ── 5. News ───────────────────────────────────────────────────────────
+      const news = await searchNews(String(f.firm_name));
+      if (news.length) {
+        sources.push('news:' + news.length);
+        combined += ' ' + news.map((n) => n.title).join('. ');
+      }
+
+      // Anything at all beyond the firm's own site still counts as researched:
+      // a firm with a dead website but a full Clutch profile is workable.
+      const haveEvidence = reachedAny || dirPages > 0 || !!apollo || news.length > 0;
+
+      if (!haveEvidence) {
+        // Nothing anywhere: no site, no directory profile, no Apollo record,
+        // no news. Record what was tried so a human is not left guessing.
         await supabase.from('bd_firms').update({
           researched_at: new Date().toISOString(),
-          notes: `research: site unreachable at ${domain} — verify the URL`,
+          website: discovered ?? stored ?? null,
+          notes: `research: nothing found — site ${domain} (${domainSource}) unreachable, `
+            + `no Apollo record, no directory profile, no news`,
           updated_at: new Date().toISOString(),
         }).eq('id', f.id);
-        results.push({ firm: f.firm_name, status: 'unreachable', tried: domain });
+        // Report domain_source and sources here too — omitting them printed
+        // "domain: undefined" in the run log and hid whether search had even
+        // been reached on the firms that failed.
+        results.push({
+          firm: f.firm_name,
+          status: 'nothing-found',
+          tried: domain,
+          domain_source: domainSource,
+          sources,
+        });
         continue;
       }
 
@@ -248,10 +400,20 @@ Deno.serve(async (req) => {
       const anchor = CONFIG.domain_anchors.find((a) => anchorHay.includes(a)) || null;
 
       await supabase.from('bd_firms').update({
-        research_facts: { ...facts, fetched_from: domain, chars: combined.length },
+        research_facts: {
+          ...facts,
+          apollo,                    // firmographics: headcount, tech, LinkedIn URL
+          news,                      // items naming the firm verbatim
+          sources,                   // which of the five actually answered
+          fetched_from: domain,
+          domain_source: domainSource,
+          chars: combined.length,
+        },
         disqualifier_flags: Object.keys(flags).length ? flags : null,
         has_domain_anchor: !!anchor,
-        website: domain,
+        // Only persist a domain we actually confirmed — writing a guess back
+        // would make the next run treat it as known-good.
+        website: domainSource === 'guessed' && !reachedAny ? null : domain,
         researched_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }).eq('id', f.id);
@@ -259,6 +421,10 @@ Deno.serve(async (req) => {
       results.push({
         firm: f.firm_name,
         status: 'researched',
+        domain_source: domainSource,
+        sources,
+        news: news.length,
+        apollo: apollo ? (apollo.headcount ?? 'yes') : null,
         clients: facts.clients.length,
         stack: facts.stack.length,
         team: facts.team.length,

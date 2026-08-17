@@ -35,15 +35,15 @@ follow-sender-individual|mkt-follow-sender|{"segment":"individual"}|40 4 * * *
 # itself and never stalls waiting for a human; only the scheduler is
 # time-sensitive, and it enforces the Tue/Wed/Thu 8-11am-local window itself.
 #
-# Research now fetches a firm's 8 pages 3-at-a-time instead of sequentially
-# with a 2s sleep, so a firm costs ~4s rather than ~20s, and each run works to
-# an internal deadline then re-invokes itself for whatever is left. Four slots
-# a day at 25 per run clears a backlog of 161 graded firms in about two days
-# instead of a fortnight; once caught up, each run simply finds nothing to do.
-bd-research-1|bd-research|{"limit":25}|0 2 * * *
-bd-research-2|bd-research|{"limit":25}|0 8 * * *
-bd-research-3|bd-research|{"limit":25}|0 14 * * *
-bd-research-4|bd-research|{"limit":25}|0 20 * * *
+# Research goes DEEP per firm (Amit 2026-08-17): Bing search -> Apollo
+# firmographics -> 16 of the firm's own pages -> Clutch/Crunchbase profiles ->
+# Google News, one firm at a time. That costs more per firm, so the batch is 8
+# rather than 25; each run works to a 95s deadline then re-invokes itself, so a
+# backlog still drains without anything being cut off mid-firm.
+bd-research-1|bd-research|{"limit":8}|0 2 * * *
+bd-research-2|bd-research|{"limit":8}|0 8 * * *
+bd-research-3|bd-research|{"limit":8}|0 14 * * *
+bd-research-4|bd-research|{"limit":8}|0 20 * * *
 # Contacts and drafts lift with it — no point researching faster than the rest
 # of the pipeline can consume.
 bd-contacts|bd-contacts|{"limit":25}|30 2 * * *
