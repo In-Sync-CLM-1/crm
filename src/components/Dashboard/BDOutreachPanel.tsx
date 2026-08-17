@@ -8,10 +8,15 @@ import { funnelChart, SLOT } from "@/components/Dashboard/chartStyle";
 import type { DashboardOverview } from "@/hooks/useDashboardOverview";
 
 /**
- * BD outreach — a funnel, because that is literally what it is: firms sourced,
- * graded, researched, given a contact, drafted, then put into a live sequence.
- * Each stage is a strict subset of the one above it, so the narrowing is the
- * information.
+ * BD outreach — a funnel: firms sourced, graded, given a contact, researched,
+ * drafted, then put into a sequence.
+ *
+ * Order matters and my first attempt got it wrong. Contact-finding (Apollo) and
+ * research are independent steps, and contacts are ahead of research right now
+ * (129 vs 16), so listing "Researched" above "Contactable" drew a funnel that
+ * narrowed and then widened again — a shape that implies a subset relationship
+ * the data does not have. Stages are ordered by how far the work has actually
+ * got, which is also strictly decreasing.
  */
 export const BDOutreachPanel = memo(function BDOutreachPanel({
   data, isLoading,
@@ -19,8 +24,8 @@ export const BDOutreachPanel = memo(function BDOutreachPanel({
   const option = useMemo(() => funnelChart([
     { name: "Sourced", value: data?.sourced ?? 0, color: SLOT.blue },
     { name: "Grade A/B", value: (data?.graded_a ?? 0) + (data?.graded_b ?? 0), color: SLOT.violet },
-    { name: "Researched", value: data?.researched ?? 0, color: SLOT.aqua },
     { name: "Contactable", value: data?.contactable ?? 0, color: SLOT.yellow },
+    { name: "Researched", value: data?.researched ?? 0, color: SLOT.aqua },
     { name: "Drafted", value: data?.drafted ?? 0, color: SLOT.orange },
     { name: "Sequenced", value: (data?.sequences_live ?? 0) + (data?.sequences_stopped ?? 0), color: SLOT.magenta },
   ]), [data]);

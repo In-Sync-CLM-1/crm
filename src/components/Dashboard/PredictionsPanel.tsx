@@ -3,7 +3,7 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TrendingUp, TrendingDown, Minus, Info } from "lucide-react";
 import type { DashboardOverview } from "@/hooks/useDashboardOverview";
-import { forecast } from "@/utils/forecast";
+import { forecast, completedPeriods } from "@/utils/forecast";
 import { formatCompactINR } from "@/utils/currency";
 
 /**
@@ -63,24 +63,27 @@ export const PredictionsPanel = memo(function PredictionsPanel({ data, isLoading
   const spend = months.map((m) => m.google_spend);
   const ticketSeries = (data.tickets?.monthly || []).map((m) => m.raised);
 
-  const revenueF = forecast(received, 1);
-  const spendF = forecast(spend, 1);
-  const ticketF = forecast(ticketSeries, 1);
+  // Fit completed months only — the current month is part-way through, and
+  // including it makes every trend look like a collapse.
+  const revenueF = forecast(completedPeriods(received), 1);
+  const spendF = forecast(completedPeriods(spend), 1);
+  const ticketF = forecast(completedPeriods(ticketSeries), 1);
 
   // Followers project from the last 30 days' movement, not a fitted series —
   // there is only one snapshot cadence and a month of it.
   const linkedin = (data.organic || []).find((c) => c.channel === "linkedin");
 
-  const lastReceived = received[received.length - 1] ?? 0;
-  const lastSpend = spend[spend.length - 1] ?? 0;
-  const lastTickets = ticketSeries[ticketSeries.length - 1] ?? 0;
+  const lastComplete = <T,>(a: T[]) => a[a.length - 2] ?? a[a.length - 1];
+  const lastReceived = lastComplete(received) ?? 0;
+  const lastSpend = lastComplete(spend) ?? 0;
+  const lastTickets = lastComplete(ticketSeries) ?? 0;
 
   return (
     <Card className="p-4">
       <div className="mb-3">
         <h3 className="text-sm font-semibold">Next month, projected</h3>
         <p className="text-[11px] text-muted-foreground">
-          From the last 6 months, with the trend damped so one unusual month can't run away with it
+          From the last 6 completed months, with the trend damped so one unusual month can't run away with it
         </p>
       </div>
 

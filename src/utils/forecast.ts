@@ -64,6 +64,7 @@ export function forecast(
   const damping = opts.damping ?? 0.5;
 
   const mean = recent.reduce((a, b) => a + b, 0) / recent.length;
+  const recentMin = Math.max(0, Math.min(...recent));
   const { slope, intercept } = fit(recent);
   const lastFitted = intercept + slope * (recent.length - 1);
 
@@ -82,7 +83,12 @@ export function forecast(
     // came out lower than the most recent month. Anchoring on the fitted
     // level and advancing by a damped slope keeps direction honest while
     // still refusing to extrapolate at full tilt.
-    const value = Math.max(0, lastFitted + slope * damping * step);
+    // Floored at the quietest month in the window, not at zero. A steeply
+    // falling series extrapolates straight through zero and clamps there, which
+    // read as "0 tickets next month" off the back of 62→35→12→9→4 — a number
+    // that is not going to happen. The quietest recent month is the honest
+    // lower bound for "if the decline continues".
+    const value = Math.max(recentMin, lastFitted + slope * damping * step);
     // The band widens with distance: one SD at the first step, growing by
     // sqrt(step) after that.
     const spread = sd * Math.sqrt(step);
@@ -105,4 +111,14 @@ export function forecast(
 export function forecastNext(history: number[], opts?: { damping?: number; window?: number }): number | null {
   const f = forecast(history, 1, opts);
   return f ? f.points[0] : null;
+}
+
+/**
+ * The current month is only part-way through, so its total is always low and
+ * fitting it drags every trend downward — it made the ticket projection read
+ * "0 next month" on the 17th, off the back of a 17-day month. Use this to fit
+ * completed periods only.
+ */
+export function completedPeriods(history: number[]): number[] {
+  return history.length > 1 ? history.slice(0, -1) : history;
 }
