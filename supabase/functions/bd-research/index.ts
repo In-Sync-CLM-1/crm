@@ -32,6 +32,120 @@ import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 const ok = (d: unknown) => new Response(JSON.stringify(d), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 const err = (s: number, m: string) => new Response(JSON.stringify({ error: m }), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
+// ── Phase 0: search before crawling ──────────────────────────────────────────
+//
+// Amit, 2026-08-17: "You should access google news and Linkedin if anything
+// shown up there. So start with a google search and then fan around."
+//
+// Two keyless sources are used, because neither needs a credential we do not
+// already have and both answer for any firm:
+//   web  — DuckDuckGo's HTML endpoint. Google's own web search needs a Custom
+//          Search key we do not hold; this returns the same kind of result set.
+//   news — Google News RSS, which is genuinely Google and needs no key.
+//
+// LinkedIn is NOT fetched. Company pages answer HTTP 999 to anything without a
+// logged-in session, and the LinkedIn API exposes only our own organisation,
+// not arbitrary third parties. Pretending otherwise would mean shipping a call
+// that always fails. If a firm's LinkedIn URL turns up in search results it is
+// kept as a link, not as a source of facts.
+const SEARCH_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36';
+
+// Hosts that are directories, socials or job boards — useful as evidence, never
+// mistakable for the firm's own site.
+const NOT_OWN_SITE = /(^|\.)(clutch\.co|linkedin\.com|facebook\.com|twitter\.com|x\.com|instagram\.com|glassdoor\.|indeed\.|crunchbase\.com|goodfirms\.co|designrush\.com|upwork\.com|medium\.com|youtube\.com|wikipedia\.org|bloomberg\.com|zoominfo\.com|apollo\.io|g2\.com|trustpilot\.|yelp\.)/i;
+
+interface SearchHit { title: string; url: string; snippet: string }
+
+function decodeEntities(t: string): string {
+  return t.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
+    .replace(/&#x27;/g, "'").replace(/&#x2F;/g, '/');
+}
+
+/** Keyless web search. Returns [] on any failure — research continues without it. */
+async function searchWeb(query: string): Promise<SearchHit[]> {
+  try {
+    const res = await fetch('https://html.duckduckgo.com/html/?q=' + encodeURIComponent(query), {
+      headers: { 'User-Agent': SEARCH_UA },
+      signal: AbortSignal.timeout(12_000),
+    });
+    if (!res.ok) return [];
+    const html = await res.text();
+    const hits: SearchHit[] = [];
+    const re = /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?(?:class="result__snippet"[^>]*>([\s\S]*?)<\/a>)?/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(html)) && hits.length < 12) {
+      let url = decodeEntities(m[1]);
+      // DDG wraps results in a redirect: /l/?uddg=<encoded target>
+      const wrapped = url.match(/[?&]uddg=([^&]+)/);
+      if (wrapped) { try { url = decodeURIComponent(wrapped[1]); } catch { /* keep as-is */ } }
+      if (!/^https?:\/\//i.test(url)) continue;
+      hits.push({
+        url,
+        title: decodeEntities(textOf(m[2] || '')).slice(0, 200),
+        snippet: decodeEntities(textOf(m[3] || '')).slice(0, 300),
+      });
+    }
+    return hits;
+  } catch { return []; }
+}
+
+/** Google News RSS. Only items whose title or description names the firm. */
+async function searchNews(firmName: string): Promise<{ title: string; date: string; url: string }[]> {
+  try {
+    const q = encodeURIComponent(`"${firmName}"`);
+    const res = await fetch(`https://news.google.com/rss/search?q=${q}&hl=en-US&gl=US&ceid=US:en`, {
+      headers: { 'User-Agent': SEARCH_UA },
+      signal: AbortSignal.timeout(12_000),
+    });
+    if (!res.ok) return [];
+    const xml = await res.text();
+    const out: { title: string; date: string; url: string }[] = [];
+    const needle = firmName.toLowerCase();
+    for (const m of xml.matchAll(/<item>([\s\S]*?)<\/item>/g)) {
+      const block = m[1];
+      const pick = (tag: string) => {
+        // Built by concatenation, not a template literal: inside a template
+        // literal JS eats the backslashes and [\s\S] silently becomes [sS],
+        // which matched nothing and quietly returned every news title as ''.
+        const r = block.match(new RegExp('<' + tag + '>([\s\S]*?)</' + tag + '>'));
+        return r ? decodeEntities(r[1].replace(/<!\[CDATA\[|\]\]>/g, '').trim()) : '';
+      };
+      const title = pick('title');
+      const desc = textOf(pick('description'));
+      // A headline that merely shares a word with the firm is not about the
+      // firm — the phrase must appear verbatim. This is the same rule the fact
+      // extractor follows: never infer.
+      if (!`${title} ${desc}`.toLowerCase().includes(needle)) continue;
+      out.push({ title: title.slice(0, 200), date: pick('pubDate').slice(0, 16), url: pick('link') });
+      if (out.length >= 5) break;
+    }
+    return out;
+  } catch { return []; }
+}
+
+/**
+ * Best guess at a firm's own domain from search results: the first result whose
+ * host is not a directory and shares a word with the firm name. Returns null
+ * rather than guessing when nothing matches — a wrong domain sends the whole
+ * crawl to the wrong company, which is worse than no crawl.
+ */
+function pickOwnDomain(firmName: string, hits: SearchHit[]): string | null {
+  const words = firmName.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/)
+    .filter((w) => w.length > 2 && !['inc', 'llc', 'ltd', 'the', 'and', 'labs', 'lab', 'group', 'studio', 'studios', 'software', 'digital', 'technologies', 'technology', 'solutions', 'consulting'].includes(w));
+  for (const h of hits) {
+    try {
+      const host = new URL(h.url).hostname.replace(/^www\./, '');
+      if (NOT_OWN_SITE.test(host)) continue;
+      const bare = host.split('.')[0].replace(/[^a-z0-9]/g, '');
+      if (words.some((w) => bare.includes(w.slice(0, Math.max(4, Math.min(w.length, 8))))) || words.length === 0) {
+        return `https://${host}`;
+      }
+    } catch { /* skip malformed */ }
+  }
+  return null;
+}
+
 const PATHS = ['', '/case-studies', '/work', '/portfolio', '/about', '/services', '/clients', '/team'];
 
 /** Strip tags and collapse whitespace — we want readable prose, not markup. */
@@ -204,12 +318,34 @@ Deno.serve(async (req) => {
     let ranOutOfTime = false;
     for (const f of firms) {
       if (outOfTime()) { ranOutOfTime = true; break; }
-      const domain = (f as { website?: string }).website
+      // Phase 0 — search first, crawl second. Search does two jobs: it finds
+      // the firm's real domain (only 10 of 270 rows arrived with one, and
+      // guessing firmname.com sent the crawl to the wrong company often
+      // enough to matter), and it surfaces third-party evidence and news the
+      // firm's own pages never mention.
+      const hits = await searchWeb(`"${f.firm_name}" software development clients case study`);
+      const news = await searchNews(String(f.firm_name));
+      const discovered = pickOwnDomain(String(f.firm_name), hits);
+
+      const stored = (f as { website?: string }).website;
+      const domain = stored
+        || discovered
         || `https://${String(f.firm_name).toLowerCase().replace(/[^a-z0-9]/g, '')}.com`;
+      const domainSource = stored ? 'stored' : discovered ? 'search' : 'guessed';
 
       let combined = '';
       let reachedAny = false;
       let redirectedTo: string | null = null;
+
+      // Third-party snippets are evidence, and they are verbatim, so they are
+      // safe to feed the extractor alongside the firm's own pages.
+      const evidence = hits
+        .filter((h) => !NOT_OWN_SITE.test(h.url) || /clutch\.co|crunchbase|goodfirms/i.test(h.url))
+        .slice(0, 6)
+        .map((h) => `${h.title}. ${h.snippet}`)
+        .join(' ');
+      if (evidence) combined += ' ' + evidence;
+      if (news.length) combined += ' ' + news.map((n) => n.title).join('. ');
 
       const base = domain.replace(/\/$/, '');
       const pages = await fetchAll(PATHS.map((p) => base + p), 3);
@@ -226,12 +362,21 @@ Deno.serve(async (req) => {
       }
 
       if (!reachedAny) {
+        // Even with no site, search may have produced enough to work with.
+        const searchOnly = extractFacts(combined, f.firm_name);
+        const anyFact = searchOnly.clients.length + searchOnly.cases.length
+          + searchOnly.stack.length + news.length;
         await supabase.from('bd_firms').update({
           researched_at: new Date().toISOString(),
-          notes: `research: site unreachable at ${domain} — verify the URL`,
+          website: discovered ?? stored ?? null,
+          research_facts: anyFact
+            ? { ...searchOnly, news, chars: combined.length, fetched_from: 'search only', domain_source: domainSource }
+            : null,
+          notes: `research: site unreachable at ${domain} (${domainSource})`
+            + (anyFact ? ' — facts from search results only' : ' — and search found nothing usable'),
           updated_at: new Date().toISOString(),
         }).eq('id', f.id);
-        results.push({ firm: f.firm_name, status: 'unreachable', tried: domain });
+        results.push({ firm: f.firm_name, status: anyFact ? 'search-only' : 'unreachable', tried: domain, news: news.length });
         continue;
       }
 
@@ -248,7 +393,13 @@ Deno.serve(async (req) => {
       const anchor = CONFIG.domain_anchors.find((a) => anchorHay.includes(a)) || null;
 
       await supabase.from('bd_firms').update({
-        research_facts: { ...facts, fetched_from: domain, chars: combined.length },
+        research_facts: {
+          ...facts,
+          news,                       // recent items that name the firm verbatim
+          fetched_from: domain,
+          domain_source: domainSource,
+          chars: combined.length,
+        },
         disqualifier_flags: Object.keys(flags).length ? flags : null,
         has_domain_anchor: !!anchor,
         website: domain,
@@ -259,6 +410,8 @@ Deno.serve(async (req) => {
       results.push({
         firm: f.firm_name,
         status: 'researched',
+        domain_source: domainSource,
+        news: news.length,
         clients: facts.clients.length,
         stack: facts.stack.length,
         team: facts.team.length,
