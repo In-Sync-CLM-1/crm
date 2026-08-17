@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { forecast, forecastNext } from "./forecast";
+import { forecast, forecastNext, completedPeriods } from "./forecast";
 
 describe("forecast", () => {
   it("refuses to guess from too little history", () => {
@@ -56,5 +56,31 @@ describe("forecast", () => {
   it("forecastNext returns the first projected point", () => {
     const hist = [10, 20, 30, 40, 50, 60];
     expect(forecastNext(hist)).toBe(forecast(hist, 1)!.points[0]);
+  });
+});
+
+describe("completedPeriods", () => {
+  it("drops the current, part-finished period", () => {
+    expect(completedPeriods([10, 20, 30, 5])).toEqual([10, 20, 30]);
+  });
+
+  it("leaves a single observation alone rather than emptying it", () => {
+    expect(completedPeriods([7])).toEqual([7]);
+    expect(completedPeriods([])).toEqual([]);
+  });
+
+  it("does not project zero off the back of a steep decline", () => {
+    // Real shape: tickets fell 62→35→12→9→4, then 2 seventeen days into August.
+    // Linear decay would run through zero and clamp there; the floor is the
+    // quietest month actually observed.
+    const withPartial = [62, 35, 12, 9, 4, 2];
+    const fitted = forecast(completedPeriods(withPartial), 1)!;
+    expect(fitted.points[0]).toBeGreaterThanOrEqual(4);
+    expect(forecast(withPartial, 1)!.points[0]).toBeGreaterThanOrEqual(2);
+  });
+
+  it("still holds a flat series at its level", () => {
+    const f = forecast([100, 100, 100, 100, 100, 100], 2)!;
+    expect(f.points.every((p) => Math.abs(p - 100) < 1)).toBe(true);
   });
 });

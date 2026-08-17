@@ -3,7 +3,7 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EChart } from "@/components/Marketing/EChart";
 import { lineChart, axisRupee, SLOT, INK } from "@/components/Dashboard/chartStyle";
-import { forecast } from "@/utils/forecast";
+import { forecast, completedPeriods } from "@/utils/forecast";
 import type { RevenueMonth } from "@/hooks/useDashboardOverview";
 import { formatCompactINR, formatCurrency } from "@/utils/currency";
 
@@ -37,7 +37,9 @@ export const MoneyByMonthChart = memo(function MoneyByMonthChart({
   const { option, projection } = useMemo(() => {
     const rows = data || [];
     const received = rows.map((d) => Math.round(d.received));
-    const f = forecast(received, 3);
+    // Completed months only: the current month is partial and would bias the
+    // trend down every time the dashboard is opened early in a month.
+    const f = forecast(completedPeriods(received), 3);
 
     const futureLabels = f ? nextMonthLabels(rows[rows.length - 1]?.month, 3) : [];
     const categories = [...rows.map((d) => d.month), ...futureLabels];
