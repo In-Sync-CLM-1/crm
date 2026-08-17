@@ -256,7 +256,9 @@ Deno.serve(async (req) => {
     const outOfTime = () => Date.now() - startedAt > DEADLINE_MS;
     // Depth, not volume: each firm now costs five sources, so the batch is
     // smaller and the self-continuation carries the rest.
-    const limit = Math.min(Number(body.limit) || 8, 25);
+    // Five sources per firm at ~20-40s each: 5 per run keeps a run inside
+    // its deadline, and the self-continuation carries the rest.
+    const limit = Math.min(Number(body.limit) || 5, 12);
     const COLS = 'id, firm_name, city, state, website, other_services, research_facts, researched_at';
 
     const query = body.firm_ids?.length
@@ -283,9 +285,16 @@ Deno.serve(async (req) => {
 
       // ── 1. Web search ─────────────────────────────────────────────────────
       // Runs first because it answers "where does this firm actually live".
-      const hits = await searchWeb(
-        '"' + f.firm_name + '" software development company clients case study',
-      );
+      //
+      // The query is the BARE firm name. Measured on four firms: bare returned
+      // 12 hits and the correct domain for both firms that have one, while
+      // quoting the name dropped it to 9/4 hits with no domain, and adding
+      // "software development company clients case study" left only directory
+      // pages. The extra words push the firm's own homepage off the first page.
+      // Brave serves a result-less page after several rapid requests, so firms
+      // are spaced. Depth per firm is the goal, not firms per second.
+      if (results.length > 0) await new Promise((r) => setTimeout(r, 2500));
+      const hits = await searchWeb(String(f.firm_name));
       const discovered = pickOwnDomain(String(f.firm_name), hits);
       if (hits.length) sources.push('search:' + hits.length);
 
@@ -365,7 +374,16 @@ Deno.serve(async (req) => {
             + `no Apollo record, no directory profile, no news`,
           updated_at: new Date().toISOString(),
         }).eq('id', f.id);
-        results.push({ firm: f.firm_name, status: 'nothing-found', tried: domain });
+        // Report domain_source and sources here too — omitting them printed
+        // "domain: undefined" in the run log and hid whether search had even
+        // been reached on the firms that failed.
+        results.push({
+          firm: f.firm_name,
+          status: 'nothing-found',
+          tried: domain,
+          domain_source: domainSource,
+          sources,
+        });
         continue;
       }
 
