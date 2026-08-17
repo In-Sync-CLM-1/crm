@@ -81,6 +81,27 @@ export async function fetchPage(
  * Web search via Bing's HTML results. Returns [] on any failure — research
  * continues on whatever else it can reach.
  */
+/** Bing wraps every result in https://www.bing.com/ck/a?…&u=a1<base64url>&…
+ *  Unwrap it to the real destination; without this every hit looks like Bing. */
+function unwrapBing(href: string): string | null {
+  try {
+    if (!/bing\.com\/ck\/a/i.test(href)) return href;
+    const u = new URL(href, 'https://www.bing.com');
+    const raw = u.searchParams.get('u');
+    if (!raw) return null;
+    // The target is base64url, prefixed with "a1".
+    const b64 = raw.replace(/^a1/, '').replace(/-/g, '+').replace(/_/g, '/');
+    const pad = b64 + '='.repeat((4 - (b64.length % 4)) % 4);
+    const decoded = atob(pad);
+    return /^https?:\/\//i.test(decoded) ? decoded : null;
+  } catch { return null; }
+}
+
+function decodeHtml(t: string): string {
+  return t.replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+}
+
 export async function searchWeb(query: string, max = 12): Promise<SearchHit[]> {
   try {
     const res = await fetch('https://www.bing.com/search?q=' + encodeURIComponent(query) + '&count=20', {
@@ -90,13 +111,15 @@ export async function searchWeb(query: string, max = 12): Promise<SearchHit[]> {
     if (!res.ok) return [];
     const html = await res.text();
     const hits: SearchHit[] = [];
-    // Each organic result is <li class="b_algo"> … </li>
+    // Each organic result is <li class="b_algo" …attrs…> … </li>. Both the <li>
+    // and the inner <h2>/<a> carry attributes, so every tag pattern here has to
+    // allow them — an exact-tag match silently found nothing.
     for (const m of html.matchAll(/<li class="b_algo"[\s\S]*?<\/li>/g)) {
       const block = m[0];
-      const href = block.match(/<h2[^>]*>\s*<a[^>]+href="([^"]+)"/i);
+      const href = block.match(/<h2[^>]*>[\s\S]{0,200}?<a[^>]+href="([^"]+)"/i);
       if (!href) continue;
-      const url = href[1];
-      if (!/^https?:\/\//i.test(url) || /bing\.com/i.test(url)) continue;
+      const url = unwrapBing(decodeHtml(href[1]));
+      if (!url || !/^https?:\/\//i.test(url) || /(^|\.)bing\.com/i.test(new URL(url).hostname)) continue;
       hits.push({
         url,
         title: tagText(block, 'h2').slice(0, 200),
