@@ -22,15 +22,24 @@ export interface DashboardOverview {
   revenue_months: RevenueMonth[];
   organic: OrganicChannel[];
   paid: {
-    google: { spend: number; impressions: number; clicks: number; conversions: number };
-    meta: {
-      spend: number;
-      attempted_budget: number;
-      blocked: number;
-      failed: number;
-      live: number;
-      last_attempt: string | null;
+    google?: {
+      spend: number; impressions: number; clicks: number; conversions: number;
+      daily_budget: number | null; last_synced: string | null;
     };
+    /** Null figures mean the funding ad account is unreadable, not that nothing was spent. */
+    meta?: {
+      spend: number | null; impressions: number | null; reach: number | null;
+      clicks: number | null; results: number | null;
+      accounts: number; last_synced: string | null;
+    };
+    meta_attempted?: {
+      budget: number; blocked: number; failed: number; last_attempt: string | null;
+    };
+  };
+  bd: {
+    sourced: number; graded_a: number; graded_b: number; researched: number;
+    contactable: number; drafted: number; pending_review: number;
+    sequences_live: number; sequences_stopped: number; excluded: number;
   };
   tickets: {
     raised_30d: number;

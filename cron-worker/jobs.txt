@@ -53,3 +53,8 @@ bd-track|bd-track||0 * * * *
 # are no longer retried. The ledger they fill still reaches GA4 via
 # mkt-google-ads-sync's Measurement Protocol push, which is unaffected.
 ad-conversion-upload|mkt-ad-conversion-upload||10 * * * *
+
+# Real Meta ad performance. Walks every ad account the stored credentials can
+# reach and records daily spend/reach/clicks, so the dashboard reports measured
+# Meta numbers instead of assuming one account. Runs after Google's sync.
+meta-insights|mkt-meta-insights||45 3 * * *
