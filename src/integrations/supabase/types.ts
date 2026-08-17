@@ -7808,129 +7808,6 @@ export type Database = {
           },
         ]
       }
-      mkt_native_contacts: {
-        Row: {
-          address: string | null
-          city: string | null
-          company_linkedin_url: string | null
-          company_name: string | null
-          country: string | null
-          created_at: string | null
-          department: string | null
-          designation: string | null
-          email_generic: string | null
-          email_official: string | null
-          email_personal: string | null
-          emp_size: string | null
-          erp_name: string | null
-          erp_vendor: string | null
-          extra: string | null
-          extra_1: string | null
-          extra_2: string | null
-          full_name: string | null
-          id: string
-          industry_type: string | null
-          job_level: string | null
-          latest_disposition: string | null
-          latest_subdisposition: string | null
-          linkedin_url: string | null
-          location: string | null
-          phone: string | null
-          phone2: string | null
-          pincode: string | null
-          raw_updated_at: string | null
-          salutation: string | null
-          source: string | null
-          source_1: string | null
-          state: string | null
-          sub_industry: string | null
-          tier: string | null
-          turnover: string | null
-          website: string | null
-          zone: string | null
-        }
-        Insert: {
-          address?: string | null
-          city?: string | null
-          company_linkedin_url?: string | null
-          company_name?: string | null
-          country?: string | null
-          created_at?: string | null
-          department?: string | null
-          designation?: string | null
-          email_generic?: string | null
-          email_official?: string | null
-          email_personal?: string | null
-          emp_size?: string | null
-          erp_name?: string | null
-          erp_vendor?: string | null
-          extra?: string | null
-          extra_1?: string | null
-          extra_2?: string | null
-          full_name?: string | null
-          id?: string
-          industry_type?: string | null
-          job_level?: string | null
-          latest_disposition?: string | null
-          latest_subdisposition?: string | null
-          linkedin_url?: string | null
-          location?: string | null
-          phone?: string | null
-          phone2?: string | null
-          pincode?: string | null
-          raw_updated_at?: string | null
-          salutation?: string | null
-          source?: string | null
-          source_1?: string | null
-          state?: string | null
-          sub_industry?: string | null
-          tier?: string | null
-          turnover?: string | null
-          website?: string | null
-          zone?: string | null
-        }
-        Update: {
-          address?: string | null
-          city?: string | null
-          company_linkedin_url?: string | null
-          company_name?: string | null
-          country?: string | null
-          created_at?: string | null
-          department?: string | null
-          designation?: string | null
-          email_generic?: string | null
-          email_official?: string | null
-          email_personal?: string | null
-          emp_size?: string | null
-          erp_name?: string | null
-          erp_vendor?: string | null
-          extra?: string | null
-          extra_1?: string | null
-          extra_2?: string | null
-          full_name?: string | null
-          id?: string
-          industry_type?: string | null
-          job_level?: string | null
-          latest_disposition?: string | null
-          latest_subdisposition?: string | null
-          linkedin_url?: string | null
-          location?: string | null
-          phone?: string | null
-          phone2?: string | null
-          pincode?: string | null
-          raw_updated_at?: string | null
-          salutation?: string | null
-          source?: string | null
-          source_1?: string | null
-          state?: string | null
-          sub_industry?: string | null
-          tier?: string | null
-          turnover?: string | null
-          website?: string | null
-          zone?: string | null
-        }
-        Relationships: []
-      }
       mkt_nps_responses: {
         Row: {
           category: string | null
@@ -9342,48 +9219,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
-      }
-      platform_email_sending_list: {
-        Row: {
-          bounce_count: number
-          created_at: string
-          email: string
-          first_seen_at: string
-          id: string
-          is_unsubscribed: boolean
-          last_bounce_at: string | null
-          last_synced_at: string
-          name: string | null
-          source_type: string
-          updated_at: string
-        }
-        Insert: {
-          bounce_count?: number
-          created_at?: string
-          email: string
-          first_seen_at?: string
-          id?: string
-          is_unsubscribed?: boolean
-          last_bounce_at?: string | null
-          last_synced_at?: string
-          name?: string | null
-          source_type: string
-          updated_at?: string
-        }
-        Update: {
-          bounce_count?: number
-          created_at?: string
-          email?: string
-          first_seen_at?: string
-          id?: string
-          is_unsubscribed?: boolean
-          last_bounce_at?: string | null
-          last_synced_at?: string
-          name?: string | null
-          source_type?: string
-          updated_at?: string
-        }
-        Relationships: []
       }
       profiles: {
         Row: {
@@ -11158,6 +10993,10 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      get_dashboard_overview: {
+        Args: { _months?: number; _org_id: string }
+        Returns: Json
+      }
       get_icp_history: {
         Args: { _org_id: string; _product_key: string }
         Returns: {
@@ -11260,7 +11099,6 @@ export type Database = {
       }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
-      sync_platform_email_list: { Args: never; Returns: undefined }
       toggle_product_active: {
         Args: { _active: boolean; _product_id: string }
         Returns: undefined

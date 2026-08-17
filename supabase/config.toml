@@ -130,3 +130,9 @@ verify_jwt = true
 
 [functions.upload-ticket-escalation-attachment]
 verify_jwt = true
+
+# Reads globalcrm for the dashboard's lead list. The gateway check is off
+# because the frontend's publishable key trips it; the function validates the
+# caller's session itself.
+[functions.dashboard-leads]
+verify_jwt = false
