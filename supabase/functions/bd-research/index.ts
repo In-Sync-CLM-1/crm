@@ -10,12 +10,20 @@
  * after clearing every automated filter, which is exactly why a human reads
  * them.
  *
- *   POST { limit: 4 }         research the next N unresearched A/B firms
+ *   POST { limit: 25 }        research the next N unresearched A/B firms
  *   POST { firm_ids: [...] }  research specific firms
+ *   POST { no_continue: true } do not self-continue after the deadline
  *
- * Eight pages at one request per two seconds is ~20s per firm, so the limit is
- * capped low: a bigger batch would hit the function timeout mid-firm and leave
- * the row half-written.
+ * Throughput (reworked 2026-08-17 — 161 graded firms were queued behind a
+ * 6-per-run cap, about a fortnight of waiting):
+ *   - a firm's 8 pages are fetched CONCURRENTLY at 3 at a time instead of
+ *     sequentially with a 2s sleep between each, which takes a firm from ~20s
+ *     to ~4s. Three parallel requests to one host is ordinary browser
+ *     behaviour, and firms are still processed one at a time so no host sees
+ *     more than that.
+ *   - the run stops at an internal DEADLINE and re-invokes itself for the
+ *     rest, so a batch is never cut off mid-firm by the platform's 150s idle
+ *     timeout leaving a half-written row.
  */
 import { BD_ORG_ID, disqualifierFlags, CONFIG } from '../_shared/bdPipeline.ts';
 import { corsHeaders } from '../_shared/corsHeaders.ts';
@@ -36,6 +44,21 @@ function textOf(html: string): string {
     .replace(/&amp;/g, '&')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/** Fetch several URLs with a small concurrency cap, preserving input order. */
+async function fetchAll(urls: string[], concurrency = 3): Promise<({ text: string; finalUrl: string } | null)[]> {
+  const out: ({ text: string; finalUrl: string } | null)[] = new Array(urls.length).fill(null);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(concurrency, urls.length) }, async () => {
+    for (;;) {
+      const i = next++;
+      if (i >= urls.length) return;
+      out[i] = await fetchPage(urls[i]);
+    }
+  });
+  await Promise.all(workers);
+  return out;
 }
 
 async function fetchPage(url: string): Promise<{ text: string; finalUrl: string } | null> {
@@ -156,7 +179,13 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const limit = Math.min(Number(body.limit) || 4, 6);
+    // Deadline well inside the platform's 150s idle timeout, with room for the
+    // final writes. Whatever is left over is picked up by the self-continuation
+    // below rather than being lost.
+    const startedAt = Date.now();
+    const DEADLINE_MS = 95_000;
+    const outOfTime = () => Date.now() - startedAt > DEADLINE_MS;
+    const limit = Math.min(Number(body.limit) || 25, 60);
     const COLS = 'id, firm_name, city, state, website, other_services, research_facts, researched_at';
 
     const query = body.firm_ids?.length
@@ -172,7 +201,9 @@ Deno.serve(async (req) => {
 
     const results: Record<string, unknown>[] = [];
 
+    let ranOutOfTime = false;
     for (const f of firms) {
+      if (outOfTime()) { ranOutOfTime = true; break; }
       const domain = (f as { website?: string }).website
         || `https://${String(f.firm_name).toLowerCase().replace(/[^a-z0-9]/g, '')}.com`;
 
@@ -180,9 +211,9 @@ Deno.serve(async (req) => {
       let reachedAny = false;
       let redirectedTo: string | null = null;
 
-      for (const p of PATHS) {
-        const page = await fetchPage(domain.replace(/\/$/, '') + p);
-        await new Promise((r) => setTimeout(r, 2000));   // 1 req / 2s
+      const base = domain.replace(/\/$/, '');
+      const pages = await fetchAll(PATHS.map((p) => base + p), 3);
+      for (const page of pages) {
         if (!page) continue;
         reachedAny = true;
         combined += ' ' + page.text.slice(0, 20_000);
@@ -237,8 +268,23 @@ Deno.serve(async (req) => {
       });
     }
 
-    console.log(`[bd-research] ${results.length} firms`);
-    return ok({ success: true, researched: results.length, results });
+    // Self-continuation: if the deadline cut the batch short and there is still
+    // work queued, kick off another run rather than waiting for the next cron.
+    // Fire-and-forget on purpose — this response must not block on it.
+    let continued = false;
+    if (ranOutOfTime && !body.no_continue && !body.firm_ids?.length) {
+      const url = `${Deno.env.get('SUPABASE_URL')}/functions/v1/bd-research`;
+      const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+      fetch(url, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit }),
+      }).catch((e) => console.error('[bd-research] continuation failed:', String(e)));
+      continued = true;
+    }
+
+    console.log(`[bd-research] ${results.length} firms${continued ? ' (continuing)' : ''}`);
+    return ok({ success: true, researched: results.length, continued, results });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error('[bd-research] fatal:', msg);
