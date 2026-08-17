@@ -2,7 +2,7 @@ import { memo, useMemo } from "react";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "react-router-dom";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, Clock } from "lucide-react";
 import { EChart } from "@/components/Marketing/EChart";
 import { funnelChart, SLOT } from "@/components/Dashboard/chartStyle";
 import type { DashboardOverview } from "@/hooks/useDashboardOverview";
@@ -18,6 +18,18 @@ import type { DashboardOverview } from "@/hooks/useDashboardOverview";
  * the data does not have. Stages are ordered by how far the work has actually
  * got, which is also strictly decreasing.
  */
+/** Next Tue/Wed/Thu — when approved drafts will actually leave. */
+function nextSendDay(): string {
+  const d = new Date();
+  for (let i = 0; i < 8; i++) {
+    const c = new Date(d.getTime() + i * 86400000);
+    if ([2, 3, 4].includes(c.getDay())) {
+      return i === 0 ? "today" : c.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" });
+    }
+  }
+  return "the next send window";
+}
+
 export const BDOutreachPanel = memo(function BDOutreachPanel({
   data, isLoading,
 }: { data?: DashboardOverview["bd"]; isLoading?: boolean }) {
@@ -27,7 +39,8 @@ export const BDOutreachPanel = memo(function BDOutreachPanel({
     { name: "Contactable", value: data?.contactable ?? 0, color: SLOT.yellow },
     { name: "Researched", value: data?.researched ?? 0, color: SLOT.aqua },
     { name: "Drafted", value: data?.drafted ?? 0, color: SLOT.orange },
-    { name: "Sequenced", value: (data?.sequences_live ?? 0) + (data?.sequences_stopped ?? 0), color: SLOT.magenta },
+    { name: "Approved", value: data?.approved ?? 0, color: SLOT.magenta },
+    { name: "Sending", value: (data?.sequences_live ?? 0) + (data?.sequences_stopped ?? 0), color: SLOT.blue },
   ]), [data]);
 
   if (isLoading || !data) {
@@ -48,7 +61,7 @@ export const BDOutreachPanel = memo(function BDOutreachPanel({
 
       <EChart option={option} height={162} />
 
-      <div className="grid grid-cols-3 gap-1 border-t border-border pt-2 text-center">
+      <div className="grid grid-cols-4 gap-1 border-t border-border pt-2 text-center">
         <div>
           <div className={`text-sm font-semibold ${(data.pending_review ?? 0) > 0 ? "text-amber-600 dark:text-amber-400" : ""}`}>
             {data.pending_review ?? 0}
@@ -56,14 +69,26 @@ export const BDOutreachPanel = memo(function BDOutreachPanel({
           <div className="text-[10px] text-muted-foreground">awaiting review</div>
         </div>
         <div>
+          <div className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">{data.approved ?? 0}</div>
+          <div className="text-[10px] text-muted-foreground">approved</div>
+        </div>
+        <div>
           <div className="text-sm font-semibold">{data.sequences_live ?? 0}</div>
-          <div className="text-[10px] text-muted-foreground">sequences live</div>
+          <div className="text-[10px] text-muted-foreground">sending</div>
         </div>
         <div>
           <div className="text-sm font-semibold">{data.excluded ?? 0}</div>
           <div className="text-[10px] text-muted-foreground">opted out</div>
         </div>
       </div>
+
+      {(data.approved ?? 0) > 0 && (data.sequences_live ?? 0) === 0 && (
+        <p className="mt-1.5 text-[10px] text-muted-foreground flex items-start gap-1">
+          <Clock className="h-3 w-3 mt-px shrink-0" />
+          {data.approved} approved and waiting — the scheduler only sends Tue/Wed/Thu inside each
+          firm's 8–11am local window, so these go out {nextSendDay()}.
+        </p>
+      )}
     </Card>
   );
 });
