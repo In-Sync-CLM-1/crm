@@ -12,20 +12,22 @@ import type { EChartsOption } from "echarts";
  * follows the entity, never its rank, so a filter can't repaint the survivors.
  */
 export const INK = {
-  primary: "#0b0b0b",
-  secondary: "#52514e",
-  muted: "#898781",
-  grid: "#e1e0d9",
-  axis: "#c3c2b7",
+  primary: "#171f30",
+  secondary: "#525b6f",
+  muted: "#89909f",
+  grid: "#e0e6eb",
+  axis: "#c4ccd4",
 };
 
+// Same hues as the app's --chart-1..5 tokens (index.css), plus two extra
+// slots (aqua, magenta) for panels needing more than five series.
 export const SLOT = {
-  blue: "#2a78d6",
-  orange: "#eb6834",
-  aqua: "#1baf7a",
-  yellow: "#eda100",
-  magenta: "#e87ba4",
-  violet: "#4a3aa7",
+  blue: "#1e92c8",
+  orange: "#f1a727",
+  aqua: "#2c9688",
+  yellow: "#f1c927",
+  magenta: "#cb4d77",
+  violet: "#7b4dcb",
 };
 
 /** Fixed channel → colour, so LinkedIn is always the same blue everywhere. */

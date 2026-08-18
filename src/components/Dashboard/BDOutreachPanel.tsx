@@ -51,7 +51,7 @@ export const BDOutreachPanel = memo(function BDOutreachPanel({
     <Card className="p-4">
       <div className="mb-1 flex items-start justify-between">
         <div>
-          <h3 className="text-sm font-semibold">BD outreach</h3>
+          <h3 className="font-display text-[0.95rem] font-semibold tracking-tight">BD outreach</h3>
           <p className="text-[11px] text-muted-foreground">US software boutiques, sourced to sequenced</p>
         </div>
         <Link to="/marketing/bd-outreach" className="text-[10px] text-primary inline-flex items-center gap-0.5 hover:underline">
@@ -63,21 +63,21 @@ export const BDOutreachPanel = memo(function BDOutreachPanel({
 
       <div className="grid grid-cols-4 gap-1 border-t border-border pt-2 text-center">
         <div>
-          <div className={`text-sm font-semibold ${(data.pending_review ?? 0) > 0 ? "text-amber-600 dark:text-amber-400" : ""}`}>
+          <div className={`font-display text-sm font-semibold ${(data.pending_review ?? 0) > 0 ? "text-amber-600 dark:text-amber-400" : ""}`}>
             {data.pending_review ?? 0}
           </div>
           <div className="text-[10px] text-muted-foreground">awaiting review</div>
         </div>
         <div>
-          <div className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">{data.approved ?? 0}</div>
+          <div className="font-display text-sm font-semibold text-emerald-600 dark:text-emerald-400">{data.approved ?? 0}</div>
           <div className="text-[10px] text-muted-foreground">approved</div>
         </div>
         <div>
-          <div className="text-sm font-semibold">{data.sequences_live ?? 0}</div>
+          <div className="font-display text-sm font-semibold">{data.sequences_live ?? 0}</div>
           <div className="text-[10px] text-muted-foreground">sending</div>
         </div>
         <div>
-          <div className="text-sm font-semibold">{data.excluded ?? 0}</div>
+          <div className="font-display text-sm font-semibold">{data.excluded ?? 0}</div>
           <div className="text-[10px] text-muted-foreground">opted out</div>
         </div>
       </div>

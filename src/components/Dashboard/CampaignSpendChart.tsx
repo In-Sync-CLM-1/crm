@@ -34,11 +34,11 @@ export const CampaignSpendChart = memo(function CampaignSpendChart({
     <Card className="p-4">
       <div className="mb-2 flex items-start justify-between gap-2">
         <div>
-          <h3 className="text-sm font-semibold">Campaign spend</h3>
+          <h3 className="font-display text-[0.95rem] font-semibold tracking-tight">Campaign spend</h3>
           <p className="text-[11px] text-muted-foreground">Google Ads billed per month</p>
         </div>
         <div className="text-right">
-          <div className="text-base font-semibold leading-none">{formatCompactINR(total)}</div>
+          <div className="font-display text-base font-semibold leading-none">{formatCompactINR(total)}</div>
           <div className="text-[10px] text-muted-foreground">{active} of 12 months active</div>
         </div>
       </div>

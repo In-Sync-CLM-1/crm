@@ -29,7 +29,7 @@ export const TicketsRaisedPanel = memo(function TicketsRaisedPanel({
     <Card className="p-4">
       <div className="mb-2 flex items-start justify-between gap-2">
         <div>
-          <h3 className="text-sm font-semibold">Tickets raised</h3>
+          <h3 className="font-display text-[0.95rem] font-semibold tracking-tight">Tickets raised</h3>
           <p className="text-[11px] text-muted-foreground">Per month, last 12 months</p>
         </div>
         <Link to="/support-tickets" className="text-[10px] text-primary inline-flex items-center gap-0.5 hover:underline">
@@ -40,15 +40,15 @@ export const TicketsRaisedPanel = memo(function TicketsRaisedPanel({
       <div className="flex items-center gap-3">
         <div className="shrink-0 grid grid-cols-3 gap-2 text-center w-[132px]">
           <div>
-            <div className="text-base font-semibold leading-none">{data.raised_30d}</div>
+            <div className="font-display text-base font-semibold leading-none">{data.raised_30d}</div>
             <div className="text-[9px] text-muted-foreground">30 days</div>
           </div>
           <div>
-            <div className="text-base font-semibold leading-none">{data.open}</div>
+            <div className="font-display text-base font-semibold leading-none">{data.open}</div>
             <div className="text-[9px] text-muted-foreground">open</div>
           </div>
           <div>
-            <div className={`text-base font-semibold leading-none ${data.overdue > 0 ? "text-amber-600 dark:text-amber-400" : ""}`}>
+            <div className={`font-display text-base font-semibold leading-none ${data.overdue > 0 ? "text-amber-600 dark:text-amber-400" : ""}`}>
               {data.overdue}
             </div>
             <div className="text-[9px] text-muted-foreground">overdue</div>

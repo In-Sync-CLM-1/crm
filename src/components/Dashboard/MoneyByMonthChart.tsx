@@ -85,21 +85,21 @@ export const MoneyByMonthChart = memo(function MoneyByMonthChart({
     <Card className="p-4">
       <div className="mb-2 flex items-start justify-between gap-2">
         <div>
-          <h3 className="text-sm font-semibold">Revenue by month</h3>
+          <h3 className="font-display text-[0.95rem] font-semibold tracking-tight">Revenue by month</h3>
           <p className="text-[11px] text-muted-foreground">Invoiced against cash actually received, last 12 months</p>
         </div>
         <div className="flex gap-4 text-right">
           <div>
-            <div className="text-base font-semibold leading-none">{formatCompactINR(invoiced)}</div>
+            <div className="font-display text-base font-semibold leading-none">{formatCompactINR(invoiced)}</div>
             <div className="text-[10px] text-muted-foreground">invoiced</div>
           </div>
           <div>
-            <div className="text-base font-semibold leading-none">{formatCompactINR(received)}</div>
+            <div className="font-display text-base font-semibold leading-none">{formatCompactINR(received)}</div>
             <div className="text-[10px] text-muted-foreground">received</div>
           </div>
           {projection && (
             <div>
-              <div className="text-base font-semibold leading-none text-muted-foreground">
+              <div className="font-display text-base font-semibold leading-none text-muted-foreground">
                 {formatCompactINR(projection.points.reduce((a, b) => a + b, 0))}
               </div>
               <div className="text-[10px] text-muted-foreground">next 3 mo (est.)</div>

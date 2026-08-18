@@ -47,7 +47,7 @@ export const PaidCampaignsPanel = memo(function PaidCampaignsPanel({
   return (
     <Card className="p-4">
       <div className="mb-2">
-        <h3 className="text-sm font-semibold">Paid campaigns</h3>
+        <h3 className="font-display text-[0.95rem] font-semibold tracking-tight">Paid campaigns</h3>
         <p className="text-[11px] text-muted-foreground">
           Google and Meta, last 30 days{g?.last_synced ? ` · Google synced to ${g.last_synced}` : ""}
         </p>
@@ -62,15 +62,15 @@ export const PaidCampaignsPanel = memo(function PaidCampaignsPanel({
           </p>
           <div className="grid grid-cols-3 gap-1 mt-1.5 border-t border-border pt-1.5 text-center">
             <div>
-              <div className="text-sm font-semibold">{g?.clicks ?? 0}</div>
+              <div className="font-display text-sm font-semibold">{g?.clicks ?? 0}</div>
               <div className="text-[9px] text-muted-foreground">clicks</div>
             </div>
             <div>
-              <div className="text-sm font-semibold">{ctr.toFixed(1)}%</div>
+              <div className="font-display text-sm font-semibold">{ctr.toFixed(1)}%</div>
               <div className="text-[9px] text-muted-foreground">CTR</div>
             </div>
             <div>
-              <div className="text-sm font-semibold">{formatCurrency(cpc)}</div>
+              <div className="font-display text-sm font-semibold">{formatCurrency(cpc)}</div>
               <div className="text-[9px] text-muted-foreground">per click</div>
             </div>
           </div>
@@ -80,22 +80,22 @@ export const PaidCampaignsPanel = memo(function PaidCampaignsPanel({
           <div className="text-[11px] font-medium mb-1">Meta</div>
           {metaReadable ? (
             <>
-              <div className="text-2xl font-semibold leading-tight">{formatCurrency(Number(m!.spend))}</div>
+              <div className="font-display text-2xl font-semibold leading-tight">{formatCurrency(Number(m!.spend))}</div>
               <div className="text-[10px] text-muted-foreground">
                 spent across {m!.accounts} ad account{m!.accounts === 1 ? "" : "s"}
                 {m!.last_synced ? ` · to ${m!.last_synced}` : ""}
               </div>
               <div className="grid grid-cols-3 gap-1 mt-2 border-t border-border pt-1.5 text-center">
                 <div>
-                  <div className="text-sm font-semibold">{Number(m!.reach ?? 0).toLocaleString("en-IN")}</div>
+                  <div className="font-display text-sm font-semibold">{Number(m!.reach ?? 0).toLocaleString("en-IN")}</div>
                   <div className="text-[9px] text-muted-foreground">reach</div>
                 </div>
                 <div>
-                  <div className="text-sm font-semibold">{Number(m!.clicks ?? 0).toLocaleString("en-IN")}</div>
+                  <div className="font-display text-sm font-semibold">{Number(m!.clicks ?? 0).toLocaleString("en-IN")}</div>
                   <div className="text-[9px] text-muted-foreground">clicks</div>
                 </div>
                 <div>
-                  <div className="text-sm font-semibold">{Number(m!.impressions ?? 0).toLocaleString("en-IN")}</div>
+                  <div className="font-display text-sm font-semibold">{Number(m!.impressions ?? 0).toLocaleString("en-IN")}</div>
                   <div className="text-[9px] text-muted-foreground">impressions</div>
                 </div>
               </div>

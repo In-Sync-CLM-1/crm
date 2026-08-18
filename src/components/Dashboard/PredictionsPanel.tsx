@@ -1,10 +1,11 @@
 import { memo } from "react";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { TrendingUp, TrendingDown, Minus, Info } from "lucide-react";
+import { Info } from "lucide-react";
 import type { DashboardOverview } from "@/hooks/useDashboardOverview";
 import { forecast, completedPeriods } from "@/utils/forecast";
 import { formatCompactINR } from "@/utils/currency";
+import { StatTile } from "@/components/Dashboard/StatTile";
 
 /**
  * Next month, projected from what actually happened.
@@ -26,20 +27,8 @@ function Tile({
   sub: string;
   direction?: "up" | "down" | "flat";
 }) {
-  const Icon = direction === "up" ? TrendingUp : direction === "down" ? TrendingDown : Minus;
-  const tone = direction === "up"
-    ? "text-emerald-600 dark:text-emerald-400"
-    : direction === "down" ? "text-rose-600 dark:text-rose-400" : "text-muted-foreground";
-  return (
-    <div className="rounded-lg border border-border p-3">
-      <div className="flex items-center justify-between">
-        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</span>
-        {direction && <Icon className={`h-3.5 w-3.5 ${tone}`} />}
-      </div>
-      <div className="text-xl font-semibold leading-tight mt-1">{value}</div>
-      <div className="text-[10px] text-muted-foreground mt-0.5">{sub}</div>
-    </div>
-  );
+  const tone = direction === "up" ? "good" : direction === "down" ? "critical" : "default";
+  return <StatTile label={label} value={value} hint={sub} tone={tone} />;
 }
 
 function dir(next: number, last: number): "up" | "down" | "flat" {
@@ -81,7 +70,7 @@ export const PredictionsPanel = memo(function PredictionsPanel({ data, isLoading
   return (
     <Card className="p-4">
       <div className="mb-3">
-        <h3 className="text-sm font-semibold">Next month, projected</h3>
+        <h3 className="font-display text-[0.95rem] font-semibold tracking-tight">Next month, projected</h3>
         <p className="text-[11px] text-muted-foreground">
           From the last 6 completed months, with the trend damped so one unusual month can't run away with it
         </p>
