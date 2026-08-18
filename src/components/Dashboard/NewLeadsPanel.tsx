@@ -31,7 +31,7 @@ export const NewLeadsPanel = memo(function NewLeadsPanel({
     <Card className="p-4">
       <div className="mb-3 flex items-start justify-between">
         <div>
-          <h3 className="text-sm font-semibold">New leads</h3>
+          <h3 className="font-display text-[0.95rem] font-semibold tracking-tight">New leads</h3>
           <p className="text-[11px] text-muted-foreground">Most recent enquiries, with where they came from</p>
         </div>
         {staleDays !== null && staleDays > 14 && (

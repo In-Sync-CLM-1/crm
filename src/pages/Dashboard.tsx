@@ -59,8 +59,9 @@ export default function Dashboard() {
       <div className="space-y-3">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <h1 className="text-2xl font-bold">Dashboard</h1>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">In-Sync CRM · Overview</p>
+            <h1 className="font-display text-[1.75rem] font-medium tracking-tight mt-0.5">Dashboard</h1>
+            <p className="text-xs text-muted-foreground mt-0.5">
               What the business and the engine actually did — and what next month looks like
             </p>
           </div>

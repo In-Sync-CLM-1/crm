@@ -2,151 +2,124 @@
 @tailwind components;
 @tailwind utilities;
 
-/* In-Sync Design System - Modern Vibrant Compact Theme */
+/* In-Sync Design System — drawn from the IT Helpdesk product's palette: a
+   restrained navy/cyan ink with green/amber/red as real semantic accents
+   rather than a saturated multi-color "vibrant SaaS" scheme. All colors HSL.
+   Font pairing: Inter (body) + Newsreader (display serif for headline
+   numbers and page titles) — see tailwind.config.ts `fontFamily.display`. */
 @layer base {
   :root {
-    /* Brand Colors - Vibrant teal palette */
-    --primary-teal: 168 80% 42%;
-    --deep-teal: 172 70% 32%;
-    --analytics-teal: 185 65% 45%;
-    --success-teal: 155 70% 40%;
-    
-    /* Neutrals - Rich slates */
-    --deep-slate: 222 47% 11%;
-    --medium-gray: 215 16% 47%;
-    --charcoal: 217 33% 17%;
-    
-    /* Accents - Vibrant energy */
-    --coral: 12 90% 62%;
-    --soft-coral: 15 85% 68%;
-    --warm-coral: 8 88% 58%;
-    --salmon: 14 82% 66%;
-    
-    /* Accents - Rich supporting colors */
-    --vibrant-yellow: 45 100% 51%;
-    --soft-yellow: 48 96% 58%;
-    --purple: 265 89% 62%;
-    --lavender: 268 75% 72%;
-    --sky-blue: 199 89% 48%;
-    --light-blue: 200 94% 68%;
-    --indigo: 238 75% 60%;
-    --emerald: 160 84% 39%;
-    
-    /* Neutrals - Light with color hints */
-    --light-neutral: 210 20% 98%;
-    --sage: 160 15% 70%;
-    --gray-green: 168 8% 52%;
-    
-    /* Semantic Colors */
-    --success: 155 70% 40%;
-    --success-bg: 155 50% 94%;
-    --warning: 45 100% 51%;
-    --warning-bg: 45 95% 94%;
-    --error: 0 84% 60%;
-    --error-bg: 0 75% 96%;
-    --info: 199 89% 48%;
-    --info-bg: 199 85% 95%;
-    
-    /* Visual Effects - Rich & vibrant */
-    --gradient-primary: linear-gradient(135deg, hsl(168 80% 42%) 0%, hsl(185 65% 45%) 50%, hsl(172 70% 32%) 100%);
-    --gradient-accent: linear-gradient(135deg, hsl(12 90% 62%) 0%, hsl(15 85% 68%) 100%);
-    --gradient-purple: linear-gradient(135deg, hsl(265 89% 62%) 0%, hsl(238 75% 60%) 100%);
-    --gradient-sidebar: linear-gradient(180deg, hsl(222 47% 11%) 0%, hsl(217 33% 17%) 100%);
-    --gradient-page: linear-gradient(135deg, hsl(210 20% 98%) 0%, hsl(168 20% 96%) 50%, hsl(210 20% 98%) 100%);
-    --shadow-sm: 0 1px 3px hsl(222 47% 11% / 0.08);
-    --shadow-md: 0 4px 12px hsl(222 47% 11% / 0.12);
-    --shadow-lg: 0 12px 32px hsl(222 47% 11% / 0.15);
-    --shadow-glow: 0 0 32px hsl(168 80% 42% / 0.25);
-    --shadow-colored: 0 4px 20px hsl(168 80% 42% / 0.15);
-    
-    /* Design Tokens - Light Mode with warmth */
-    --background: 210 20% 98%;
-    --foreground: var(--deep-slate);
-    
+    --background: 210 25% 97%;
+    --foreground: 222 35% 14%;
+
     --card: 0 0% 100%;
-    --card-foreground: var(--deep-slate);
-    
+    --card-foreground: 222 35% 14%;
+
     --popover: 0 0% 100%;
-    --popover-foreground: var(--deep-slate);
-    
-    --primary: var(--primary-teal);
+    --popover-foreground: 222 35% 14%;
+
+    --primary: 199 74% 42%;
     --primary-foreground: 0 0% 100%;
-    
-    --secondary: 168 20% 94%;
-    --secondary-foreground: var(--deep-slate);
-    
-    --muted: 215 20% 95%;
-    --muted-foreground: var(--medium-gray);
-    
-    --accent: 168 25% 94%;
-    --accent-foreground: var(--deep-slate);
-    
-    --destructive: var(--error);
+
+    --secondary: 210 20% 94%;
+    --secondary-foreground: 222 30% 18%;
+
+    --muted: 210 20% 95%;
+    --muted-foreground: 222 12% 46%;
+
+    --accent: 101 34% 38%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
-    
-    --border: 215 20% 88%;
-    --input: 215 20% 88%;
-    --ring: var(--primary-teal);
-    
-    /* Compact radius */
-    --radius: 0.5rem;
-    
-    /* Sidebar tokens - Dark gradient sidebar */
-    --sidebar-background: 222 47% 11%;
-    --sidebar-foreground: 210 20% 98%;
-    --sidebar-primary: 168 80% 50%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 217 33% 20%;
-    --sidebar-accent-foreground: 210 20% 98%;
-    --sidebar-border: 217 30% 22%;
-    --sidebar-ring: 168 80% 50%;
-    --sidebar-muted: 215 16% 60%;
+
+    --border: 210 18% 89%;
+    --input: 210 18% 89%;
+    --ring: 199 74% 42%;
+
+    --radius: 0.75rem;
+
+    /* Visual Effects — kept for the handful of gradient/glow utility classes
+       below, repointed to the new primary/accent hues. */
+    --gradient-primary: linear-gradient(135deg, hsl(199 74% 42%) 0%, hsl(199 78% 55%) 50%, hsl(222 46% 22%) 100%);
+    --gradient-accent: linear-gradient(135deg, hsl(101 34% 38%) 0%, hsl(101 34% 48%) 100%);
+    --gradient-purple: linear-gradient(135deg, hsl(262 55% 55%) 0%, hsl(238 60% 55%) 100%);
+    --gradient-sidebar: linear-gradient(180deg, hsl(222 46% 14%) 0%, hsl(222 40% 21%) 100%);
+    --gradient-page: linear-gradient(135deg, hsl(210 25% 97%) 0%, hsl(199 20% 96%) 50%, hsl(210 25% 97%) 100%);
+    --shadow-sm: 0 1px 3px hsl(222 35% 14% / 0.08);
+    --shadow-md: 0 4px 12px hsl(222 35% 14% / 0.12);
+    --shadow-lg: 0 12px 32px hsl(222 35% 14% / 0.15);
+    --shadow-glow: 0 0 32px hsl(199 74% 42% / 0.25);
+    --shadow-colored: 0 4px 20px hsl(199 74% 42% / 0.15);
+
+    /* Deep navy sidebar — matches IT Helpdesk's own mark-ink shell. */
+    --sidebar-background: 222 46% 14%;
+    --sidebar-foreground: 210 22% 85%;
+    --sidebar-primary: 199 78% 55%;
+    --sidebar-primary-foreground: 222 46% 14%;
+    --sidebar-accent: 222 40% 21%;
+    --sidebar-accent-foreground: 199 82% 70%;
+    --sidebar-border: 222 36% 22%;
+    --sidebar-ring: 199 78% 55%;
+    --sidebar-muted: 210 16% 65%;
+
+    --chart-1: 199 74% 45%;
+    --chart-2: 101 34% 40%;
+    --chart-3: 38 88% 55%;
+    --chart-4: 0 72% 58%;
+    --chart-5: 262 55% 55%;
   }
-  
+
   .dark {
-    --background: 222 47% 8%;
-    --foreground: 210 20% 98%;
-    
-    --card: 217 33% 12%;
-    --card-foreground: 210 20% 98%;
-    
-    --popover: 217 33% 12%;
-    --popover-foreground: 210 20% 98%;
-    
-    --primary: 168 80% 50%;
-    --primary-foreground: 0 0% 100%;
-    
-    --secondary: 217 30% 18%;
-    --secondary-foreground: 210 20% 98%;
-    
-    --muted: 217 30% 16%;
-    --muted-foreground: 215 16% 60%;
-    
-    --accent: 217 30% 18%;
-    --accent-foreground: 210 20% 98%;
-    
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 100%;
-    
-    --border: 217 30% 18%;
-    --input: 217 30% 18%;
-    --ring: 168 80% 50%;
-    
-    --gradient-primary: linear-gradient(135deg, hsl(168 80% 50%) 0%, hsl(185 65% 50%) 100%);
-    --gradient-page: linear-gradient(135deg, hsl(222 47% 8%) 0%, hsl(217 33% 10%) 100%);
+    --background: 222 32% 8%;
+    --foreground: 210 20% 96%;
+
+    --card: 222 28% 11%;
+    --card-foreground: 210 20% 96%;
+
+    --popover: 222 28% 11%;
+    --popover-foreground: 210 20% 96%;
+
+    --primary: 199 78% 58%;
+    --primary-foreground: 222 32% 8%;
+
+    --secondary: 222 22% 16%;
+    --secondary-foreground: 210 20% 96%;
+
+    --muted: 222 20% 16%;
+    --muted-foreground: 210 12% 65%;
+
+    --accent: 101 34% 48%;
+    --accent-foreground: 222 32% 8%;
+
+    --destructive: 0 62% 40%;
+    --destructive-foreground: 210 20% 96%;
+
+    --border: 222 20% 18%;
+    --input: 222 20% 18%;
+    --ring: 199 78% 58%;
+
+    --gradient-primary: linear-gradient(135deg, hsl(199 78% 58%) 0%, hsl(101 34% 52%) 100%);
+    --gradient-page: linear-gradient(135deg, hsl(222 32% 8%) 0%, hsl(222 28% 10%) 100%);
     --shadow-md: 0 4px 12px hsl(0 0% 0% / 0.35);
     --shadow-lg: 0 12px 32px hsl(0 0% 0% / 0.45);
-    --shadow-glow: 0 0 32px hsl(168 80% 50% / 0.3);
-    
-    --sidebar-background: 222 47% 6%;
-    --sidebar-foreground: 210 20% 98%;
-    --sidebar-primary: 168 80% 55%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 217 33% 15%;
-    --sidebar-accent-foreground: 210 20% 98%;
-    --sidebar-border: 217 30% 18%;
-    --sidebar-ring: 168 80% 55%;
-    --sidebar-muted: 215 16% 55%;
+    --shadow-glow: 0 0 32px hsl(199 78% 58% / 0.3);
+
+    --sidebar-background: 222 34% 9%;
+    --sidebar-foreground: 210 16% 80%;
+    --sidebar-primary: 199 78% 58%;
+    --sidebar-primary-foreground: 222 34% 9%;
+    --sidebar-accent: 222 26% 16%;
+    --sidebar-accent-foreground: 199 82% 74%;
+    --sidebar-border: 222 20% 16%;
+    --sidebar-ring: 199 78% 58%;
+    --sidebar-muted: 210 12% 55%;
+
+    --chart-1: 199 78% 62%;
+    --chart-2: 101 34% 52%;
+    --chart-3: 38 82% 60%;
+    --chart-4: 0 65% 62%;
+    --chart-5: 262 58% 65%;
   }
 }
 
@@ -157,6 +130,7 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     font-size: 14px;
     line-height: 1.5;
     background: var(--gradient-page);

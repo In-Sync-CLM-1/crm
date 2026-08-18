@@ -132,7 +132,7 @@ function DashboardLayout({ children }: DashboardLayoutProps) {
         {orgLogo ? (
           <img src={orgLogo} alt="Organization Logo" className="h-8 object-contain" />
         ) : (
-          <h1 className="text-lg font-semibold text-primary">In-Sync</h1>
+          <h1 className="font-display text-lg font-medium tracking-tight text-primary">In-Sync</h1>
         )}
         <div className="flex items-center gap-1">
           <SyncStatus />
@@ -166,7 +166,7 @@ function DashboardLayout({ children }: DashboardLayoutProps) {
                   <img src={orgLogo} alt="Organization Logo" className="h-[100px] object-contain" />
                 </div>
               ) : (
-                <h1 className="text-xl font-semibold text-sidebar-primary">In-Sync</h1>
+                <h1 className="font-display text-xl font-medium tracking-tight text-sidebar-primary">In-Sync</h1>
               )}
               <p className="text-base font-semibold text-sidebar-foreground truncate max-w-full">{userName}</p>
             </div>
