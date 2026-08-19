@@ -25,6 +25,33 @@ async function adsQuery(env, at, query) {
   return (await r.json()).results || [];
 }
 
+// Microsoft Clarity project wcnm558k89 records ONLY the WorkSync landing page
+// (loaded page-scoped, not site-wide) — so every session in this project is
+// ad-relevant landing-page behavior, no URL filtering needed.
+async function clarityBehavior(env) {
+  if (!env.CLARITY_API_TOKEN) return null;
+  try {
+    const r = await fetch('https://www.clarity.ms/export-data/api/v1/project-live-insights?numOfDays=3', {
+      headers: { Authorization: 'Bearer ' + env.CLARITY_API_TOKEN },
+    });
+    if (!r.ok) return null;
+    const rows = await r.json();
+    const info = (name) => rows.find((x) => x.metricName === name)?.information?.[0] || {};
+    const traffic = info('Traffic');
+    const scroll = info('ScrollDepth');
+    const engagement = info('EngagementTime');
+    const sessions = +(traffic.totalSessionCount || 0);
+    return {
+      sessions,
+      avgScrollDepth: scroll.averageScrollDepth == null ? null : Math.round(scroll.averageScrollDepth),
+      avgEngagementSec: engagement.activeTime == null ? null : Math.round(engagement.activeTime),
+      ragePct: +(info('RageClickCount').sessionsWithMetricPercentage || 0),
+      deadPct: +(info('DeadClickCount').sessionsWithMetricPercentage || 0),
+      quickbackPct: +(info('QuickbackClick').sessionsWithMetricPercentage || 0),
+    };
+  } catch { return null; }
+}
+
 async function computeSnapshot(env) {
   const DAYS = 7;
   const at = await token(env);
@@ -43,6 +70,7 @@ async function computeSnapshot(env) {
 
   const spend = cost / 1e6, ctr = impr ? clicks / impr * 100 : 0, cpl = leads.length ? spend / leads.length : 0, cpd = demos ? spend / demos : 0;
   const live = status === 'ENABLED';
+  const clarity = await clarityBehavior(env);
   let diagClass, diagText, digest;
   // Track when it first went live, so we can tell "just launched / ads in review"
   // apart from a genuine "live a while, still no impressions" targeting problem.
@@ -58,7 +86,23 @@ async function computeSnapshot(env) {
   else if (demos === 0) { diagClass = 'warn'; diagText = 'Leads but no demos → dialer/booking step. Mechanics fix.'; digest = `${leads.length} lead(s) in, but no demo booked yet. Checking the Riya call → booking step.`; }
   else { diagClass = 'ok'; diagText = 'Full funnel firing — leads and demos flowing.'; digest = `Healthy: ${leads.length} leads → ${demos} demo(s) at ₹${cpd.toFixed(0)}/qualified demo. The machine works; next we add a challenger track.`; }
 
-  return { generatedAt: new Date().toISOString(), days: DAYS, status, live, impr, clicks, spend, conv, leads: leads.length, byStage, demos, ctr, cpl, cpd, diagClass, diagText, digest };
+  return { generatedAt: new Date().toISOString(), days: DAYS, status, live, impr, clicks, spend, conv, leads: leads.length, byStage, demos, ctr, cpl, cpd, diagClass, diagText, digest, clarity };
+}
+
+function renderBehavior(c) {
+  const link = '<a href="https://clarity.microsoft.com/projects/view/wcnm558k89/dashboard" target="_blank">Watch sessions in Clarity ↗</a>';
+  if (!c) return `<div class="behavior"><h3>LANDING PAGE BEHAVIOR ${link}</h3><div class="fs">Not configured — set CLARITY_API_TOKEN.</div></div>`;
+  if (!c.sessions) return `<div class="behavior"><h3>LANDING PAGE BEHAVIOR ${link}</h3><div class="fs">No sessions recorded in the last 3 days yet — waiting on ad traffic.</div></div>`;
+  const stat = (v, l, flag) => `<div class="bstat"><div class="bv${flag ? ' flag' : ''}">${v}</div><div class="bl">${l}</div></div>`;
+  const mins = c.avgEngagementSec == null ? '—' : c.avgEngagementSec < 60 ? c.avgEngagementSec + 's' : (c.avgEngagementSec / 60).toFixed(1) + 'm';
+  return `<div class="behavior"><h3>LANDING PAGE BEHAVIOR (last 3 days) ${link}</h3>
+<div class="bgrid">
+  ${stat(c.sessions, 'sessions recorded')}
+  ${stat(c.avgScrollDepth == null ? '—' : c.avgScrollDepth + '%', 'avg scroll depth')}
+  ${stat(mins, 'avg time on page')}
+  ${stat(c.quickbackPct.toFixed(0) + '%', 'bounced right back', c.quickbackPct > 30)}
+  ${stat(c.ragePct.toFixed(0) + '% / ' + c.deadPct.toFixed(0) + '%', 'rage / dead clicks', c.ragePct > 10 || c.deadPct > 15)}
+</div></div>`;
 }
 
 function render(s) {
@@ -82,6 +126,13 @@ h1{font-size:24px;font-weight:800}
 .funnel{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px}
 .fstage{background:#161226;border:1px solid #2a2142;border-radius:12px;padding:14px;text-align:center}
 .fn{font-size:30px;font-weight:800}.fl{font-size:12px;color:#c4b5fd;margin-top:3px;text-transform:uppercase;letter-spacing:.4px}.fs{font-size:11px;color:#8a7eb0;margin-top:2px}
+.behavior{background:#161226;border:1px solid #2a2142;border-radius:12px;padding:16px 18px;margin-bottom:16px}
+.behavior h3{font-size:13px;color:#c4b5fd;letter-spacing:.5px;text-transform:uppercase;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center}
+.behavior h3 a{color:#a78bfa;font-size:12px;text-transform:none;letter-spacing:0;font-weight:600}
+.bgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+.bstat{text-align:center}.bv{font-size:20px;font-weight:800}.bl{font-size:11px;color:#8a7eb0;margin-top:2px}
+.bv.flag{color:#fcd9a3}
+@media(max-width:760px){.bgrid{grid-template-columns:repeat(2,1fr)}}
 .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:18px}
 .kpi{background:#13101f;border:1px solid #271f3f;border-radius:11px;padding:12px 14px}
 .kl{font-size:11px;color:#9b8fc0;text-transform:uppercase}.kv{font-size:22px;font-weight:800;margin-top:3px}.ks{font-size:11px;color:#8a7eb0}
@@ -102,6 +153,7 @@ th,td{text-align:left;padding:10px 14px;font-size:14px;border-bottom:1px solid #
   ${tile('In calling', s.leads, 'Riya warm call')}
   ${tile('Demos', s.demos, s.demos ? '₹' + s.cpd.toFixed(0) + '/demo' : '')}
 </div>
+${renderBehavior(s.clarity)}
 <div class="kpis">
   ${kpi('Spend', '₹' + s.spend.toFixed(0), 'last ' + s.days + 'd')}
   ${kpi('CTR', s.ctr.toFixed(1) + '%', s.clicks + ' clicks')}
