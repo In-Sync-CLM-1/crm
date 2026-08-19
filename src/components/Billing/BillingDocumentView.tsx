@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ChevronLeft, Download, Mail, CreditCard, Loader2, Pencil, Trash2, FileX2, ArrowRight } from "lucide-react";
 import { formatCurrencyINR, numberToWords, statusLabel, formatFinancialYear, resolveIssuer } from "@/utils/billingUtils";
+import { downloadBillingDocumentPdf } from "@/utils/generateBillingPdf";
 import { DOC_TYPE_LABELS, STATUS_COLORS } from "@/types/billing";
 import type { BillingDocument, BillingPayment, BillingSettings } from "@/types/billing";
 import { RecordPaymentDialog } from "./RecordPaymentDialog";
@@ -55,55 +56,15 @@ export function BillingDocumentView({ doc, payments, settings, onBack, onRecordP
   const amountPayable = Math.max(0, doc.total_amount - totalTds - totalAdvance);
 
   const handleDownloadPDF = useCallback(async () => {
-    if (!invoiceRef.current) return;
     setDownloading(true);
     try {
-      const html2canvas = (await import("html2canvas")).default;
-      const jsPDF = (await import("jspdf")).default;
-
-      const el = invoiceRef.current;
-      const originalWidth = el.style.width;
-      const originalMaxWidth = el.style.maxWidth;
-
-      // Fix width to 800px so text renders at a readable size on A4
-      el.style.width = "800px";
-      el.style.maxWidth = "800px";
-
-      const canvas = await html2canvas(el, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: "#ffffff",
-      });
-
-      // Restore original width
-      el.style.width = originalWidth;
-      el.style.maxWidth = originalMaxWidth;
-
-      const imgWidth = 210; // A4 width in mm
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      const pdf = new jsPDF("p", "mm", "a4");
-      const pageHeight = 297; // A4 height in mm
-
-      let heightLeft = imgHeight;
-      let position = 0;
-
-      pdf.addImage(canvas.toDataURL("image/png"), "PNG", 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
-
-      while (heightLeft > 0) {
-        position -= pageHeight;
-        pdf.addPage();
-        pdf.addImage(canvas.toDataURL("image/png"), "PNG", 0, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
-      }
-
-      pdf.save(`${doc.doc_number}.pdf`);
+      await downloadBillingDocumentPdf({ doc, issuer, totalTds, totalAdvance, hasDeductions, amountPayable });
     } catch (err) {
       console.error("PDF generation failed:", err);
     } finally {
       setDownloading(false);
     }
-  }, [doc.doc_number]);
+  }, [doc, issuer, totalTds, totalAdvance, hasDeductions, amountPayable]);
 
   return (
     <div className="space-y-5">
