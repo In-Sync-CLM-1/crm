@@ -30,18 +30,20 @@ const clean = (s?: string | null) =>
     .replace(/[•●]/g, "-")
     .replace(/[^\x00-\xFF]/g, ""); // strip anything else outside WinAnsi rather than render garbage
 
+// Works in both the browser (fetch → Blob) and Node (fetch → Buffer) — avoids
+// FileReader, which only exists in the browser, so this same builder can run
+// in a one-off Node script for bulk regeneration as well as the live app.
 async function toDataUrl(url?: string): Promise<string | null> {
   if (!url) return null;
   try {
     const res = await fetch(url);
     if (!res.ok) return null;
-    const blob = await res.blob();
-    return await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
+    const contentType = res.headers.get("content-type") || "image/png";
+    const buf = new Uint8Array(await res.arrayBuffer());
+    const base64 = typeof Buffer !== "undefined"
+      ? Buffer.from(buf).toString("base64")
+      : btoa(buf.reduce((s, b) => s + String.fromCharCode(b), ""));
+    return `data:${contentType};base64,${base64}`;
   } catch {
     return null; // logo/signature is a nice-to-have — never block the PDF on it
   }
@@ -56,9 +58,12 @@ interface GenerateArgs {
   amountPayable: number;
 }
 
-export async function downloadBillingDocumentPdf({ doc, issuer, totalTds, totalAdvance, hasDeductions, amountPayable }: GenerateArgs) {
-  const [{ default: jsPDF }] = await Promise.all([import("jspdf")]);
-  await import("jspdf-autotable");
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function buildBillingDocumentPdf({ doc, issuer, totalTds, totalAdvance, hasDeductions, amountPayable }: GenerateArgs): Promise<any> {
+  const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+    import("jspdf"),
+    import("jspdf-autotable"),
+  ]);
 
   const [logoDataUrl, signatureDataUrl] = await Promise.all([
     toDataUrl(issuer.logo_url),
@@ -149,8 +154,7 @@ export async function downloadBillingDocumentPdf({ doc, issuer, totalTds, totalA
     money(item.total),
   ]);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (pdf as any).autoTable({
+  autoTable(pdf, {
     head: [head],
     body,
     startY: y,
@@ -242,5 +246,10 @@ export async function downloadBillingDocumentPdf({ doc, issuer, totalTds, totalA
   pdf.setFont("helvetica", "normal").setFontSize(6.5).setTextColor(...MUTED);
   pdf.text("This is a computer-generated document and does not require a physical signature.", PAGE_WIDTH / 2, y, { align: "center" });
 
-  pdf.save(`${doc.doc_number}.pdf`);
+  return pdf;
+}
+
+export async function downloadBillingDocumentPdf(args: GenerateArgs) {
+  const pdf = await buildBillingDocumentPdf(args);
+  pdf.save(`${args.doc.doc_number}.pdf`);
 }
