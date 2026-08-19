@@ -8,7 +8,9 @@ import { LoadingState } from "@/components/common/LoadingState";
 import { useOrgContext } from "@/hooks/useOrgContext";
 import { useNotification } from "@/hooks/useNotification";
 import { CopyButton } from "@/components/common/CopyButton";
-import { Pause, IndianRupee, Megaphone } from "lucide-react";
+import { Pause, IndianRupee, Megaphone, ExternalLink } from "lucide-react";
+
+const ACQUISITION_DASHBOARD_URL = "https://worksync-ads-dashboard.echocommunicator.workers.dev/";
 
 interface AdCampaign {
   id: string;
@@ -214,6 +216,24 @@ export default function AdCampaigns() {
           </p>
         </div>
 
+        <a href={ACQUISITION_DASHBOARD_URL} target="_blank" rel="noopener noreferrer" className="block">
+          <Card className="border-primary/30 hover:border-primary/60 transition-colors">
+            <CardContent className="py-5 flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <div className="font-semibold flex items-center gap-2">
+                  Live campaign performance <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
+                </div>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  The real, currently-running Google Ads campaign — spend, clicks, leads, demos, and landing-page
+                  drop-off behaviour. The list below is a separate, currently paused engine that writes its own
+                  campaigns; it's empty because that engine hasn't been turned on.
+                </p>
+              </div>
+              <Badge variant="outline">Opens dashboard ↗</Badge>
+            </CardContent>
+          </Card>
+        </a>
+
         <BudgetPanel />
 
         {isLoading ? (
@@ -222,7 +242,8 @@ export default function AdCampaigns() {
           <Card>
             <CardContent className="py-10 text-center text-muted-foreground flex flex-col items-center gap-2">
               <Megaphone className="h-6 w-6" />
-              No campaigns yet. Once a budget is set the engine will take it from there.
+              This engine hasn't been switched on, so it hasn't written any campaigns of its own.
+              The real running campaign lives in the link above, not here.
             </CardContent>
           </Card>
         ) : (
