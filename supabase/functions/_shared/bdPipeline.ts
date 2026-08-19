@@ -194,13 +194,26 @@ export function gradeFirm(f: FirmRow): GradeResult {
   return { grade, reasons, promoted_by: promoted };
 }
 
-/** Scan research text for disqualifier patterns. Returns flags — never a verdict. */
+/**
+ * Scan research text for disqualifier patterns. Returns flags — never a verdict.
+ * Each hit carries a window of surrounding text, not just the bare matched
+ * phrase — "acquired by" on its own (the old behavior) told a reviewer a red
+ * flag fired but never who acquired the firm, forcing them to go re-research
+ * it themselves before they could act on the flag at all.
+ */
 export function disqualifierFlags(text: string): Record<string, string[]> {
   const hits: Record<string, string[]> = {};
   for (const [name, patterns] of Object.entries(DISQUALIFIERS)) {
     for (const re of patterns) {
       const m = text.match(re);
-      if (m) (hits[name] ||= []).push(m[0]);
+      if (!m) continue;
+      if (m.index == null) { (hits[name] ||= []).push(m[0]); continue; }
+      const start = Math.max(0, m.index - 60);
+      const end = Math.min(text.length, m.index + m[0].length + 80);
+      let snippet = text.slice(start, end).replace(/\s+/g, ' ').trim();
+      if (start > 0) snippet = `…${snippet}`;
+      if (end < text.length) snippet = `${snippet}…`;
+      (hits[name] ||= []).push(snippet);
     }
   }
   return hits;
