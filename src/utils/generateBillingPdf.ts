@@ -30,20 +30,64 @@ const clean = (s?: string | null) =>
     .replace(/[•●]/g, "-")
     .replace(/[^\x00-\xFF]/g, ""); // strip anything else outside WinAnsi rather than render garbage
 
+// A frozen seller_snapshot can carry a logo saved at its original upload
+// resolution — one real one measured 11,030x15,062px (166 megapixels) for a
+// slot displayed at 22x14mm. jsPDF has no native image decoder in the
+// browser, so embedding that directly makes addImage() pure-JS-decode the
+// whole thing — measured at 40+ seconds, which is what "the button doesn't
+// work" actually was. Downscale through a real <canvas> (native, fast
+// decode) before jsPDF ever sees it. No-ops in Node (no DOM) — the one-off
+// batch script doesn't hit this path's cost the same way a live click does.
+async function downscaleDataUrl(dataUrl: string, maxDim = 500): Promise<string> {
+  if (typeof document === "undefined" || typeof Image === "undefined") return dataUrl;
+  try {
+    return await new Promise<string>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        if (Math.max(img.width, img.height) <= maxDim) { resolve(dataUrl); return; }
+        const scale = maxDim / Math.max(img.width, img.height);
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        const ctx = canvas.getContext("2d");
+        if (!ctx) { resolve(dataUrl); return; }
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/png"));
+      };
+      img.onerror = () => reject(new Error("image decode failed"));
+      img.src = dataUrl;
+    });
+  } catch {
+    return dataUrl; // fall back to the original rather than block the PDF
+  }
+}
+
 // Works in both the browser (fetch → Blob) and Node (fetch → Buffer) — avoids
 // FileReader, which only exists in the browser, so this same builder can run
 // in a one-off Node script for bulk regeneration as well as the live app.
 async function toDataUrl(url?: string): Promise<string | null> {
   if (!url) return null;
+  // A frozen seller_snapshot often already stores the logo/signature as a
+  // data: URI (not a remote file) — decoding it and re-encoding straight
+  // back to base64 is pure waste, and in the browser (no Buffer) the
+  // fallback path builds the output one character at a time, which for a
+  // multi-MB image is slow enough to look like the export silently hung.
+  if (url.startsWith("data:")) return downscaleDataUrl(url);
   try {
     const res = await fetch(url);
     if (!res.ok) return null;
     const contentType = res.headers.get("content-type") || "image/png";
     const buf = new Uint8Array(await res.arrayBuffer());
-    const base64 = typeof Buffer !== "undefined"
-      ? Buffer.from(buf).toString("base64")
-      : btoa(buf.reduce((s, b) => s + String.fromCharCode(b), ""));
-    return `data:${contentType};base64,${base64}`;
+    if (typeof Buffer !== "undefined") return `data:${contentType};base64,${Buffer.from(buf).toString("base64")}`;
+    // Browser fallback for a genuinely remote image — chunked to avoid both
+    // the call-stack limit of spreading a large array and the slowness of
+    // building the string one byte at a time.
+    let binary = "";
+    const CHUNK = 0x8000;
+    for (let i = 0; i < buf.length; i += CHUNK) {
+      binary += String.fromCharCode(...buf.subarray(i, i + CHUNK));
+    }
+    return downscaleDataUrl(`data:${contentType};base64,${btoa(binary)}`);
   } catch {
     return null; // logo/signature is a nice-to-have — never block the PDF on it
   }
