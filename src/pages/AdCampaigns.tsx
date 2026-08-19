@@ -8,9 +8,117 @@ import { LoadingState } from "@/components/common/LoadingState";
 import { useOrgContext } from "@/hooks/useOrgContext";
 import { useNotification } from "@/hooks/useNotification";
 import { CopyButton } from "@/components/common/CopyButton";
-import { Pause, IndianRupee, Megaphone, ExternalLink } from "lucide-react";
+import { Pause, Play, IndianRupee, Megaphone, ExternalLink } from "lucide-react";
 
 const ACQUISITION_DASHBOARD_URL = "https://worksync-ads-dashboard.echocommunicator.workers.dev/";
+
+interface GoogleAdsCampaign {
+  id: string;
+  google_campaign_id: string;
+  account_id: string;
+  name: string;
+  status: string;
+  campaign_type: string | null;
+  budget_amount: number | null;
+  budget_currency: string | null;
+  impressions: number | null;
+  clicks: number | null;
+  cost: number | null;
+  conversions: number | null;
+  ctr: number | null;
+  avg_cpc: number | null;
+  metrics_date: string | null;
+  last_synced_at: string | null;
+}
+
+const inrNum = (n: number | null | undefined) => (n == null ? "—" : Number(n).toLocaleString("en-IN", { maximumFractionDigits: 0 }));
+
+function GoogleAdsCampaignsSection() {
+  const { effectiveOrgId } = useOrgContext();
+  const notify = useNotification();
+  const queryClient = useQueryClient();
+
+  const { data: campaigns, isLoading } = useQuery({
+    queryKey: ["mkt-google-ads-campaigns-live", effectiveOrgId],
+    queryFn: async (): Promise<GoogleAdsCampaign[]> => {
+      if (!effectiveOrgId) return [];
+      const { data, error } = await supabase
+        .from("mkt_google_ads_campaigns")
+        .select("*")
+        .eq("org_id", effectiveOrgId)
+        .order("updated_at", { ascending: false });
+      if (error) throw error;
+      return data as unknown as GoogleAdsCampaign[];
+    },
+    enabled: !!effectiveOrgId,
+  });
+
+  const toggle = useMutation({
+    mutationFn: async ({ id, action }: { id: string; action: "pause" | "enable" }) => {
+      const { data, error } = await supabase.functions.invoke("mkt-google-ads-campaign-control", {
+        body: { campaign_row_id: id, action },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      notify.success(data.status === "PAUSED" ? "Campaign paused" : "Campaign enabled", data.campaign);
+      queryClient.invalidateQueries({ queryKey: ["mkt-google-ads-campaigns-live"] });
+    },
+    onError: (e: Error) => notify.error("Couldn't update campaign", e.message),
+  });
+
+  if (!isLoading && !campaigns?.length) return null; // nothing real synced yet — the empty-state card below covers this
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Live Google Ads Campaigns</CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Synced daily from the real Google Ads account — this is what's actually running, however it was created
+          (this app, the autonomous engine, or the Google Ads console directly).
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {isLoading ? (
+          <LoadingState message="Loading campaigns..." />
+        ) : (
+          campaigns!.map((c) => (
+            <div key={c.id} className="rounded-lg border p-4 space-y-3">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-semibold">{c.name}</span>
+                    {c.campaign_type && <Badge variant="outline">{c.campaign_type}</Badge>}
+                    <Badge variant={c.status === "ENABLED" ? "default" : "secondary"}>{c.status}</Badge>
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={toggle.isPending}
+                  onClick={() => toggle.mutate({ id: c.id, action: c.status === "ENABLED" ? "pause" : "enable" })}
+                >
+                  {c.status === "ENABLED"
+                    ? <><Pause className="h-3.5 w-3.5 mr-1" /> Pause</>
+                    : <><Play className="h-3.5 w-3.5 mr-1" /> Enable</>}
+                </Button>
+              </div>
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 text-sm">
+                <div><span className="text-muted-foreground">Budget</span><div className="font-medium">₹{inrNum(c.budget_amount)}/day</div></div>
+                <div><span className="text-muted-foreground">Impressions</span><div className="font-medium">{inrNum(c.impressions)}</div></div>
+                <div><span className="text-muted-foreground">Clicks</span><div className="font-medium">{inrNum(c.clicks)}</div></div>
+                <div><span className="text-muted-foreground">Cost</span><div className="font-medium">₹{inrNum(c.cost)}</div></div>
+                <div><span className="text-muted-foreground">Conversions</span><div className="font-medium">{inrNum(c.conversions)}</div></div>
+                <div><span className="text-muted-foreground">CTR</span><div className="font-medium">{c.ctr ? `${(c.ctr * 100).toFixed(2)}%` : "—"}</div></div>
+              </div>
+            </div>
+          ))
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 interface AdCampaign {
   id: string;
@@ -221,12 +329,10 @@ export default function AdCampaigns() {
             <CardContent className="py-5 flex items-center justify-between gap-3 flex-wrap">
               <div>
                 <div className="font-semibold flex items-center gap-2">
-                  Live campaign performance <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
+                  Full funnel dashboard <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
                 </div>
                 <p className="text-sm text-muted-foreground mt-0.5">
-                  The real, currently-running Google Ads campaign — spend, clicks, leads, demos, and landing-page
-                  drop-off behaviour. The list below is a separate, currently paused engine that writes its own
-                  campaigns; it's empty because that engine hasn't been turned on.
+                  Spend, clicks, leads, demos, cost-per-demo, and landing-page drop-off behaviour for the campaign below.
                 </p>
               </div>
               <Badge variant="outline">Opens dashboard ↗</Badge>
@@ -234,7 +340,17 @@ export default function AdCampaigns() {
           </Card>
         </a>
 
+        <GoogleAdsCampaignsSection />
+
         <BudgetPanel />
+
+        <div>
+          <h2 className="text-lg font-semibold">Autonomous engine campaigns</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Campaigns the engine writes, launches and retires on its own within budget — separate from the real
+            synced list above. Empty when the engine hasn't been turned on for a channel.
+          </p>
+        </div>
 
         {isLoading ? (
           <LoadingState message="Loading campaigns..." />
@@ -242,8 +358,8 @@ export default function AdCampaigns() {
           <Card>
             <CardContent className="py-10 text-center text-muted-foreground flex flex-col items-center gap-2">
               <Megaphone className="h-6 w-6" />
-              This engine hasn't been switched on, so it hasn't written any campaigns of its own.
-              The real running campaign lives in the link above, not here.
+              This engine hasn't been switched on, so it hasn't written any campaigns of its own yet.
+              The real running campaign is listed above.
             </CardContent>
           </Card>
         ) : (
