@@ -184,7 +184,9 @@ function BudgetPanel() {
       </div>
       <div className="flex items-center gap-2">
         <span className="text-sm">{ch ? `${inr(ch.daily_budget)}/day` : "not set"}</span>
-        <Badge variant={ch?.active ? "default" : "secondary"}>{ch?.active ? "active" : ch ? "paused" : "off"}</Badge>
+        <Badge variant={ch?.active ? "default" : "secondary"}>
+          {ch?.active ? "engine active" : ch ? "engine off" : "not configured"}
+        </Badge>
       </div>
     </div>
   );
@@ -192,10 +194,11 @@ function BudgetPanel() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Budget</CardTitle>
+        <CardTitle>Autonomous Engine Budget</CardTitle>
         <p className="text-xs text-muted-foreground">
-          The only lever the engine can't pull itself. Set on request; the engine
-          launches, runs and retires campaigns within whatever is set here.
+          Whether the autonomous engine is allowed to write and launch its own campaigns on each channel — separate
+          from whether a real campaign (like the one above) is actually running. "Engine off" doesn't pause anything
+          live; it just means the engine won't act on that channel.
         </p>
       </CardHeader>
       <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-3">
