@@ -1,0 +1,246 @@
+import type { BillingDocument, BillingSellerSnapshot } from "@/types/billing";
+import { DOC_TYPE_LABELS } from "@/types/billing";
+import { formatINR, numberToWords, formatFinancialYear } from "@/utils/billingUtils";
+
+// Real vector text via jsPDF + autoTable — not a rasterized screenshot. The old
+// html2canvas approach embedded a full-page PNG (and re-embedded it per page in
+// the overflow loop), producing >10MB files for a one-page text document.
+// This produces the same layout at well under 1MB with selectable/searchable text.
+
+const MARGIN = 15;
+const PAGE_WIDTH = 210;
+const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2;
+const PRIMARY: [number, number, number] = [10, 45, 90];
+const MUTED: [number, number, number] = [110, 110, 120];
+const LIGHT_BG: [number, number, number] = [244, 245, 248];
+
+// jsPDF's standard fonts only support WinAnsi encoding — no ₹ (renders as a
+// garbled glyph and throws off column-width math, clipping the digits after
+// it) and no smart punctuation. "Rs." reads correctly everywhere and is what
+// every bank/GST document in India already uses. Free-text fields (item
+// descriptions, terms, notes) are user-typed and can contain the same
+// unsupported characters, so they're sanitized too.
+const money = (n: number) => `Rs. ${formatINR(n)}`;
+const clean = (s?: string | null) =>
+  (s || "")
+    .replace(/[‘’]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/[‐-―]/g, "-")
+    .replace(/…/g, "...")
+    .replace(/[•●]/g, "-")
+    .replace(/[^\x00-\xFF]/g, ""); // strip anything else outside WinAnsi rather than render garbage
+
+async function toDataUrl(url?: string): Promise<string | null> {
+  if (!url) return null;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null; // logo/signature is a nice-to-have — never block the PDF on it
+  }
+}
+
+interface GenerateArgs {
+  doc: BillingDocument;
+  issuer: BillingSellerSnapshot;
+  totalTds: number;
+  totalAdvance: number;
+  hasDeductions: boolean;
+  amountPayable: number;
+}
+
+export async function downloadBillingDocumentPdf({ doc, issuer, totalTds, totalAdvance, hasDeductions, amountPayable }: GenerateArgs) {
+  const [{ default: jsPDF }] = await Promise.all([import("jspdf")]);
+  await import("jspdf-autotable");
+
+  const [logoDataUrl, signatureDataUrl] = await Promise.all([
+    toDataUrl(issuer.logo_url),
+    toDataUrl(issuer.signature_url),
+  ]);
+
+  const pdf = new jsPDF({ unit: "mm", format: "a4" });
+  let y = MARGIN;
+
+  // ── Header: logo + company block, doc-type badge ──
+  const headerTop = y;
+  if (logoDataUrl) {
+    try { pdf.addImage(logoDataUrl, MARGIN, y, 22, 14, undefined, "FAST"); } catch { /* unsupported format */ }
+  }
+  const textX = logoDataUrl ? MARGIN + 26 : MARGIN;
+  pdf.setFont("helvetica", "bold").setFontSize(14).setTextColor(...PRIMARY);
+  pdf.text(clean(issuer.company_name) || "Your Company", textX, y + 5);
+  pdf.setFont("helvetica", "normal").setFontSize(8).setTextColor(...MUTED);
+  let hy = y + 10;
+  const addLine = (s: string) => { if (s) { pdf.text(clean(s), textX, hy); hy += 4; } };
+  addLine(issuer.company_address);
+  addLine([issuer.company_gstin && `GSTIN: ${issuer.company_gstin}`, issuer.company_pan && `PAN: ${issuer.company_pan}`].filter(Boolean).join("   |   "));
+  addLine([issuer.company_email && `Email: ${issuer.company_email}`, issuer.company_phone && `Ph: ${issuer.company_phone}`].filter(Boolean).join("   |   "));
+  addLine(issuer.company_state && `State: ${issuer.company_state}${issuer.company_state_code ? ` (${issuer.company_state_code})` : ""}`);
+
+  const badgeLabel = (DOC_TYPE_LABELS[doc.doc_type] || doc.doc_type).toUpperCase();
+  pdf.setFont("helvetica", "bold").setFontSize(11);
+  const badgeW = pdf.getTextWidth(badgeLabel) + 10;
+  const badgeColor: [number, number, number] =
+    doc.doc_type === "invoice" ? PRIMARY : doc.doc_type === "credit_note" ? [220, 38, 38] : [14, 165, 233];
+  pdf.setFillColor(...badgeColor);
+  pdf.roundedRect(PAGE_WIDTH - MARGIN - badgeW, headerTop, badgeW, 9, 1.5, 1.5, "F");
+  pdf.setTextColor(255, 255, 255);
+  pdf.text(badgeLabel, PAGE_WIDTH - MARGIN - badgeW / 2, headerTop + 6, { align: "center" });
+
+  y = Math.max(hy, headerTop + 16) + 3;
+  pdf.setDrawColor(...PRIMARY).setLineWidth(0.6);
+  pdf.line(MARGIN, y, PAGE_WIDTH - MARGIN, y);
+  y += 6;
+
+  // ── Bill To / Doc details boxes ──
+  const boxW = (CONTENT_WIDTH - 6) / 2;
+  const boxTop = y;
+  pdf.setFillColor(...LIGHT_BG).roundedRect(MARGIN, boxTop, boxW, 30, 1.5, 1.5, "F");
+  pdf.setFont("helvetica", "bold").setFontSize(7).setTextColor(...MUTED);
+  pdf.text("BILL TO", MARGIN + 4, boxTop + 5);
+  pdf.setFont("helvetica", "bold").setFontSize(9).setTextColor(20, 20, 20);
+  pdf.text(clean(doc.client?.invoice_company_name || doc.client_name), MARGIN + 4, boxTop + 10);
+  pdf.setFont("helvetica", "normal").setFontSize(7.5).setTextColor(...MUTED);
+  let by = boxTop + 14;
+  const billLine = (s?: string) => { if (s) { pdf.text(clean(s), MARGIN + 4, by, { maxWidth: boxW - 8 }); by += 4; } };
+  billLine(doc.client?.billing_address);
+  billLine([doc.client?.city, doc.client?.state].filter(Boolean).join(", ") + (doc.client?.pin_code ? ` - ${doc.client.pin_code}` : ""));
+  billLine(doc.client?.gstin ? `GSTIN: ${doc.client.gstin}` : doc.client?.pan ? `PAN: ${doc.client.pan}` : undefined);
+
+  const detailX = MARGIN + boxW + 6;
+  pdf.setFillColor(...LIGHT_BG).roundedRect(detailX, boxTop, boxW, 30, 1.5, 1.5, "F");
+  const rows: [string, string][] = [
+    ["DOC NUMBER", doc.doc_number],
+    ["DATE", doc.doc_date],
+    ["DUE DATE", doc.due_date],
+    ["SUPPLY TYPE", doc.supply_type === "intra_state" ? "Intra-State" : "Inter-State"],
+    ["FY", formatFinancialYear(doc.financial_year)],
+  ];
+  if (doc.original_invoice_number) rows.push(["AGAINST INVOICE", doc.original_invoice_number]);
+  let dy = boxTop + 6;
+  for (const [label, val] of rows) {
+    pdf.setFont("helvetica", "bold").setFontSize(6.5).setTextColor(...MUTED);
+    pdf.text(label, detailX + 4, dy);
+    pdf.setFont("helvetica", "normal").setFontSize(7.5).setTextColor(20, 20, 20);
+    pdf.text(clean(val), detailX + boxW - 4, dy, { align: "right" });
+    dy += 4.6;
+  }
+  y = boxTop + 34;
+
+  // ── Line items table (real text cells, not an image) ──
+  const isIntra = doc.supply_type === "intra_state";
+  const head = ["#", "Description", "HSN/SAC", "Qty", "Rate", "Taxable", isIntra ? "CGST" : "IGST", ...(isIntra ? ["SGST"] : []), "Total"];
+  const body = (doc.items || []).map((item, i) => [
+    String(i + 1),
+    clean(item.description),
+    clean(item.hsn_sac),
+    `${item.qty} ${clean(item.unit)}`,
+    money(item.rate),
+    money(item.taxable),
+    money(isIntra ? item.cgst : item.igst),
+    ...(isIntra ? [money(item.sgst)] : []),
+    money(item.total),
+  ]);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (pdf as any).autoTable({
+    head: [head],
+    body,
+    startY: y,
+    margin: { left: MARGIN, right: MARGIN },
+    styles: { font: "helvetica", fontSize: 7.5, cellPadding: 2.2, textColor: [20, 20, 20] },
+    headStyles: { fillColor: PRIMARY, textColor: 255, fontStyle: "bold", fontSize: 7 },
+    alternateRowStyles: { fillColor: [250, 250, 252] },
+    columnStyles: { 0: { cellWidth: 7 }, 1: { cellWidth: "auto" } },
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  y = (pdf as any).lastAutoTable.finalY + 6;
+
+  // ── Summary ──
+  const sumW = 70;
+  const sumX = PAGE_WIDTH - MARGIN - sumW;
+  const summaryRow = (label: string, val: string, bold = false, color: [number, number, number] = [20, 20, 20]) => {
+    pdf.setFont("helvetica", bold ? "bold" : "normal").setFontSize(bold ? 9.5 : 8.5).setTextColor(...color);
+    pdf.text(label, sumX, y);
+    pdf.text(val, PAGE_WIDTH - MARGIN, y, { align: "right" });
+    y += bold ? 5.5 : 4.6;
+  };
+  summaryRow("Subtotal", money(doc.subtotal));
+  if (isIntra) {
+    summaryRow("CGST", money(doc.total_tax / 2));
+    summaryRow("SGST", money(doc.total_tax / 2));
+  } else {
+    summaryRow("IGST", money(doc.total_tax));
+  }
+  pdf.setDrawColor(200, 200, 205).line(sumX, y, PAGE_WIDTH - MARGIN, y); y += 3;
+  summaryRow("Grand Total", money(doc.total_amount), true, PRIMARY);
+  if (hasDeductions) {
+    pdf.setDrawColor(200, 200, 205).line(sumX, y, PAGE_WIDTH - MARGIN, y); y += 3;
+    if (totalAdvance > 0) summaryRow("Less: Advance Received", `-${money(totalAdvance)}`, false, [5, 150, 105]);
+    if (totalTds > 0) summaryRow("Less: TDS Deducted", `-${money(totalTds)}`, false, [220, 38, 38]);
+    summaryRow("Amount Payable", money(amountPayable), true, [4, 120, 87]);
+  }
+  y += 4;
+
+  // ── Amount in words ──
+  const wordsLabel = hasDeductions ? "Amount Payable in Words:" : "Amount in Words:";
+  const wordsText = numberToWords(hasDeductions ? amountPayable : doc.total_amount);
+  pdf.setFillColor(...LIGHT_BG);
+  const wordsLines = pdf.splitTextToSize(clean(`${wordsLabel} ${wordsText}`), CONTENT_WIDTH - 8);
+  const wordsH = wordsLines.length * 4 + 6;
+  pdf.roundedRect(MARGIN, y, CONTENT_WIDTH, wordsH, 1.5, 1.5, "F");
+  pdf.setFont("helvetica", "normal").setFontSize(7.5).setTextColor(60, 60, 60);
+  pdf.text(wordsLines, MARGIN + 4, y + 5);
+  y += wordsH + 6;
+
+  // ── Bank + Signature ──
+  const bankTop = y;
+  pdf.setFont("helvetica", "bold").setFontSize(7).setTextColor(...MUTED);
+  pdf.text("BANK DETAILS", MARGIN, y);
+  pdf.setFont("helvetica", "normal").setFontSize(7.5).setTextColor(20, 20, 20);
+  y += 4.5;
+  pdf.text(`Bank: ${clean(issuer.bank_name) || "-"}`, MARGIN, y); y += 4;
+  pdf.text(`A/C: ${issuer.bank_account_number || "-"}`, MARGIN, y); y += 4;
+  pdf.text(`IFSC: ${issuer.bank_ifsc || "-"}`, MARGIN, y); y += 4;
+  if (issuer.bank_upi_id) { pdf.text(`UPI: ${issuer.bank_upi_id}`, MARGIN, y); y += 4; }
+
+  let sigY = bankTop;
+  pdf.setFont("helvetica", "bold").setFontSize(7.5).setTextColor(20, 20, 20);
+  pdf.text(`For ${clean(issuer.company_name) || "Your Company"}`, PAGE_WIDTH - MARGIN, sigY, { align: "right" });
+  sigY += 3;
+  if (signatureDataUrl) {
+    try { pdf.addImage(signatureDataUrl, PAGE_WIDTH - MARGIN - 26, sigY, 26, 12, undefined, "FAST"); } catch { /* unsupported format */ }
+  }
+  sigY += 14;
+  pdf.setFont("helvetica", "normal").setFontSize(7).setTextColor(...MUTED);
+  pdf.text("Authorized Signatory", PAGE_WIDTH - MARGIN, sigY, { align: "right" });
+
+  y = Math.max(y, sigY) + 6;
+
+  // ── Terms + Notes ──
+  const block = (title: string, text: string) => {
+    pdf.setDrawColor(220, 220, 225).line(MARGIN, y, PAGE_WIDTH - MARGIN, y); y += 4;
+    pdf.setFont("helvetica", "bold").setFontSize(7).setTextColor(...MUTED);
+    pdf.text(title.toUpperCase(), MARGIN, y); y += 4;
+    pdf.setFont("helvetica", "normal").setFontSize(7.5).setTextColor(60, 60, 60);
+    const lines = pdf.splitTextToSize(clean(text), CONTENT_WIDTH);
+    pdf.text(lines, MARGIN, y);
+    y += lines.length * 3.8 + 4;
+  };
+  if (doc.terms_and_conditions) block("Terms & Conditions", doc.terms_and_conditions);
+  const noteText = doc.notes && doc.notes !== doc.terms_and_conditions ? doc.notes : "We value your business and trust.";
+  block("Note", noteText);
+
+  pdf.setDrawColor(220, 220, 225).line(MARGIN, y, PAGE_WIDTH - MARGIN, y); y += 5;
+  pdf.setFont("helvetica", "normal").setFontSize(6.5).setTextColor(...MUTED);
+  pdf.text("This is a computer-generated document and does not require a physical signature.", PAGE_WIDTH / 2, y, { align: "center" });
+
+  pdf.save(`${doc.doc_number}.pdf`);
+}
