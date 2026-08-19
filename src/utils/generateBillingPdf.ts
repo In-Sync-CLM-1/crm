@@ -74,26 +74,40 @@ export async function buildBillingDocumentPdf({ doc, issuer, totalTds, totalAdva
   let y = MARGIN;
 
   // ── Header: logo + company block, doc-type badge ──
+  // Badge geometry is computed first so the company name/address can be
+  // wrapped to never run under it — a long registered company name
+  // ("PROSYNC AI SOLUTIONS (OPC) PRIVATE LIMITED") previously overlapped it.
   const headerTop = y;
-  if (logoDataUrl) {
-    try { pdf.addImage(logoDataUrl, MARGIN, y, 22, 14, undefined, "FAST"); } catch { /* unsupported format */ }
-  }
-  const textX = logoDataUrl ? MARGIN + 26 : MARGIN;
-  pdf.setFont("helvetica", "bold").setFontSize(14).setTextColor(...PRIMARY);
-  pdf.text(clean(issuer.company_name) || "Your Company", textX, y + 5);
-  pdf.setFont("helvetica", "normal").setFontSize(8).setTextColor(...MUTED);
-  let hy = y + 10;
-  const addLine = (s: string) => { if (s) { pdf.text(clean(s), textX, hy); hy += 4; } };
-  addLine(issuer.company_address);
-  addLine([issuer.company_gstin && `GSTIN: ${issuer.company_gstin}`, issuer.company_pan && `PAN: ${issuer.company_pan}`].filter(Boolean).join("   |   "));
-  addLine([issuer.company_email && `Email: ${issuer.company_email}`, issuer.company_phone && `Ph: ${issuer.company_phone}`].filter(Boolean).join("   |   "));
-  addLine(issuer.company_state && `State: ${issuer.company_state}${issuer.company_state_code ? ` (${issuer.company_state_code})` : ""}`);
-
   const badgeLabel = (DOC_TYPE_LABELS[doc.doc_type] || doc.doc_type).toUpperCase();
   pdf.setFont("helvetica", "bold").setFontSize(11);
   const badgeW = pdf.getTextWidth(badgeLabel) + 10;
   const badgeColor: [number, number, number] =
     doc.doc_type === "invoice" ? PRIMARY : doc.doc_type === "credit_note" ? [220, 38, 38] : [14, 165, 233];
+
+  if (logoDataUrl) {
+    try { pdf.addImage(logoDataUrl, MARGIN, y, 22, 14, undefined, "FAST"); } catch { /* unsupported format */ }
+  }
+  const textX = logoDataUrl ? MARGIN + 26 : MARGIN;
+  const headerTextWidth = PAGE_WIDTH - MARGIN - textX;
+  const nameMaxWidth = PAGE_WIDTH - MARGIN - badgeW - 6 - textX;
+
+  pdf.setFont("helvetica", "bold").setFontSize(14).setTextColor(...PRIMARY);
+  const nameLines: string[] = pdf.splitTextToSize(clean(issuer.company_name) || "Your Company", Math.max(nameMaxWidth, 30));
+  pdf.text(nameLines, textX, y + 5);
+  let hy = y + 5 + nameLines.length * 5.5;
+
+  pdf.setFont("helvetica", "normal").setFontSize(8).setTextColor(...MUTED);
+  const addLine = (s: string) => {
+    if (!s) return;
+    const lines: string[] = pdf.splitTextToSize(clean(s), headerTextWidth);
+    pdf.text(lines, textX, hy);
+    hy += lines.length * 4;
+  };
+  addLine(issuer.company_address);
+  addLine([issuer.company_gstin && `GSTIN: ${issuer.company_gstin}`, issuer.company_pan && `PAN: ${issuer.company_pan}`].filter(Boolean).join("   |   "));
+  addLine([issuer.company_email && `Email: ${issuer.company_email}`, issuer.company_phone && `Ph: ${issuer.company_phone}`].filter(Boolean).join("   |   "));
+  addLine(issuer.company_state && `State: ${issuer.company_state}${issuer.company_state_code ? ` (${issuer.company_state_code})` : ""}`);
+
   pdf.setFillColor(...badgeColor);
   pdf.roundedRect(PAGE_WIDTH - MARGIN - badgeW, headerTop, badgeW, 9, 1.5, 1.5, "F");
   pdf.setTextColor(255, 255, 255);
