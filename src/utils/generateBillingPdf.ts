@@ -30,42 +30,80 @@ const clean = (s?: string | null) =>
     .replace(/[•●]/g, "-")
     .replace(/[^\x00-\xFF]/g, ""); // strip anything else outside WinAnsi rather than render garbage
 
+interface ImageData { dataUrl: string; width: number; height: number }
+
+// Reads width/height straight out of a PNG's IHDR chunk (bytes 16-23) from
+// just the first ~75 decoded bytes — no full image decode needed. Used as
+// the dimension source outside the browser (Node has no <Image>/<canvas>).
+function pngDimensionsFromDataUrl(dataUrl: string): { width: number; height: number } | null {
+  const comma = dataUrl.indexOf(",");
+  if (comma < 0) return null;
+  const prefixB64 = dataUrl.slice(comma + 1, comma + 101);
+  try {
+    let bytes: Uint8Array;
+    if (typeof Buffer !== "undefined") {
+      bytes = new Uint8Array(Buffer.from(prefixB64, "base64"));
+    } else {
+      const bin = atob(prefixB64);
+      bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    }
+    if (bytes.length < 24 || bytes[0] !== 0x89 || bytes[1] !== 0x50) return null; // not a PNG
+    const width = ((bytes[16] << 24) | (bytes[17] << 16) | (bytes[18] << 8) | bytes[19]) >>> 0;
+    const height = ((bytes[20] << 24) | (bytes[21] << 16) | (bytes[22] << 8) | bytes[23]) >>> 0;
+    return width && height ? { width, height } : null;
+  } catch {
+    return null;
+  }
+}
+
 // A frozen seller_snapshot can carry a logo saved at its original upload
 // resolution — one real one measured 11,030x15,062px (166 megapixels) for a
 // slot displayed at 22x14mm. jsPDF has no native image decoder in the
 // browser, so embedding that directly makes addImage() pure-JS-decode the
 // whole thing — measured at 40+ seconds, which is what "the button doesn't
 // work" actually was. Downscale through a real <canvas> (native, fast
-// decode) before jsPDF ever sees it. No-ops in Node (no DOM) — the one-off
-// batch script doesn't hit this path's cost the same way a live click does.
-async function downscaleDataUrl(dataUrl: string, maxDim = 500): Promise<string> {
-  if (typeof document === "undefined" || typeof Image === "undefined") return dataUrl;
+// decode) before jsPDF ever sees it, and return the resulting pixel
+// dimensions so the caller can fit it into its box without distorting the
+// aspect ratio (source images are rarely already 22:14). No-ops the resize
+// in Node (no DOM) — the one-off batch script doesn't hit this path's cost
+// the same way a live click does — but still returns real dimensions via
+// the PNG header so aspect-ratio fitting still works there too.
+async function downscaleDataUrl(dataUrl: string, maxDim = 500): Promise<ImageData> {
+  if (typeof document === "undefined" || typeof Image === "undefined") {
+    const dims = pngDimensionsFromDataUrl(dataUrl);
+    return { dataUrl, width: dims?.width || maxDim, height: dims?.height || maxDim };
+  }
   try {
-    return await new Promise<string>((resolve, reject) => {
+    return await new Promise<ImageData>((resolve, reject) => {
       const img = new Image();
       img.onload = () => {
-        if (Math.max(img.width, img.height) <= maxDim) { resolve(dataUrl); return; }
+        if (Math.max(img.width, img.height) <= maxDim) {
+          resolve({ dataUrl, width: img.width, height: img.height });
+          return;
+        }
         const scale = maxDim / Math.max(img.width, img.height);
         const canvas = document.createElement("canvas");
         canvas.width = Math.max(1, Math.round(img.width * scale));
         canvas.height = Math.max(1, Math.round(img.height * scale));
         const ctx = canvas.getContext("2d");
-        if (!ctx) { resolve(dataUrl); return; }
+        if (!ctx) { resolve({ dataUrl, width: img.width, height: img.height }); return; }
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL("image/png"));
+        resolve({ dataUrl: canvas.toDataURL("image/png"), width: canvas.width, height: canvas.height });
       };
       img.onerror = () => reject(new Error("image decode failed"));
       img.src = dataUrl;
     });
   } catch {
-    return dataUrl; // fall back to the original rather than block the PDF
+    const dims = pngDimensionsFromDataUrl(dataUrl);
+    return { dataUrl, width: dims?.width || maxDim, height: dims?.height || maxDim };
   }
 }
 
 // Works in both the browser (fetch → Blob) and Node (fetch → Buffer) — avoids
 // FileReader, which only exists in the browser, so this same builder can run
 // in a one-off Node script for bulk regeneration as well as the live app.
-async function toDataUrl(url?: string): Promise<string | null> {
+async function toDataUrl(url?: string): Promise<ImageData | null> {
   if (!url) return null;
   // A frozen seller_snapshot often already stores the logo/signature as a
   // data: URI (not a remote file) — decoding it and re-encoding straight
@@ -78,7 +116,7 @@ async function toDataUrl(url?: string): Promise<string | null> {
     if (!res.ok) return null;
     const contentType = res.headers.get("content-type") || "image/png";
     const buf = new Uint8Array(await res.arrayBuffer());
-    if (typeof Buffer !== "undefined") return `data:${contentType};base64,${Buffer.from(buf).toString("base64")}`;
+    if (typeof Buffer !== "undefined") return downscaleDataUrl(`data:${contentType};base64,${Buffer.from(buf).toString("base64")}`);
     // Browser fallback for a genuinely remote image — chunked to avoid both
     // the call-stack limit of spreading a large array and the slowness of
     // building the string one byte at a time.
@@ -91,6 +129,12 @@ async function toDataUrl(url?: string): Promise<string | null> {
   } catch {
     return null; // logo/signature is a nice-to-have — never block the PDF on it
   }
+}
+
+// Fit an image into a maxW x maxH box without distorting its aspect ratio.
+function fitBox(img: ImageData, maxW: number, maxH: number): { w: number; h: number } {
+  const scale = Math.min(maxW / img.width, maxH / img.height);
+  return { w: img.width * scale, h: img.height * scale };
 }
 
 interface GenerateArgs {
@@ -129,7 +173,10 @@ export async function buildBillingDocumentPdf({ doc, issuer, totalTds, totalAdva
     doc.doc_type === "invoice" ? PRIMARY : doc.doc_type === "credit_note" ? [220, 38, 38] : [14, 165, 233];
 
   if (logoDataUrl) {
-    try { pdf.addImage(logoDataUrl, MARGIN, y, 22, 14, undefined, "FAST"); } catch { /* unsupported format */ }
+    try {
+      const { w, h } = fitBox(logoDataUrl, 22, 14);
+      pdf.addImage(logoDataUrl.dataUrl, MARGIN + (22 - w) / 2, y + (14 - h) / 2, w, h, undefined, "FAST");
+    } catch { /* unsupported format */ }
   }
   const textX = logoDataUrl ? MARGIN + 26 : MARGIN;
   const headerTextWidth = PAGE_WIDTH - MARGIN - textX;
@@ -163,39 +210,63 @@ export async function buildBillingDocumentPdf({ doc, issuer, totalTds, totalAdva
   y += 6;
 
   // ── Bill To / Doc details boxes ──
+  // Box height is derived from actual wrapped content instead of a fixed
+  // 30mm — a long billing address (common with the "Floor No.: ... Name Of
+  // Premises/Building: ... City/Town/Village: ..." format some clients use)
+  // wraps to several lines, and drawing the next line at a fixed +4mm
+  // regardless of how many lines the previous one actually took overlapped
+  // everything into an unreadable stack.
   const boxW = (CONTENT_WIDTH - 6) / 2;
   const boxTop = y;
-  pdf.setFillColor(...LIGHT_BG).roundedRect(MARGIN, boxTop, boxW, 30, 1.5, 1.5, "F");
-  pdf.setFont("helvetica", "bold").setFontSize(7).setTextColor(...MUTED);
-  pdf.text("BILL TO", MARGIN + 4, boxTop + 5);
-  pdf.setFont("helvetica", "bold").setFontSize(9).setTextColor(20, 20, 20);
-  pdf.text(clean(doc.client?.invoice_company_name || doc.client_name), MARGIN + 4, boxTop + 10);
-  pdf.setFont("helvetica", "normal").setFontSize(7.5).setTextColor(...MUTED);
-  let by = boxTop + 14;
-  const billLine = (s?: string) => { if (s) { pdf.text(clean(s), MARGIN + 4, by, { maxWidth: boxW - 8 }); by += 4; } };
-  billLine(doc.client?.billing_address);
-  billLine([doc.client?.city, doc.client?.state].filter(Boolean).join(", ") + (doc.client?.pin_code ? ` - ${doc.client.pin_code}` : ""));
-  billLine(doc.client?.gstin ? `GSTIN: ${doc.client.gstin}` : doc.client?.pan ? `PAN: ${doc.client.pan}` : undefined);
+  const boxTextW = boxW - 8;
 
-  const detailX = MARGIN + boxW + 6;
-  pdf.setFillColor(...LIGHT_BG).roundedRect(detailX, boxTop, boxW, 30, 1.5, 1.5, "F");
-  const rows: [string, string][] = [
+  pdf.setFont("helvetica", "bold").setFontSize(9);
+  const nameLines2: string[] = pdf.splitTextToSize(clean(doc.client?.invoice_company_name || doc.client_name), boxTextW);
+  pdf.setFont("helvetica", "normal").setFontSize(7.5);
+  const billFields = [
+    doc.client?.billing_address,
+    [doc.client?.city, doc.client?.state].filter(Boolean).join(", ") + (doc.client?.pin_code ? ` - ${doc.client.pin_code}` : ""),
+    doc.client?.gstin ? `GSTIN: ${doc.client.gstin}` : doc.client?.pan ? `PAN: ${doc.client.pan}` : undefined,
+  ];
+  const billLineGroups: string[][] = billFields.map((s) => (s ? pdf.splitTextToSize(clean(s), boxTextW) : []));
+  const billContentH = 10 + nameLines2.length * 4 + billLineGroups.reduce((sum, g) => sum + g.length * 3.6, 0);
+
+  const detailRows: [string, string][] = [
     ["DOC NUMBER", doc.doc_number],
     ["DATE", doc.doc_date],
     ["DUE DATE", doc.due_date],
     ["SUPPLY TYPE", doc.supply_type === "intra_state" ? "Intra-State" : "Inter-State"],
     ["FY", formatFinancialYear(doc.financial_year)],
   ];
-  if (doc.original_invoice_number) rows.push(["AGAINST INVOICE", doc.original_invoice_number]);
+  if (doc.original_invoice_number) detailRows.push(["AGAINST INVOICE", doc.original_invoice_number]);
+  const detailContentH = 6 + detailRows.length * 4.6;
+
+  const boxH = Math.max(30, billContentH + 4, detailContentH + 4);
+
+  pdf.setFillColor(...LIGHT_BG).roundedRect(MARGIN, boxTop, boxW, boxH, 1.5, 1.5, "F");
+  pdf.setFont("helvetica", "bold").setFontSize(7).setTextColor(...MUTED);
+  pdf.text("BILL TO", MARGIN + 4, boxTop + 5);
+  pdf.setFont("helvetica", "bold").setFontSize(9).setTextColor(20, 20, 20);
+  pdf.text(nameLines2, MARGIN + 4, boxTop + 10);
+  pdf.setFont("helvetica", "normal").setFontSize(7.5).setTextColor(...MUTED);
+  let by = boxTop + 10 + nameLines2.length * 4;
+  for (const lines of billLineGroups) {
+    if (!lines.length) continue;
+    pdf.text(lines, MARGIN + 4, by);
+    by += lines.length * 3.6;
+  }
+
+  const detailX = MARGIN + boxW + 6;
+  pdf.setFillColor(...LIGHT_BG).roundedRect(detailX, boxTop, boxW, boxH, 1.5, 1.5, "F");
   let dy = boxTop + 6;
-  for (const [label, val] of rows) {
+  for (const [label, val] of detailRows) {
     pdf.setFont("helvetica", "bold").setFontSize(6.5).setTextColor(...MUTED);
     pdf.text(label, detailX + 4, dy);
     pdf.setFont("helvetica", "normal").setFontSize(7.5).setTextColor(20, 20, 20);
     pdf.text(clean(val), detailX + boxW - 4, dy, { align: "right" });
     dy += 4.6;
   }
-  y = boxTop + 34;
+  y = boxTop + boxH + 4;
 
   // ── Line items table (real text cells, not an image) ──
   const isIntra = doc.supply_type === "intra_state";
@@ -241,10 +312,10 @@ export async function buildBillingDocumentPdf({ doc, issuer, totalTds, totalAdva
   } else {
     summaryRow("IGST", money(doc.total_tax));
   }
-  pdf.setDrawColor(200, 200, 205).line(sumX, y, PAGE_WIDTH - MARGIN, y); y += 3;
+  pdf.setDrawColor(200, 200, 205).line(sumX, y, PAGE_WIDTH - MARGIN, y); y += 6;
   summaryRow("Grand Total", money(doc.total_amount), true, PRIMARY);
   if (hasDeductions) {
-    pdf.setDrawColor(200, 200, 205).line(sumX, y, PAGE_WIDTH - MARGIN, y); y += 3;
+    pdf.setDrawColor(200, 200, 205).line(sumX, y, PAGE_WIDTH - MARGIN, y); y += 6;
     if (totalAdvance > 0) summaryRow("Less: Advance Received", `-${money(totalAdvance)}`, false, [5, 150, 105]);
     if (totalTds > 0) summaryRow("Less: TDS Deducted", `-${money(totalTds)}`, false, [220, 38, 38]);
     summaryRow("Amount Payable", money(amountPayable), true, [4, 120, 87]);
@@ -278,7 +349,10 @@ export async function buildBillingDocumentPdf({ doc, issuer, totalTds, totalAdva
   pdf.text(`For ${clean(issuer.company_name) || "Your Company"}`, PAGE_WIDTH - MARGIN, sigY, { align: "right" });
   sigY += 3;
   if (signatureDataUrl) {
-    try { pdf.addImage(signatureDataUrl, PAGE_WIDTH - MARGIN - 26, sigY, 26, 12, undefined, "FAST"); } catch { /* unsupported format */ }
+    try {
+      const { w, h } = fitBox(signatureDataUrl, 26, 12);
+      pdf.addImage(signatureDataUrl.dataUrl, PAGE_WIDTH - MARGIN - w, sigY + (12 - h) / 2, w, h, undefined, "FAST");
+    } catch { /* unsupported format */ }
   }
   sigY += 14;
   pdf.setFont("helvetica", "normal").setFontSize(7).setTextColor(...MUTED);
@@ -288,9 +362,9 @@ export async function buildBillingDocumentPdf({ doc, issuer, totalTds, totalAdva
 
   // ── Terms + Notes ──
   const block = (title: string, text: string) => {
-    pdf.setDrawColor(220, 220, 225).line(MARGIN, y, PAGE_WIDTH - MARGIN, y); y += 4;
+    pdf.setDrawColor(220, 220, 225).line(MARGIN, y, PAGE_WIDTH - MARGIN, y); y += 6;
     pdf.setFont("helvetica", "bold").setFontSize(7).setTextColor(...MUTED);
-    pdf.text(title.toUpperCase(), MARGIN, y); y += 4;
+    pdf.text(title.toUpperCase(), MARGIN, y); y += 5;
     pdf.setFont("helvetica", "normal").setFontSize(7.5).setTextColor(60, 60, 60);
     const lines = pdf.splitTextToSize(clean(text), CONTENT_WIDTH);
     pdf.text(lines, MARGIN, y);
