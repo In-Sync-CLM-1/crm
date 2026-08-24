@@ -331,9 +331,16 @@ async function checkSmbFeed(ref: string): Promise<Check> {
   // smbconnect feed query heartbeat: catches silent failures in feed visibility.
   // Regression test for post_context filter syntax issue where posts stop appearing.
   // Creates a test post, verifies it's returned by the feed query, then cleans up.
-  const testUserId = "00000000-0000-0000-0000-000000000001"; // sentinel test user
   const testPostId = crypto.randomUUID();
   try {
+    // posts.user_id is FK'd to a real profile — a hardcoded sentinel UUID
+    // (00000000-...-1) 400s with a foreign-key violation on this project's data,
+    // which reads as "feed broken" when it's really just the probe's own fixture
+    // being wrong. Borrow any real existing profile id instead (read-only pick,
+    // no dependency on a specific seeded account existing).
+    const owner = await sql(ref, "select id from profiles limit 1");
+    if (!owner.length) return { label: "Feed post visibility", status: "warn", detail: "no profiles row to borrow as test-post owner — skipped" };
+    const testUserId = owner[0].id;
     // 1. Insert test post with post_context='member' (the default for member feeds)
     const insertRes = await sql(
       ref,
