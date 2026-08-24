@@ -11,15 +11,29 @@
 // so it runs as a normal verify_jwt=true function.
 //
 // Secrets it needs on the crm project:
-//   MGMT_TOKEN      — org-wide Supabase Management API access token (sbp_...)
-//   MGMT_TOKEN_ECHO — Management API token for the echocommunicator@gmail.com
-//                     account (vendorverification, ticket). Supabase Management
-//                     API auth is per-ACCOUNT, not per-org — a project that
-//                     lives under a different account is 100% invisible to
-//                     MGMT_TOKEN no matter what org/permissions it has. Add
-//                     another SECONDARY_TOKENS entry + secret the next time a
-//                     project moves to yet another account (optional secret —
-//                     Sentinel runs fine without it, just blind to that account).
+//   MGMT_TOKEN         — org-wide Supabase Management API access token (sbp_...)
+//   MGMT_TOKEN_ECHO    — Management API token for the echocommunicator@gmail.com
+//                        account (vendorverification, ticket).
+//   MGMT_TOKEN_FMAMIT  — token for the fmamit@gmail.com free-tier account
+//                        (org "In-Sync-Free-Personal"). Covers BOTH smbconnect
+//                        AND expense — they share this one project-scoped-to-org
+//                        token. Missing this secret was why smbconnect silently
+//                        vanished from the digest entirely (not even "parked" —
+//                        discovery just never saw it) and expense stayed
+//                        stuck reporting "Parked" for a month after it went live
+//                        again on a new ref under this same account (2026-08-24 fix).
+//   MGMT_TOKEN_WORKSYNC — token scoped to just the work-sync project (its own
+//                        org). Same class of gap as above — work-sync was
+//                        re-provisioned live 2026-08-14 but Sentinel kept
+//                        reporting it "Parked" because no token could see it.
+//                        Supabase Management API auth is per-ACCOUNT, not
+//                        per-org — a project on a different account is 100%
+//                        invisible to MGMT_TOKEN no matter what org/permissions
+//                        it has. Add another SECONDARY_TOKENS entry + secret the
+//                        next time a project moves to yet another account
+//                        (optional secret — Sentinel runs fine without it, just
+//                        blind to that account, which is exactly the failure
+//                        mode this comment exists to prevent recurring).
 //   RESEND_API_KEY  — for sending the report email
 // Everything else (per-project refs, keys, config) is discovered at runtime via
 // the Management API, so coverage stays comprehensive as projects come and go.
@@ -46,6 +60,8 @@ const META: Record<string, { name: string; dialer?: boolean; marketing?: boolean
   wdamzbyvsbergvxhefkl: { name: "smbconnect", feedCheck: true, web: "https://smbconnect.in" },
   ufwvyybrctjpwipbveqe: { name: "RMPL", web: "https://rmpl-sync.pages.dev" },
   upnhhrhobvdmpfnldvgb: { name: "website", web: "https://in-sync.co.in" },
+  dhbeivfeuewzkdeqkjpa: { name: "work-sync", web: "https://work.in-sync.co.in" },
+  ljokqicllbemfjytfhbi: { name: "expense", web: "https://expense.in-sync.co.in" },
 };
 
 // PARKED products — backend deliberately deleted (2026-07-10, business decision):
@@ -61,10 +77,13 @@ const META: Record<string, { name: string; dialer?: boolean; marketing?: boolean
 // that as a frontend outage; it's not covered by the render probe.
 // Remove an entry once its project is re-provisioned for a client (give it a
 // fresh META entry with the NEW ref at that point, refs are not reused).
+// work-sync and expense REMOVED from this list 2026-08-24 — both were
+// re-provisioned live weeks ago (2026-08-14 / 2026-07-24) but Sentinel had no
+// Management API token that could see their new accounts, so they kept
+// reporting "Parked (business decision)" long after that stopped being true.
+// See MGMT_TOKEN_WORKSYNC / MGMT_TOKEN_FMAMIT above. Real META entries added.
 const PARKED: { name: string; ref: string; web: string; parkedOn: string }[] = [
-  { name: "work-sync", ref: "rdhvkluvkieajtmpljyz", web: "https://work.in-sync.co.in", parkedOn: "2026-07-10" },
   { name: "fieldsync", ref: "jmxpudhpdltktuupfbxs", web: "https://field.in-sync.co.in", parkedOn: "2026-07-10" },
-  { name: "expense", ref: "hmqwmmlqfrrktfsiowdh", web: "https://expense.in-sync.co.in", parkedOn: "2026-06-28" },
   { name: "wa", ref: "unmdhcjrplwntqjiciiz", web: "https://wa.in-sync.co.in", parkedOn: "2026-07-10" },
   { name: "email", ref: "xpndsoozxjrvcwhauunh", web: "https://email.in-sync.co.in", parkedOn: "2026-07-10" },
 ];
@@ -78,6 +97,8 @@ const primaryToken = () => Deno.env.get("MGMT_TOKEN") ?? "";
 // Keep this list to real, currently-in-use secondary accounts only.
 const SECONDARY_TOKENS: { label: string; token: string }[] = [
   { label: "echocommunicator", token: Deno.env.get("MGMT_TOKEN_ECHO") ?? "" },
+  { label: "fmamit-free", token: Deno.env.get("MGMT_TOKEN_FMAMIT") ?? "" },
+  { label: "worksync", token: Deno.env.get("MGMT_TOKEN_WORKSYNC") ?? "" },
 ].filter((t) => t.token);
 
 // Populated by discoverProjects(): which token owns each discovered ref, so
@@ -517,6 +538,23 @@ const MODULE_MAP: Record<string, ModSpec[]> = {
     ["Tickets", "tickets"], ["Support tickets", "support_tickets"], ["Tutorials", "tutorials"], ["Whitepapers", "whitepapers"],
     ["Onboarding applications", "onboarding_applications"], ["Unanswered queries", "unanswered_queries"],
     ["Chat logs", "chat_logs"], ["Users", "profiles"], ["Roles", "user_roles"],
+  ]),
+  dhbeivfeuewzkdeqkjpa: tbl([ // work-sync (hierarchical task accountability) — added 2026-08-24
+    ["Tasks", "tasks"], ["Task departments", "task_departments"], ["Task subcategories", "task_subcategories"],
+    ["Task comments", "task_comments"], ["Task attachments", "task_attachments"], ["Task milestones", "task_milestones"],
+    ["Task watchers", "task_watchers"], ["Projects", "projects"], ["Reporting hierarchy", "reporting_hierarchy"],
+    ["Designations", "designations"], ["Feature permissions", "feature_permissions"],
+    ["Designation feature access", "designation_feature_access"], ["Support tickets", "support_tickets"],
+    ["Payments", "payments"], ["Notifications", "notifications"], ["Teams", "teams"], ["Team members", "team_members"],
+    ["Organizations", "organizations"], ["Users", "profiles"], ["Roles", "user_roles"],
+  ]),
+  ljokqicllbemfjytfhbi: tbl([ // expense (travel expense claims) — added 2026-08-24
+    ["Travel claims", "travel_expense_claims"], ["Travel claim items", "travel_expense_items"],
+    ["Project claims", "project_expense_claims"], ["Project claim items", "project_expense_claim_items"],
+    ["Project travel logs", "project_expense_travel_logs"], ["Advances", "expense_advances"],
+    ["Advance requests", "expense_advance_requests"], ["Org memberships", "org_memberships"],
+    ["Teams", "teams"], ["Team members", "team_members"], ["API keys", "api_keys"],
+    ["Organizations", "organizations"], ["Users", "profiles"], ["Roles", "user_roles"],
   ]),
 };
 
