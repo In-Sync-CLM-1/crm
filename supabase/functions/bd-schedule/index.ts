@@ -63,7 +63,7 @@ Deno.serve(async (req) => {
     // ── 1. Follow-ups first: an existing conversation outranks a new one ──────
     const { data: due } = await supabase
       .from('bd_sequences')
-      .select('id, firm_id, contact_id, step, next_due_at, thread_message_id, mailbox, batch_no, bd_firms(firm_name, time_zone), bd_contacts(first_name, email)')
+      .select('id, firm_id, contact_id, step, next_due_at, thread_message_id, conversation_id, mailbox, batch_no, bd_firms(firm_name, time_zone), bd_contacts(first_name, email)')
       .eq('org_id', BD_ORG_ID)
       .is('stopped_at', null)
       .lte('next_due_at', now.toISOString())
@@ -92,6 +92,7 @@ Deno.serve(async (req) => {
       if (!dryRun) {
         await gc.from('email_conversations').insert({
           org_id: GLOBALCRM_ORG,
+          conversation_id: seq.conversation_id,   // groups with the original send — same thread
           to_email: contact.email,
           subject: null,                    // reply in thread — no new subject
           html_content: html,
@@ -138,8 +139,10 @@ Deno.serve(async (req) => {
         const slot = nextSendSlot(firm?.time_zone || 'ET', now, queued.length);
 
         if (!dryRun) {
+          const conversationId = crypto.randomUUID();
           const { data: conv, error: convErr } = await gc.from('email_conversations').insert({
             org_id: GLOBALCRM_ORG,
+            conversation_id: conversationId,
             to_email: contact.email,
             subject: d.subject,
             html_content: String(d.body).replace(/\n/g, '<br>'),
@@ -155,6 +158,7 @@ Deno.serve(async (req) => {
             step: 'followup_1',
             next_due_at: new Date(slot.getTime() + 4 * 86400000).toISOString(),
             mailbox: 'a@in-sync.co.in',
+            conversation_id: conversationId,
             // The real RFC Message-ID is only known once Resend has sent it —
             // bd-track fills thread_message_id in, and the follow-up waits for it.
             thread_message_id: null,
