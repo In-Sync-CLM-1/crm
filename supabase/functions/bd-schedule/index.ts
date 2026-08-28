@@ -63,7 +63,7 @@ Deno.serve(async (req) => {
     // ── 1. Follow-ups first: an existing conversation outranks a new one ──────
     const { data: due } = await supabase
       .from('bd_sequences')
-      .select('id, firm_id, contact_id, step, next_due_at, thread_message_id, conversation_id, mailbox, batch_no, bd_firms(firm_name, time_zone), bd_contacts(first_name, email)')
+      .select('id, firm_id, contact_id, step, next_due_at, thread_message_id, conversation_id, mailbox, batch_no, bd_firms(firm_name, time_zone), bd_contacts(first_name, email), bd_drafts(subject)')
       .eq('org_id', BD_ORG_ID)
       .is('stopped_at', null)
       .lte('next_due_at', now.toISOString())
@@ -90,12 +90,16 @@ Deno.serve(async (req) => {
       const slot = nextSendSlot(firm?.time_zone || 'ET', now, queued.length);
 
       if (!dryRun) {
+        const origSubject = (seq as Record<string, any>).bd_drafts?.subject || '';
         await gc.from('email_conversations').insert({
           org_id: GLOBALCRM_ORG,
           conversation_id: seq.conversation_id,   // groups with the original send — same thread
+          direction: 'outbound',
+          from_email: 'a@in-sync.co.in',
           to_email: contact.email,
-          subject: null,                    // reply in thread — no new subject
+          subject: origSubject ? `Re: ${origSubject}` : '(no subject)',
           html_content: html,
+          email_content: html,
           status: 'scheduled',
           scheduled_at: slot.toISOString(),
           from_name: FROM_NAME,
@@ -140,12 +144,16 @@ Deno.serve(async (req) => {
 
         if (!dryRun) {
           const conversationId = crypto.randomUUID();
+          const bodyHtml = String(d.body).replace(/\n/g, '<br>');
           const { data: conv, error: convErr } = await gc.from('email_conversations').insert({
             org_id: GLOBALCRM_ORG,
             conversation_id: conversationId,
+            direction: 'outbound',
+            from_email: 'a@in-sync.co.in',
             to_email: contact.email,
             subject: d.subject,
-            html_content: String(d.body).replace(/\n/g, '<br>'),
+            html_content: bodyHtml,
+            email_content: bodyHtml,
             status: 'scheduled',
             scheduled_at: slot.toISOString(),
             from_name: FROM_NAME,
