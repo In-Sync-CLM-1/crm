@@ -9,6 +9,8 @@ import { useOrgContext } from "@/hooks/useOrgContext";
 import { useNotification } from "@/hooks/useNotification";
 import { CopyButton } from "@/components/common/CopyButton";
 import { Pause, Play, IndianRupee, Megaphone, ExternalLink } from "lucide-react";
+import { useState, useMemo } from "react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const ACQUISITION_DASHBOARD_URL = "https://worksync-ads-dashboard.echocommunicator.workers.dev/";
 
@@ -31,12 +33,38 @@ interface GoogleAdsCampaign {
   last_synced_at: string | null;
 }
 
+interface DailyMetricsRow {
+  google_campaign_id: string;
+  metrics_date: string;
+  impressions: number | null;
+  clicks: number | null;
+  cost: number | null;
+  conversions: number | null;
+}
+
+interface RangeMetrics {
+  impressions: number;
+  clicks: number;
+  cost: number;
+  conversions: number;
+  ctr: number;
+}
+
+type RangeOption = "latest" | "7" | "30" | "custom";
+
 const inrNum = (n: number | null | undefined) => (n == null ? "—" : Number(n).toLocaleString("en-IN", { maximumFractionDigits: 0 }));
+
+const toISODate = (d: Date) => d.toISOString().split("T")[0];
+const fmtShort = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 
 function GoogleAdsCampaignsSection() {
   const { effectiveOrgId } = useOrgContext();
   const notify = useNotification();
   const queryClient = useQueryClient();
+
+  const [range, setRange] = useState<RangeOption>("latest");
+  const [customFrom, setCustomFrom] = useState(() => toISODate(new Date(Date.now() - 7 * 86400000)));
+  const [customTo, setCustomTo] = useState(() => toISODate(new Date(Date.now() - 86400000)));
 
   const { data: campaigns, isLoading } = useQuery({
     queryKey: ["mkt-google-ads-campaigns-live", effectiveOrgId],
@@ -52,6 +80,45 @@ function GoogleAdsCampaignsSection() {
     },
     enabled: !!effectiveOrgId,
   });
+
+  // Yesterday is the newest day Google has metrics for — every preset ends there.
+  const rangeBounds = useMemo(() => {
+    const latestDay = toISODate(new Date(Date.now() - 86400000));
+    if (range === "7") return { from: toISODate(new Date(Date.now() - 7 * 86400000)), to: latestDay };
+    if (range === "30") return { from: toISODate(new Date(Date.now() - 30 * 86400000)), to: latestDay };
+    if (range === "custom") return { from: customFrom, to: customTo };
+    return null; // "latest" — no range query needed, uses the single synced row per campaign
+  }, [range, customFrom, customTo]);
+
+  const { data: history, isLoading: historyLoading } = useQuery({
+    queryKey: ["mkt-google-ads-campaigns-history", effectiveOrgId, rangeBounds?.from, rangeBounds?.to],
+    queryFn: async (): Promise<DailyMetricsRow[]> => {
+      if (!effectiveOrgId || !rangeBounds) return [];
+      const { data, error } = await supabase
+        .from("mkt_google_ads_campaign_metrics_daily")
+        .select("google_campaign_id, metrics_date, impressions, clicks, cost, conversions")
+        .eq("org_id", effectiveOrgId)
+        .gte("metrics_date", rangeBounds.from)
+        .lte("metrics_date", rangeBounds.to);
+      if (error) throw error;
+      return data as unknown as DailyMetricsRow[];
+    },
+    enabled: !!effectiveOrgId && !!rangeBounds,
+  });
+
+  const rangeTotals = useMemo(() => {
+    const totals = new Map<string, RangeMetrics>();
+    for (const row of history || []) {
+      const cur = totals.get(row.google_campaign_id) || { impressions: 0, clicks: 0, cost: 0, conversions: 0, ctr: 0 };
+      cur.impressions += row.impressions || 0;
+      cur.clicks += row.clicks || 0;
+      cur.cost += row.cost || 0;
+      cur.conversions += row.conversions || 0;
+      totals.set(row.google_campaign_id, cur);
+    }
+    for (const v of totals.values()) v.ctr = v.impressions > 0 ? v.clicks / v.impressions : 0;
+    return totals;
+  }, [history]);
 
   const toggle = useMutation({
     mutationFn: async ({ id, action }: { id: string; action: "pause" | "enable" }) => {
@@ -73,17 +140,57 @@ function GoogleAdsCampaignsSection() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Live Google Ads Campaigns</CardTitle>
-        <p className="text-xs text-muted-foreground">
-          Synced daily from the real Google Ads account — this is what's actually running, however it was created
-          (this app, the autonomous engine, or the Google Ads console directly).
-        </p>
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <CardTitle>Live Google Ads Campaigns</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Synced daily from the real Google Ads account — this is what's actually running, however it was created
+              (this app, the autonomous engine, or the Google Ads console directly).
+            </p>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Select value={range} onValueChange={(v) => setRange(v as RangeOption)}>
+              <SelectTrigger className="w-[160px] h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="latest">Latest synced day</SelectItem>
+                <SelectItem value="7">Last 7 days</SelectItem>
+                <SelectItem value="30">Last 30 days</SelectItem>
+                <SelectItem value="custom">Custom range</SelectItem>
+              </SelectContent>
+            </Select>
+            {range === "custom" && (
+              <>
+                <input
+                  type="date"
+                  value={customFrom}
+                  max={customTo}
+                  onChange={(e) => setCustomFrom(e.target.value)}
+                  className="h-8 rounded-md border px-2 text-xs"
+                />
+                <span className="text-xs text-muted-foreground">to</span>
+                <input
+                  type="date"
+                  value={customTo}
+                  min={customFrom}
+                  max={toISODate(new Date(Date.now() - 86400000))}
+                  onChange={(e) => setCustomTo(e.target.value)}
+                  className="h-8 rounded-md border px-2 text-xs"
+                />
+              </>
+            )}
+          </div>
+        </div>
       </CardHeader>
       <CardContent className="space-y-3">
-        {isLoading ? (
+        {isLoading || (range !== "latest" && historyLoading) ? (
           <LoadingState message="Loading campaigns..." />
         ) : (
-          campaigns!.map((c) => (
+          campaigns!.map((c) => {
+            const agg = range !== "latest" ? rangeTotals.get(c.google_campaign_id) : null;
+            const shown = agg ?? { impressions: c.impressions ?? 0, clicks: c.clicks ?? 0, cost: c.cost ?? 0, conversions: c.conversions ?? 0, ctr: c.ctr ?? 0 };
+            return (
             <div key={c.id} className="rounded-lg border p-4 space-y-3">
               <div className="flex items-start justify-between gap-3 flex-wrap">
                 <div>
@@ -92,10 +199,15 @@ function GoogleAdsCampaignsSection() {
                     {c.campaign_type && <Badge variant="outline">{c.campaign_type}</Badge>}
                     <Badge variant={c.status === "ENABLED" ? "default" : "secondary"}>{c.status}</Badge>
                   </div>
-                  {c.metrics_date && (
+                  {range === "latest" && c.metrics_date && (
                     <p className="text-xs text-muted-foreground mt-1">
-                      Numbers below are for {new Date(c.metrics_date).toLocaleDateString("en-IN", { day: "numeric", month: "short" })} only (one day, synced from Google Ads) —
+                      Numbers below are for {fmtShort(c.metrics_date)} only (one day, synced from Google Ads) —
                       not a running total, so they won't match Google's own dashboard unless it's also set to that single day.
+                    </p>
+                  )}
+                  {range !== "latest" && rangeBounds && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Totals for {fmtShort(rangeBounds.from)} – {fmtShort(rangeBounds.to)}, summed from daily Google Ads syncs.
                     </p>
                   )}
                 </div>
@@ -112,14 +224,15 @@ function GoogleAdsCampaignsSection() {
               </div>
               <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 text-sm">
                 <div><span className="text-muted-foreground">Budget</span><div className="font-medium">₹{inrNum(c.budget_amount)}/day</div></div>
-                <div><span className="text-muted-foreground">Impressions</span><div className="font-medium">{inrNum(c.impressions)}</div></div>
-                <div><span className="text-muted-foreground">Clicks</span><div className="font-medium">{inrNum(c.clicks)}</div></div>
-                <div><span className="text-muted-foreground">Cost</span><div className="font-medium">₹{inrNum(c.cost)}</div></div>
-                <div><span className="text-muted-foreground">Conversions</span><div className="font-medium">{inrNum(c.conversions)}</div></div>
-                <div><span className="text-muted-foreground">CTR</span><div className="font-medium">{c.ctr ? `${(c.ctr * 100).toFixed(2)}%` : "—"}</div></div>
+                <div><span className="text-muted-foreground">Impressions</span><div className="font-medium">{inrNum(shown.impressions)}</div></div>
+                <div><span className="text-muted-foreground">Clicks</span><div className="font-medium">{inrNum(shown.clicks)}</div></div>
+                <div><span className="text-muted-foreground">Cost</span><div className="font-medium">₹{inrNum(shown.cost)}</div></div>
+                <div><span className="text-muted-foreground">Conversions</span><div className="font-medium">{inrNum(shown.conversions)}</div></div>
+                <div><span className="text-muted-foreground">CTR</span><div className="font-medium">{shown.ctr ? `${(shown.ctr * 100).toFixed(2)}%` : "—"}</div></div>
               </div>
             </div>
-          ))
+            );
+          })
         )}
       </CardContent>
     </Card>
