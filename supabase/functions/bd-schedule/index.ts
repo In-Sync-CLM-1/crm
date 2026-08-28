@@ -94,9 +94,9 @@ Deno.serve(async (req) => {
           org_id: GLOBALCRM_ORG,
           to_email: contact.email,
           subject: null,                    // reply in thread — no new subject
-          body_html: html,
+          html_content: html,
           status: 'scheduled',
-          scheduled_for: slot.toISOString(),
+          scheduled_at: slot.toISOString(),
           from_name: FROM_NAME,
           bare_email: true,                 // no platform footer, no List-Unsubscribe
           in_reply_to: seq.thread_message_id,
@@ -142,9 +142,9 @@ Deno.serve(async (req) => {
             org_id: GLOBALCRM_ORG,
             to_email: contact.email,
             subject: d.subject,
-            body_html: String(d.body).replace(/\n/g, '<br>'),
+            html_content: String(d.body).replace(/\n/g, '<br>'),
             status: 'scheduled',
-            scheduled_for: slot.toISOString(),
+            scheduled_at: slot.toISOString(),
             from_name: FROM_NAME,
             bare_email: true,
           }).select('id').single();
