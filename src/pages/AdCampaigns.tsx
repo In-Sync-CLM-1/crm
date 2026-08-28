@@ -92,6 +92,12 @@ function GoogleAdsCampaignsSection() {
                     {c.campaign_type && <Badge variant="outline">{c.campaign_type}</Badge>}
                     <Badge variant={c.status === "ENABLED" ? "default" : "secondary"}>{c.status}</Badge>
                   </div>
+                  {c.metrics_date && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Numbers below are for {new Date(c.metrics_date).toLocaleDateString("en-IN", { day: "numeric", month: "short" })} only (one day, synced from Google Ads) —
+                      not a running total, so they won't match Google's own dashboard unless it's also set to that single day.
+                    </p>
+                  )}
                 </div>
                 <Button
                   size="sm"
