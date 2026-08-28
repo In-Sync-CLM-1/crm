@@ -62,6 +62,7 @@ const META: Record<string, { name: string; dialer?: boolean; marketing?: boolean
   upnhhrhobvdmpfnldvgb: { name: "website", web: "https://in-sync.co.in" },
   dhbeivfeuewzkdeqkjpa: { name: "work-sync", web: "https://work.in-sync.co.in" },
   ljokqicllbemfjytfhbi: { name: "expense", web: "https://expense.in-sync.co.in" },
+  mcwmrzgtrcrpkxhjugkp: { name: "field-sync", web: "https://field.in-sync.co.in" },
 };
 
 // PARKED products — backend deliberately deleted (2026-07-10, business decision):
@@ -82,8 +83,16 @@ const META: Record<string, { name: string; dialer?: boolean; marketing?: boolean
 // Management API token that could see their new accounts, so they kept
 // reporting "Parked (business decision)" long after that stopped being true.
 // See MGMT_TOKEN_WORKSYNC / MGMT_TOKEN_FMAMIT above. Real META entries added.
+// fieldsync REMOVED 2026-08-28 — re-provisioned live 2026-08-26 on a NEW ref
+// (mcwmrzgtrcrpkxhjugkp, real client org "Capital India" w/ DSAs/visits/leads),
+// but this array still pointed at the OLD deleted ref, so the new project got
+// zero real coverage: it fell through to generic checks under its raw ref as
+// a name (not "field-sync"), no frontend probe (no web entry), no module
+// checks. Found 2026-08-28 while auditing Sentinel's own coverage after the
+// BD-outreach silent-failure incident — same failure CLASS as the 2026-08-24
+// work-sync/expense fix below: a re-provisioned project silently invisible
+// because the registry pointed at the dead ref. Real META + MODULE_MAP added.
 const PARKED: { name: string; ref: string; web: string; parkedOn: string }[] = [
-  { name: "fieldsync", ref: "jmxpudhpdltktuupfbxs", web: "https://field.in-sync.co.in", parkedOn: "2026-07-10" },
   { name: "wa", ref: "unmdhcjrplwntqjiciiz", web: "https://wa.in-sync.co.in", parkedOn: "2026-07-10" },
   { name: "email", ref: "xpndsoozxjrvcwhauunh", web: "https://email.in-sync.co.in", parkedOn: "2026-07-10" },
 ];
@@ -324,6 +333,111 @@ async function checkMarketing(ref: string): Promise<Check> {
     };
   } catch (e) {
     return { label: "Marketing engine live", status: "warn", detail: String(e) };
+  }
+}
+
+// --- generic queue-outcome probe -------------------------------------------
+// Every send/parse/analytics pipeline in the fleet (WhatsApp, email, bulk
+// campaigns, automation executions, scheduled jobs) is the SAME shape: a
+// table row sits in a "not-done-yet" status until a cron worker moves it to
+// a terminal one. The bd-schedule outage (2026-08-17 to 08-28, 6 silent
+// cron runs, 8 days) was this exact shape and nothing was watching it —
+// every existing Sentinel check up to that point asked "is this reachable",
+// never "did this specific row of work actually get carried". This probe
+// asks the second question generically, once, for any such queue: are there
+// rows stuck in a not-done status for longer than the pipeline's own normal
+// cadence should ever allow? A non-zero answer means the cron is running
+// (or Sentinel's DB check would already be red) but NOT converting queued
+// work into results — i.e. exactly the "200 OK, did nothing" failure mode.
+// staleAfterHours must be generous vs. the real send cadence (a Tue/Wed/Thu
+// campaign needs days, not hours) to avoid crying wolf on legitimately
+// scheduled-for-later rows.
+interface QueueCfg { label: string; table: string; statusCol: string; timeCol: string; stuckStatuses: string[]; staleAfterHours: number }
+
+async function checkQueueOutcome(ref: string, cfg: QueueCfg): Promise<Check> {
+  try {
+    const statusList = cfg.stuckStatuses.map((s) => `'${s.replace(/'/g, "''")}'`).join(",");
+    const rows = await sql(
+      ref,
+      `select count(*) n, min(${cfg.timeCol}) oldest from ${cfg.table}
+       where ${cfg.statusCol} in (${statusList})
+       and ${cfg.timeCol} < now() - interval '${cfg.staleAfterHours} hours'`,
+    );
+    const n = Number(rows[0]?.n || 0);
+    if (n === 0) return { label: cfg.label, status: "ok", detail: "no stuck rows" };
+    const oldest = rows[0]?.oldest as string | null;
+    const ageH = oldest ? Math.round((Date.now() - new Date(oldest).getTime()) / 3600000) : null;
+    return {
+      label: cfg.label,
+      status: "fail",
+      detail: `${n} row(s) stuck in ${cfg.stuckStatuses.join("/")} for over ${cfg.staleAfterHours}h${ageH ? ` (oldest ${ageH}h)` : ""} — the cron is reachable but not converting queued work into results.`,
+    };
+  } catch (e) {
+    return { label: cfg.label, status: "warn", detail: `probe failed: ${String(e).slice(0, 150)}` };
+  }
+}
+
+// Send/parse/analytics queues, mapped project-by-project against each
+// table's REAL not-done status vocabulary (verified live, not guessed —
+// guessing produced false reds on the module map before; see the
+// checkModules lesson above). staleAfterHours is set to the pipeline's own
+// cadence x a generous multiple, not a round number, so a legitimately
+// scheduled-for-later row (e.g. a Tue/Wed/Thu campaign) never trips this.
+// timeCol is deliberately the row's own DUE time (scheduled_at/scheduled_for),
+// not created_at — a row queued today for a legitimate future send (e.g. a
+// Tue/Wed/Thu campaign, or a Day+4 follow-up) has an old created_at but is
+// not stuck. Comparing against created_at was the first version of this
+// check shipped in this same PR — a live dry-run immediately false-positived
+// on 5 rows queued minutes earlier for 2026-09-01, caught before merge. Using
+// the DUE time instead means "flag rows whose own send time has already
+// passed by staleAfterHours" — which is what "stuck" actually means.
+const QUEUE_CHECKS: Record<string, QueueCfg[]> = {
+  mlvgqudcwlkolsbighnn: [ // crm
+    { label: "Queue · Email automation executions", table: "email_automation_executions", statusCol: "status", timeCol: "scheduled_for", stuckStatuses: ["pending", "scheduled"], staleAfterHours: 4 },
+    { label: "Queue · Email bulk campaigns", table: "email_bulk_campaigns", statusCol: "status", timeCol: "scheduled_at", stuckStatuses: ["scheduled", "sending", "pending"], staleAfterHours: 4 },
+    { label: "Queue · WhatsApp bulk campaigns", table: "whatsapp_bulk_campaigns", statusCol: "status", timeCol: "scheduled_at", stuckStatuses: ["scheduled", "processing", "pending"], staleAfterHours: 4 },
+    { label: "Queue · WhatsApp messages", table: "whatsapp_messages", statusCol: "status", timeCol: "scheduled_at", stuckStatuses: ["scheduled", "pending"], staleAfterHours: 4 },
+    { label: "Queue · Email conversations (scheduled sends)", table: "email_conversations", statusCol: "status", timeCol: "scheduled_at", stuckStatuses: ["scheduled", "pending"], staleAfterHours: 4 },
+    { label: "Queue · Follow campaign (LinkedIn/Facebook asks)", table: "mkt_follow_campaign", statusCol: "status", timeCol: "created_at", stuckStatuses: ["queued"], staleAfterHours: 30 }, // no due-date column — created_at is the only signal; daily/weekly cadence so a generous window
+  ],
+  ejzjrvazegaxrhqizgaa: [ // globalcrm
+    { label: "Queue · Email automation executions", table: "email_automation_executions", statusCol: "status", timeCol: "scheduled_for", stuckStatuses: ["pending", "scheduled"], staleAfterHours: 4 },
+    { label: "Queue · Email bulk campaigns", table: "email_bulk_campaigns", statusCol: "status", timeCol: "scheduled_at", stuckStatuses: ["scheduled", "sending", "pending"], staleAfterHours: 4 },
+    { label: "Queue · WhatsApp bulk campaigns", table: "whatsapp_bulk_campaigns", statusCol: "status", timeCol: "scheduled_at", stuckStatuses: ["scheduled", "processing", "pending"], staleAfterHours: 4 },
+    { label: "Queue · WhatsApp messages", table: "whatsapp_messages", statusCol: "status", timeCol: "scheduled_at", stuckStatuses: ["scheduled", "pending"], staleAfterHours: 4 },
+    { label: "Queue · Email conversations (scheduled sends)", table: "email_conversations", statusCol: "status", timeCol: "scheduled_at", stuckStatuses: ["scheduled", "pending"], staleAfterHours: 4 },
+  ],
+  ufwvyybrctjpwipbveqe: [ // RMPL
+    { label: "Queue · Scheduled emails", table: "scheduled_emails", statusCol: "status", timeCol: "scheduled_for", stuckStatuses: ["pending", "scheduled", "processing"], staleAfterHours: 4 },
+    // webhook_inbox has no status column (verified live) — it's a
+    // null-marks-pending shape (processed_at IS NULL), not the enum shape
+    // checkQueueOutcome expects. See checkWebhookInboxStale below instead.
+  ],
+};
+
+async function checkQueues(ref: string): Promise<Check[]> {
+  const cfgs = QUEUE_CHECKS[ref];
+  if (!cfgs) return [];
+  return Promise.all(cfgs.map((c) => checkQueueOutcome(ref, c)));
+}
+
+// RMPL webhook_inbox: null-marks-pending shape, not the enum-status shape
+// checkQueueOutcome expects — separate probe rather than forcing the generic
+// one to handle two different "not done yet" encodings.
+async function checkWebhookInboxStale(ref: string): Promise<Check> {
+  try {
+    const rows = await sql(
+      ref,
+      `select count(*) n, min(received_at) oldest from webhook_inbox
+       where processed_at is null and received_at < now() - interval '6 hours'`,
+    );
+    const n = Number(rows[0]?.n || 0);
+    if (n === 0) return { label: "Queue · Webhook inbox", status: "ok", detail: "no stuck rows" };
+    const oldest = rows[0]?.oldest as string | null;
+    const ageH = oldest ? Math.round((Date.now() - new Date(oldest).getTime()) / 3600000) : null;
+    return { label: "Queue · Webhook inbox", status: "fail", detail: `${n} unprocessed webhook(s) received over 6h ago${ageH ? ` (oldest ${ageH}h)` : ""}` };
+  } catch (e) {
+    return { label: "Queue · Webhook inbox", status: "warn", detail: `probe failed: ${String(e).slice(0, 150)}` };
   }
 }
 
@@ -601,6 +715,21 @@ const MODULE_MAP: Record<string, ModSpec[]> = {
     ["Teams", "teams"], ["Team members", "team_members"], ["API keys", "api_keys"],
     ["Organizations", "organizations"], ["Users", "profiles"], ["Roles", "user_roles"],
   ]),
+  mcwmrzgtrcrpkxhjugkp: tbl([ // field-sync (DSA/agent field visits) — added 2026-08-28
+    ["Customers / leads", "customers"], ["Leads", "leads"], ["Lead activities", "lead_activities"],
+    ["Visits", "visits"], ["Visit photos", "visit_photos"], ["Visit checklist templates", "visit_checklist_templates"],
+    ["Beats", "beats"], ["Beat customers", "beat_customers"], ["Daily plans", "daily_plans"],
+    ["Plan visits", "plan_visits"], ["Plan enrollments", "plan_enrollments"], ["Route deviations", "route_deviations"],
+    ["Orders", "orders"], ["Order collections", "order_collections"], ["Collections", "collections"],
+    ["Invoices", "invoices"], ["Field invoices", "field_invoices"], ["Payment transactions", "payment_transactions"],
+    ["Products", "products"], ["Subscription plans", "subscription_plans"], ["Attendance", "attendance"],
+    ["Agent locations", "agent_locations"], ["Location history", "location_history"],
+    ["Travel reimbursements", "travel_reimbursements"], ["DSAs", "dsas"], ["Sub-DSAs", "sub_dsas"],
+    ["Branches", "branches"], ["Dispositions", "dispositions"], ["Sub-dispositions", "sub_dispositions"],
+    ["Channel activity alerts", "channel_activity_alerts"], ["Consent records", "consent_records"],
+    ["Data requests", "data_requests"], ["Breach notifications", "breach_notifications"],
+    ["Organizations", "organizations"], ["Users", "profiles"], ["Roles", "user_roles"],
+  ]),
 };
 
 // Canonical module catalog for the sibling CRM apps that don't have a hand-built
@@ -741,6 +870,8 @@ async function runProject(ref: string): Promise<{ ref: string; name: string; che
     if (m.marketing) checks.push(await checkMarketing(ref));
     if (m.bdOutreach) checks.push(await checkBdOutreach(ref));
     if (m.feedCheck) checks.push(await checkSmbFeed(ref));
+    checks.push(...(await checkQueues(ref)));
+    if (ref === "ufwvyybrctjpwipbveqe") checks.push(await checkWebhookInboxStale(ref));
     checks.push(...(await checkModules(ref)));
   }
   return { ref, name: m.name, checks };
