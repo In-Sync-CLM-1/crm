@@ -132,6 +132,14 @@ async function pullGoogleAdsMetrics(
           const budget = row.campaignBudget;
           const m = row.metrics;
 
+          const impressions = m?.impressions || 0;
+          const clicks = m?.clicks || 0;
+          const cost = m?.costMicros ? m.costMicros / 1_000_000 : 0;
+          const conversions = m?.conversions || 0;
+          const conversionValue = m?.conversionsValue || 0;
+          const ctr = m?.ctr || 0;
+          const avgCpc = m?.averageCpc ? m.averageCpc / 1_000_000 : 0;
+
           await supabase.from('mkt_google_ads_campaigns').upsert(
             {
               org_id: accountConfig.org_id,
@@ -141,17 +149,37 @@ async function pullGoogleAdsMetrics(
               status: campaign.status,
               campaign_type: campaign.advertisingChannelType,
               budget_amount: budget?.amountMicros ? budget.amountMicros / 1_000_000 : null,
-              impressions: m?.impressions || 0,
-              clicks: m?.clicks || 0,
-              cost: m?.costMicros ? m.costMicros / 1_000_000 : 0,
-              conversions: m?.conversions || 0,
-              conversion_value: m?.conversionsValue || 0,
-              ctr: m?.ctr || 0,
-              avg_cpc: m?.averageCpc ? m.averageCpc / 1_000_000 : 0,
+              impressions,
+              clicks,
+              cost,
+              conversions,
+              conversion_value: conversionValue,
+              ctr,
+              avg_cpc: avgCpc,
               metrics_date: yesterday,
               last_synced_at: new Date().toISOString(),
             },
             { onConflict: 'org_id,google_campaign_id' }
+          );
+
+          // Daily history — mkt_google_ads_campaigns above only ever holds the
+          // latest sync (one row per campaign), so a range picker needs its own
+          // append-only table. Keyed to survive a same-day re-run.
+          await supabase.from('mkt_google_ads_campaign_metrics_daily').upsert(
+            {
+              org_id: accountConfig.org_id,
+              google_campaign_id: campaign.id,
+              metrics_date: yesterday,
+              impressions,
+              clicks,
+              cost,
+              conversions,
+              conversion_value: conversionValue,
+              ctr,
+              avg_cpc: avgCpc,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: 'org_id,google_campaign_id,metrics_date' }
           );
 
           totalSynced++;
