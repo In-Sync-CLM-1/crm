@@ -50,8 +50,8 @@ const FROM = "In-Sync Health Sentinel <notifications@in-sync.co.in>";
 //        never silent — this is the lesson from the fieldsync blank-screen
 //        outage). Set web:null to intentionally opt a backend-only project out.
 //   feedCheck: probe feed query visibility (catches silent feed filter failures)
-const META: Record<string, { name: string; dialer?: boolean; marketing?: boolean; demoConfirm?: boolean; feedCheck?: boolean; web?: string | null }> = {
-  mlvgqudcwlkolsbighnn: { name: "crm (core)", marketing: true, web: "https://crm.in-sync.co.in" },
+const META: Record<string, { name: string; dialer?: boolean; marketing?: boolean; bdOutreach?: boolean; demoConfirm?: boolean; feedCheck?: boolean; web?: string | null }> = {
+  mlvgqudcwlkolsbighnn: { name: "crm (core)", marketing: true, bdOutreach: true, web: "https://crm.in-sync.co.in" },
   ejzjrvazegaxrhqizgaa: { name: "globalcrm", dialer: true, demoConfirm: true, web: "https://globalcrm.in-sync.co.in" },
   gwfofzqrfpwojejjodgz: { name: "event", web: "https://event.in-sync.co.in" },
   htdwkhtfdifwajdkkpul: { name: "ats", web: "https://ats-6t2.pages.dev" },
@@ -324,6 +324,44 @@ async function checkMarketing(ref: string): Promise<Check> {
     };
   } catch (e) {
     return { label: "Marketing engine live", status: "warn", detail: String(e) };
+  }
+}
+
+async function checkBdOutreach(ref: string): Promise<Check> {
+  // Outcome check, not a plumbing check: bd-schedule can return HTTP 200 while
+  // every write it attempts silently fails (a schema mismatch did exactly this
+  // for 8 days / 6 cron runs, 2026-08-17 to 08-28 — see
+  // project_prosync_bd_scheduler_silent_failure_fix memory). A 200 from the
+  // function proves nothing; the only real signal is whether approved drafts
+  // are actually turning into queued sends. So this asks the business
+  // question directly instead of asking "did the function run".
+  try {
+    const rows = await sql(
+      ref,
+      `select
+         (select count(*) from bd_drafts where status='approved') as approved_waiting,
+         (select max(created_at) from bd_events where event_type='queued') as last_queued`,
+    );
+    const waiting = Number(rows[0]?.approved_waiting || 0);
+    const lastQueued = rows[0]?.last_queued as string | null;
+    if (waiting === 0) return { label: "BD outreach scheduler", status: "ok", detail: "no approved drafts waiting" };
+    const ageDays = lastQueued ? (Date.now() - new Date(lastQueued).getTime()) / 86400000 : Infinity;
+    // Cadence is 3x/week (Tue/Wed/Thu) — 5 clear calendar days with approved
+    // work sitting and nothing queued is already past a full send window with
+    // no progress, not just an unlucky weekend.
+    if (ageDays > 5) {
+      return {
+        label: "BD outreach scheduler",
+        status: "fail",
+        detail: `${waiting} approved draft(s) waiting, last real send queued ${lastQueued ? `${Math.floor(ageDays)}d ago` : "never"} — the scheduler is running but not converting approvals into sends.`,
+      };
+    }
+    if (ageDays > 3) {
+      return { label: "BD outreach scheduler", status: "warn", detail: `${waiting} approved draft(s) waiting, last queued ${Math.floor(ageDays)}d ago — watch this` };
+    }
+    return { label: "BD outreach scheduler", status: "ok", detail: `${waiting} approved draft(s) waiting, queue is moving (last queued ${Math.floor(ageDays)}d ago)` };
+  } catch (e) {
+    return { label: "BD outreach scheduler", status: "warn", detail: `probe failed: ${String(e).slice(0, 150)}` };
   }
 }
 
@@ -701,6 +739,7 @@ async function runProject(ref: string): Promise<{ ref: string; name: string; che
       if (m.demoConfirm) checks.push(await checkDemoConfirmation(ref, dialingActive));
     }
     if (m.marketing) checks.push(await checkMarketing(ref));
+    if (m.bdOutreach) checks.push(await checkBdOutreach(ref));
     if (m.feedCheck) checks.push(await checkSmbFeed(ref));
     checks.push(...(await checkModules(ref)));
   }
