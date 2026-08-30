@@ -63,6 +63,7 @@ const META: Record<string, { name: string; dialer?: boolean; marketing?: boolean
   dhbeivfeuewzkdeqkjpa: { name: "work-sync", web: "https://work.in-sync.co.in" },
   ljokqicllbemfjytfhbi: { name: "expense", web: "https://expense.in-sync.co.in" },
   mcwmrzgtrcrpkxhjugkp: { name: "field-sync", web: "https://field.in-sync.co.in" },
+  jemtjynhelobhegppsbp: { name: "it-helpdesk", web: "https://helpdesk.in-sync.co.in" },
 };
 
 // PARKED products — backend deliberately deleted (2026-07-10, business decision):
