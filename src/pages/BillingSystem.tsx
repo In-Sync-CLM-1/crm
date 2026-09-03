@@ -101,15 +101,20 @@ export default function BillingSystem() {
     },
   ) => {
     if (!clientId) return;
-    const update: Record<string, string | null> = {};
-    if (details.gstin !== undefined) update.gstin = details.gstin || null;
-    if (details.pan !== undefined) update.pan = details.pan || null;
-    if (details.invoice_company_name !== undefined) update.invoice_company_name = details.invoice_company_name || null;
-    if (details.billing_address !== undefined) update.billing_address = details.billing_address || null;
-    if (details.billing_state_code !== undefined) update.billing_state_code = details.billing_state_code || null;
-    if (details.state !== undefined) update.state = details.state || null;
-    if (details.city !== undefined) update.city = details.city || null;
-    if (details.pin_code !== undefined) update.postal_code = details.pin_code || null;
+    // Only ever write a field that actually has a value. A blank field in the
+    // submitted form (e.g. the prefill didn't have a chance to populate it)
+    // must never null out billing details the client already has on file —
+    // this previously let one bare-form save silently erase a client's saved
+    // GSTIN/PAN/address on every future document.
+    const update: Record<string, string> = {};
+    if (details.gstin) update.gstin = details.gstin;
+    if (details.pan) update.pan = details.pan;
+    if (details.invoice_company_name) update.invoice_company_name = details.invoice_company_name;
+    if (details.billing_address) update.billing_address = details.billing_address;
+    if (details.billing_state_code) update.billing_state_code = details.billing_state_code;
+    if (details.state) update.state = details.state;
+    if (details.city) update.city = details.city;
+    if (details.pin_code) update.postal_code = details.pin_code;
     if (Object.keys(update).length === 0) return;
     const { error } = await supabase.from("clients").update(update).eq("id", clientId);
     if (error) {
