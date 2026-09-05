@@ -1001,9 +1001,13 @@ async function notifyWhatsApp(text: string): Promise<string> {
   } catch (e) { return `wa err ${e}`; }
 }
 
-// Places the escalation call directly via Exotel's Voicebot Applet, into the
-// shared insync-exotel-bridge (the LiveKit-based agent that replaced Bolna
-// fleet-wide — see ai-calling/README.md; RMPL was the first project cut over).
+// Places a Health Sentinel voice call directly via Exotel's Voicebot Applet,
+// into the shared insync-exotel-bridge (the LiveKit-based agent that replaced
+// Bolna fleet-wide — see ai-calling/README.md; RMPL was the first project cut
+// over). Used both for the escalation call on a still-open, unacknowledged
+// incident and for the "it's fixed now" call once one resolves — which
+// script gets spoken is decided by sentinel-ai-call-context from the
+// incident's own status, not by which call site invokes this.
 //
 // Correlation: CustomField was tried first as the round-trip carrier for
 // ack_token, on the assumption it would reach the Voicebot Applet's start
@@ -1069,7 +1073,7 @@ async function reconcile(results: { ref: string; name: string; checks: Check[] }
     if (failKeys.has(key)) continue;
     const af = autoFixed.find((a) => `${a.project}||${a.system}` === key);
     await sql(CRM_REF, `update sentinel_incidents set status='resolved', resolved_at=now(), auto_fixed=${af ? "true" : "false"}, fix_note=${qs(af ? af.note : "recovered")}, updated_at=now() where id=${qs(row.id)}`);
-    restored.push({ project: row.project, system: row.system, from: row.first_failed_at, auto: !!af, note: af?.note });
+    restored.push({ project: row.project, system: row.system, from: row.first_failed_at, auto: !!af, note: af?.note, ackToken: row.ack_token });
   }
   // Open or refresh incidents for things still failing; escalate the un-fixable.
   for (const f of failing) {
@@ -1156,6 +1160,9 @@ Deno.serve(async (req) => {
         const line = `${r.system} on ${r.project} failed ${ist(r.from)} IST → now (${mins(r.from)} min) and is ${r.auto ? "AUTO-corrected" : "restored"}${r.note ? ": " + r.note : ""}.`;
         await sendEmail(`✅ RESTORED — ${r.system} on ${r.project}`, `<p style="font-family:system-ui,Arial;color:#15803d;font-weight:600;font-size:15px">${line}</p>`);
         await notifyWhatsApp(line);
+        // Closes the loop by voice too, every time — not just for incidents that
+        // had escalated to a call while open (user's explicit call 2026-09-05).
+        await notifyAiCall(line, r.ackToken);
       }
       // Same-run auto-corrections (drift caught and put right before it bit you).
       for (const a of loop.autoMsgs) {
