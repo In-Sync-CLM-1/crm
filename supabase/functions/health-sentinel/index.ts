@@ -1004,9 +1004,15 @@ async function notifyWhatsApp(text: string): Promise<string> {
 // Places the escalation call directly via Exotel's Voicebot Applet, into the
 // shared insync-exotel-bridge (the LiveKit-based agent that replaced Bolna
 // fleet-wide — see ai-calling/README.md; RMPL was the first project cut over).
-// The bridge resolves what to say by calling sentinel-ai-call-context back
-// with the ack_token passed here as CustomField, which Exotel's Voicebot
-// Applet echoes through as a custom_parameter on its start event.
+//
+// Correlation: CustomField was tried first as the round-trip carrier for
+// ack_token, on the assumption it would reach the Voicebot Applet's start
+// event as a custom_parameter — proven live 2026-09-05 that it does NOT:
+// Exotel's callback hit gets it, the WebSocket start event doesn't. Exotel's
+// own call_sid DOES round-trip (confirmed identical at placement and at the
+// Applet's start event), so that's the real correlator: store it against the
+// incident right after Exotel returns it, and sentinel-ai-call-context
+// matches on it instead.
 async function notifyAiCall(_text: string, ackToken: string): Promise<string> {
   const appId = Deno.env.get("CRM_EXOTEL_APP_ID");
   const callerId = Deno.env.get("CRM_EXOTEL_CALLER_ID");
@@ -1025,7 +1031,10 @@ async function notifyAiCall(_text: string, ackToken: string): Promise<string> {
       method: "POST", headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/x-www-form-urlencoded" },
       body: params.toString(),
     });
-    return `call ${r.status}`;
+    const j = await r.json().catch(() => ({} as any));
+    const callSid = j?.Call?.Sid;
+    if (callSid) await sql(CRM_REF, `update sentinel_incidents set last_ai_call_sid=${qs(callSid)}, updated_at=now() where ack_token=${qs(ackToken)}`);
+    return `call ${r.status}${callSid ? ` sid=${callSid}` : " (no call_sid in response)"}`;
   } catch (e) { return `call err ${e}`; }
 }
 
