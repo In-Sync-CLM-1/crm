@@ -5,12 +5,12 @@
 // the same reusable one RMPL/GlobalCRM use (see ai-calling/README.md), not a
 // crm-specific build.
 //
-// Correlation: health-sentinel places the call with CustomField=<ack_token>,
-// which Exotel's Voicebot Applet passes through as a custom_parameter, so the
-// bridge forwards it here as ?ack_token=.... If that ever doesn't arrive
-// (CustomField passthrough unproven for this App type), fall back to the
-// most recently escalated open, unacknowledged incident — there is only ever
-// one active Sentinel call in flight at a time.
+// Correlation: matched on Exotel's own call_sid, which the bridge forwards
+// here as ?call_sid=.... health-sentinel stores it against the incident
+// (last_ai_call_sid) right after Exotel returns it from placing the call.
+// CustomField=<ack_token> was tried first but proven live 2026-09-05 not to
+// survive into the Voicebot Applet's WebSocket start event (only the earlier
+// HTTP callback sees it) — call_sid is what actually round-trips.
 //
 // verify_jwt=false: the bridge calls this server-to-server, authenticated by
 // SENTINEL_AI_CALL_SECRET (Bearer), not a Supabase JWT.
@@ -38,11 +38,14 @@ Deno.serve(async (req) => {
   if (!checkAuth(req)) return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 });
 
   const url = new URL(req.url);
-  const ackTokenParam = (url.searchParams.get("ack_token") || "").replace(/[^a-z0-9]/gi, "");
+  const callSidParam = (url.searchParams.get("call_sid") || "").replace(/[^a-z0-9]/gi, "");
 
-  const rows = ackTokenParam
-    ? await sql(`select project, system, detail, ack_token from sentinel_incidents where ack_token=${qs(ackTokenParam)} and status='open' and acknowledged_at is null limit 1`)
-    : await sql(`select project, system, detail, ack_token from sentinel_incidents where status='open' and acknowledged_at is null and escalated_call_at > now() - interval '3 minutes' order by escalated_call_at desc limit 1`);
+  const rows = callSidParam
+    ? await sql(`select project, system, detail, ack_token from sentinel_incidents where last_ai_call_sid=${qs(callSidParam)} and status='open' and acknowledged_at is null limit 1`)
+    // No call_sid on this request (shouldn't happen — Exotel always includes CallSid on the
+    // Voicebot Applet callback) — fall back to the most recently updated open, unacknowledged
+    // incident rather than failing the call outright.
+    : await sql(`select project, system, detail, ack_token from sentinel_incidents where status='open' and acknowledged_at is null and last_ai_call_sid is not null order by updated_at desc limit 1`);
 
   const inc = rows[0];
   if (!inc) {
