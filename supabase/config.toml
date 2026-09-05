@@ -8,7 +8,10 @@ verify_jwt = false
 [functions.sentinel-tripwire]
 verify_jwt = false
 
-[functions.sentinel-call-webhook]
+[functions.sentinel-ai-call-context]
+verify_jwt = false
+
+[functions.sentinel-ai-call-webhook]
 verify_jwt = false
 
 [functions.mkt-product-manager]
