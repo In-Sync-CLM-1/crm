@@ -1001,15 +1001,29 @@ async function notifyWhatsApp(text: string): Promise<string> {
   } catch (e) { return `wa err ${e}`; }
 }
 
-async function notifyAiCall(text: string, ackToken: string): Promise<string> {
-  const agent = Deno.env.get("HEALTH_BOLNA_AGENT");
-  if (!agent) return "call skipped (no ops agent yet)";
+// Places the escalation call directly via Exotel's Voicebot Applet, into the
+// shared insync-exotel-bridge (the LiveKit-based agent that replaced Bolna
+// fleet-wide — see ai-calling/README.md; RMPL was the first project cut over).
+// The bridge resolves what to say by calling sentinel-ai-call-context back
+// with the ack_token passed here as CustomField, which Exotel's Voicebot
+// Applet echoes through as a custom_parameter on its start event.
+async function notifyAiCall(_text: string, ackToken: string): Promise<string> {
+  const appId = Deno.env.get("CRM_EXOTEL_APP_ID");
+  const callerId = Deno.env.get("CRM_EXOTEL_CALLER_ID");
+  const key = Deno.env.get("BOLNA_EXOTEL_API_KEY"), tok = Deno.env.get("BOLNA_EXOTEL_API_TOKEN"), sid = Deno.env.get("BOLNA_EXOTEL_ACCOUNT_SID");
+  const domain = Deno.env.get("BOLNA_EXOTEL_DOMAIN") || "api.in.exotel.com";
+  if (!appId || !callerId || !key || !tok || !sid) return "call skipped (Exotel AI-call App not configured yet)";
   try {
-    const r = await fetch("https://api.bolna.ai/call", {
-      method: "POST", headers: { Authorization: `Bearer ${Deno.env.get("BOLNA_API_KEY")}`, "Content-Type": "application/json" },
-      // ack_token round-trips as context_details so the call webhook can mark this
-      // exact incident acknowledged when the operator picks up and says "NOTED".
-      body: JSON.stringify({ agent_id: agent, recipient_phone_number: OPS_WA, from_phone_number: "+911169323462", user_data: { alert: text.slice(0, 400), ack_token: ackToken } }),
+    const auth = btoa(`${key}:${tok}`);
+    const params = new URLSearchParams({
+      From: OPS_WA,
+      CallerId: callerId,
+      Url: `http://my.exotel.com/${sid}/exoml/start_voice/${appId}`,
+      CustomField: ackToken,
+    });
+    const r = await fetch(`https://${domain}/v1/Accounts/${sid}/Calls/connect.json`, {
+      method: "POST", headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/x-www-form-urlencoded" },
+      body: params.toString(),
     });
     return `call ${r.status}`;
   } catch (e) { return `call err ${e}`; }
