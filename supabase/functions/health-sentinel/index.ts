@@ -399,7 +399,13 @@ const QUEUE_CHECKS: Record<string, QueueCfg[]> = {
     { label: "Queue · WhatsApp bulk campaigns", table: "whatsapp_bulk_campaigns", statusCol: "status", timeCol: "scheduled_at", stuckStatuses: ["scheduled", "processing", "pending"], staleAfterHours: 4 },
     { label: "Queue · WhatsApp messages", table: "whatsapp_messages", statusCol: "status", timeCol: "scheduled_at", stuckStatuses: ["scheduled", "pending"], staleAfterHours: 4 },
     { label: "Queue · Email conversations (scheduled sends)", table: "email_conversations", statusCol: "status", timeCol: "scheduled_at", stuckStatuses: ["scheduled", "pending"], staleAfterHours: 4 },
-    { label: "Queue · Follow campaign (LinkedIn/Facebook asks)", table: "mkt_follow_campaign", statusCol: "status", timeCol: "created_at", stuckStatuses: ["queued"], staleAfterHours: 30 }, // no due-date column — created_at is the only signal; daily/weekly cadence so a generous window
+    // The campaign deliberately keeps a ~7-day queue buffer per tier (top-up
+    // maintains ~763 rows/tier against a ~100-130/day send rate — see
+    // mkt-follow-topup), so a row sitting queued for 1-2 days is normal, not
+    // stuck. 30h false-positived on this exact steady-state depth on 2026-09-05.
+    // 216h (9 days) sits just past the ~7.6-day worst-case residency at the
+    // slowest planned send rate, so it still catches a genuinely dead cron.
+    { label: "Queue · Follow campaign (LinkedIn/Facebook asks)", table: "mkt_follow_campaign", statusCol: "status", timeCol: "created_at", stuckStatuses: ["queued"], staleAfterHours: 216 },
   ],
   ejzjrvazegaxrhqizgaa: [ // globalcrm
     { label: "Queue · Email automation executions", table: "email_automation_executions", statusCol: "status", timeCol: "scheduled_for", stuckStatuses: ["pending", "scheduled"], staleAfterHours: 4 },
