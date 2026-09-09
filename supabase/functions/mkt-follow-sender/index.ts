@@ -296,7 +296,7 @@ Deno.serve(async (req) => {
       if (dryRun) { stats[segment].new_sent++; continue; }
       if (outOfTime()) { ranOutOfTime = true; break; }
       const sent = await deliver(row, false);
-      sent ? stats[segment].new_sent++ : stats[segment].failed++;
+      if (sent) stats[segment].new_sent++; else stats[segment].failed++;
       await sleep(SEND_INTERVAL_MS);
     }
 
@@ -317,7 +317,7 @@ Deno.serve(async (req) => {
       if (dryRun) { stats[segment].reminders_sent++; continue; }
       if (outOfTime()) { ranOutOfTime = true; break; }
       const sent = await deliver(row, true);
-      sent ? stats[segment].reminders_sent++ : stats[segment].failed++;
+      if (sent) stats[segment].reminders_sent++; else stats[segment].failed++;
       await sleep(SEND_INTERVAL_MS);
     }
   }

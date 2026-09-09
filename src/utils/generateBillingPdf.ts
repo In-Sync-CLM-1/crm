@@ -28,6 +28,7 @@ const clean = (s?: string | null) =>
     .replace(/[‐-―]/g, "-")
     .replace(/…/g, "...")
     .replace(/[•●]/g, "-")
+    // eslint-disable-next-line no-control-regex -- intentional: keep only the WinAnsi (Latin-1) byte range
     .replace(/[^\x00-\xFF]/g, ""); // strip anything else outside WinAnsi rather than render garbage
 
 interface ImageData { dataUrl: string; width: number; height: number }
