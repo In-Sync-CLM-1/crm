@@ -649,7 +649,7 @@ async function checkSmbFeed(ref: string): Promise<Check> {
     return { label: "Feed post visibility", status: "ok", detail: "feed query returns member posts" };
   } catch (e) {
     // Clean up on error (best-effort)
-    try { await sql(ref, `delete from posts where id='${testPostId}'`); } catch (_) { }
+    try { await sql(ref, `delete from posts where id='${testPostId}'`); } catch (_) { /* best-effort cleanup, ignore */ }
     return { label: "Feed post visibility", status: "warn", detail: `probe failed: ${String(e).slice(0, 100)}` };
   }
 }
