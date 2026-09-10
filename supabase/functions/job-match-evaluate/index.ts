@@ -221,7 +221,7 @@ ${research.profile}
 HIRING-TREND SIGNAL:
 ${research.hiringTrend}`;
 
-    const { data: judgment } = await callLLMJson<MatchJudgment>(prompt, { model: 'opus', system: SYSTEM_PROMPT, max_tokens: 1200, temperature: 0.1 });
+    const { data: judgment } = await callLLMJson<MatchJudgment>(prompt, { model: 'opus', system: SYSTEM_PROMPT, max_tokens: 2200, temperature: 0.1 });
 
     const { data, error } = await supabase.from('job_applications').insert({
       ...base,
