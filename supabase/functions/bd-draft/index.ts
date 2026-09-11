@@ -43,13 +43,19 @@ const SUBJECTS: Record<number, string[]> = {
 // Matches the structure of Amit's own LinkedIn outreach (see
 // InSync_Lead_Recommendations_Enriched.xlsx, column PersonalizedMessage):
 // warm handshake -> researched hook, softened to a timing question rather
-// than a flat assertion -> ONE value line carrying the proof number ->
-// a soft, specific-week call ask. That method carries no personal-resume
-// line at all -- it leans entirely on the hook + one concrete number, which
-// this now matches. (2026-09-11: the old version opened cold, straight into
-// the researched hook with no greeting, then spent two more paragraphs on
-// Amit's own history before ever getting to the ask -- flagged by Amit as
-// missing the "handshake" his LinkedIn messages always open with.)
+// than a flat assertion -> a value paragraph -> a soft, specific-week call
+// ask. (2026-09-11: the old version opened cold, straight into the
+// researched hook with no greeting -- flagged by Amit as missing the
+// "handshake" his LinkedIn messages always open with. First fix cut the
+// value paragraph down to just the one industry-matched proof stat, which
+// then raised a second, separate concern: leading on a single narrow
+// number -- e.g. an ATS story to every staffing-shaped firm -- risks
+// reading as "the ATS guy" rather than the broader proposition. The value
+// paragraph now states the actual breadth ground truth from
+// amitResume.ts -- 11 years as the buyer, then 10 building 14 systems sold
+// to 90+ companies across unrelated industries -- and explicitly frames
+// the one matched proof as a single example within that, not the whole
+// pitch.)
 const CLOSERS = [
   'Would you be open to a quick 15-minute call this week to see how this could fit in?',
   'Open to a quick 15-minute call this week to see how this could fit in?',
@@ -65,13 +71,21 @@ function assemble(version: number, firstName: string, firstLine: string, proofTe
     4: `I've built this exact kind of system for clients like yours before, which is the reason I'm writing.`,
   };
 
+  // PROOFS entries are lowercase fragments (written to slot mid-sentence,
+  // e.g. "One number for scale: an ATS I built runs...") -- capitalize when
+  // it now opens its own sentence instead, or it reads as a typo straight
+  // after a period.
+  const proofSentence = proofText.charAt(0).toUpperCase() + proofText.slice(1);
+
   return `Hi ${firstName}, hope you're doing well.
 
 ${firstLine}
 
 ${openings[version]}
 
-I do this kind of work myself: ${proofText}. India-based, available 8am–1pm ET — contract, through your entity or mine.
+I ran these exact functions as the buyer for 11 years before I started building them — HDFC Life, Canara HSBC, up to $25M of budget under management. Since then, 14 production systems, sold to 90+ companies from Motherson to InCred to Quess Corp. ${proofSentence} is one of them.
+
+Available 8am–1pm ET, India-based — contract, through your entity or mine.
 
 ${closer}
 
