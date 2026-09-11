@@ -11,6 +11,16 @@ interface LLMOptions {
   /** Grounds the response in a live web search instead of the model's training-data recall. */
   webSearch?: boolean;
   maxSearchUses?: number;
+  /**
+   * gpt-oss (the 'haiku' tier's real model, via Groq/Cerebras) is a reasoning
+   * model — it spends tokens on a hidden reasoning block that shares the same
+   * max_tokens budget as the visible answer. Left unset it defaults to a lot
+   * of reasoning (157 of 200 tokens in one measured call), which for a short
+   * "return one line" task risks cutting the real answer off mid-sentence
+   * before it ever gets written. 'low' cut that to 24 tokens in the same
+   * test. Only meaningful for the 'haiku' tier; ignored otherwise.
+   */
+  reasoning_effort?: 'low' | 'medium' | 'high';
 }
 
 // Sonnet 4.6 supports the dynamic-filtering web search tool. Only 'sonnet' calls
@@ -59,7 +69,7 @@ const RETRY_DELAY_MS = 1000;
 async function callGroq(
   prompt: string,
   model: LLMModel,
-  options: { max_tokens: number; temperature: number; system?: string; json_mode: boolean }
+  options: { max_tokens: number; temperature: number; system?: string; json_mode: boolean; reasoning_effort?: 'low' | 'medium' | 'high' }
 ): Promise<LLMResponse> {
   const apiKey = Deno.env.get('GROQ_API_KEY');
   if (!apiKey) throw new Error('Missing GROQ_API_KEY — cannot fall back to Groq');
@@ -86,6 +96,9 @@ async function callGroq(
 
   if (options.json_mode) {
     body.response_format = { type: 'json_object' };
+  }
+  if (options.reasoning_effort) {
+    body.reasoning_effort = options.reasoning_effort;
   }
 
   // Cerebras — this tier's only fallback — has been unusable account-wide
@@ -137,7 +150,7 @@ async function callGroq(
  */
 async function callCerebras(
   prompt: string,
-  options: { max_tokens: number; temperature: number; system?: string; json_mode: boolean }
+  options: { max_tokens: number; temperature: number; system?: string; json_mode: boolean; reasoning_effort?: 'low' | 'medium' | 'high' }
 ): Promise<LLMResponse> {
   const apiKey = Deno.env.get('CEREBRAS_API_KEY');
   if (!apiKey) throw new Error('Missing CEREBRAS_API_KEY');
@@ -162,6 +175,9 @@ async function callCerebras(
 
   if (options.json_mode) {
     body.response_format = { type: 'json_object' };
+  }
+  if (options.reasoning_effort) {
+    body.reasoning_effort = options.reasoning_effort;
   }
 
   let lastError: Error | null = null;
@@ -231,15 +247,16 @@ export async function callLLM(
     system,
     webSearch = false,
     maxSearchUses = 3,
+    reasoning_effort,
   } = options;
 
   if (model === 'haiku') {
     // Text-only tier — Groq is fully capable, so it's the 1st choice; Cerebras
     // is the 2nd-choice fallback if Groq errors.
     try {
-      return await callGroq(prompt, model, { max_tokens, temperature, system, json_mode });
+      return await callGroq(prompt, model, { max_tokens, temperature, system, json_mode, reasoning_effort });
     } catch {
-      return callCerebras(prompt, { max_tokens, temperature, system, json_mode });
+      return callCerebras(prompt, { max_tokens, temperature, system, json_mode, reasoning_effort });
     }
   }
 
