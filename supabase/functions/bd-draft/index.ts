@@ -40,30 +40,38 @@ const SUBJECTS: Record<number, string[]> = {
       'Delivery capacity — insurance and financial services systems'],
 };
 
-const CLOSERS = ['Worth twenty minutes?', 'Open to a short call?', 'Worth a conversation?'];
+// Matches the structure of Amit's own LinkedIn outreach (see
+// InSync_Lead_Recommendations_Enriched.xlsx, column PersonalizedMessage):
+// warm handshake -> researched hook, softened to a timing question rather
+// than a flat assertion -> ONE value line carrying the proof number ->
+// a soft, specific-week call ask. That method carries no personal-resume
+// line at all -- it leans entirely on the hook + one concrete number, which
+// this now matches. (2026-09-11: the old version opened cold, straight into
+// the researched hook with no greeting, then spent two more paragraphs on
+// Amit's own history before ever getting to the ask -- flagged by Amit as
+// missing the "handshake" his LinkedIn messages always open with.)
+const CLOSERS = [
+  'Would you be open to a quick 15-minute call this week to see how this could fit in?',
+  'Open to a quick 15-minute call this week to see how this could fit in?',
+  'Worth a quick 15-minute call this week to see how this could fit in?',
+];
 
 /** The body, by angle. The first line and the proof are injected. */
 function assemble(version: number, firstName: string, firstLine: string, proofText: string, closer: string): string {
   const openings: Record<number, string> = {
-    1: `Your CRM and ERP work is already a revenue line, which is why I'm writing rather than pitching.`,
-    2: `You already buy outside capacity, so I'll be direct: I'm offering senior delivery capacity, not a resume.`,
-    3: `There's no AI line on your site. That's either deliberate, or a question your clients have started asking and you haven't had the bench to answer.`,
-    4: `I've built this exact kind of system for clients like yours, which is the only reason I'm writing.`,
+    1: `Your CRM and ERP work is already a revenue line for you — worth a look if pulling in outside senior capacity for it is still handled informally.`,
+    2: `You already buy outside capacity, so I'll keep this direct.`,
+    3: `There's no AI line on your site yet — worth a conversation if that's more a bandwidth gap than a deliberate choice.`,
+    4: `I've built this exact kind of system for clients like yours before, which is the reason I'm writing.`,
   };
 
-  return `Hi ${firstName},
+  return `Hi ${firstName}, hope you're doing well.
 
 ${firstLine}
 
 ${openings[version]}
 
-I implement CRM and operations systems, and I can sit in front of your client. Eleven years on the buying side first — at HDFC Life, an incentive platform covering 24,000 sales staff across channels, owned RFP through adoption. Then ten years building. Fourteen production multi-tenant applications live now.
-
-One number for scale: ${proofText}.
-
-India-based, available 8am to 1pm ET every day. Contract, through your entity or mine.
-
-Happy to start on something small so you can see the work before committing anything.
+I do this kind of work myself: ${proofText}. India-based, available 8am–1pm ET — contract, through your entity or mine.
 
 ${closer}
 
