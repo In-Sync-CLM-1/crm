@@ -25,6 +25,17 @@ const ok = (d: unknown) => new Response(JSON.stringify(d), { status: 200, header
 const err = (s: number, m: string) => new Response(JSON.stringify({ error: m }), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
 const GLOBALCRM_ORG = '61f7f96d-e80c-4d9b-a765-8eb32bd3c70d';   // In-Sync Demo
+// send-email requires a contactId to resolve the org for any service-role
+// caller (added 2026-07-23, #71) — BD prospects live in bd_contacts, not
+// globalcrm's own contacts table, so there's no real contact to point at.
+// This is a one-time placeholder row in globalcrm.contacts (In-Sync Demo
+// org) that exists solely so send-email can resolve org_id; every other
+// field on the outbound email (to_email, subject, body) is unaffected by
+// it. Without this, every automated BD send 500s with "contactId is
+// required" and silently drops out of the pipeline — confirmed live
+// 2026-09-11: 35 queued sends failed this way since 2026-09-01, the first
+// day bd-schedule's own cron had anything to hand off after its Aug 28 fix.
+const BD_PLACEHOLDER_CONTACT_ID = '4681237e-dfcb-442f-9df6-8916e48ead52';
 const FROM_NAME = 'Amit Sengupta';
 const DAILY_CAP = 5;
 
@@ -114,6 +125,7 @@ Deno.serve(async (req) => {
         const origSubject = (seq as Record<string, any>).bd_drafts?.subject || '';
         await gc.from('email_conversations').insert({
           org_id: GLOBALCRM_ORG,
+          contact_id: BD_PLACEHOLDER_CONTACT_ID,
           conversation_id: seq.conversation_id,   // groups with the original send — same thread
           direction: 'outbound',
           from_email: 'a@in-sync.co.in',
@@ -169,6 +181,7 @@ Deno.serve(async (req) => {
           const bodyHtml = String(d.body).replace(/\n/g, '<br>');
           const { data: conv, error: convErr } = await gc.from('email_conversations').insert({
             org_id: GLOBALCRM_ORG,
+            contact_id: BD_PLACEHOLDER_CONTACT_ID,
             conversation_id: conversationId,
             direction: 'outbound',
             from_email: 'a@in-sync.co.in',
