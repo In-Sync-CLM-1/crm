@@ -45,19 +45,34 @@ Deno.serve(async (req) => {
       const email = (seq as Record<string, any>).bd_contacts?.email;
       if (!email) continue;
 
+      // NOTE: globalcrm's email_conversations has no `resend_id` or
+      // `replied_at` column — a reply is a SEPARATE inbound row (direction:
+      // 'inbound', from_email: the prospect), not a flag on the outbound
+      // one. Selecting those two names used to error the whole query, which
+      // supabase-js surfaces as `data: undefined` rather than a thrown
+      // error — silently skipped by the `!convs?.length` check below, so
+      // this function has recorded zero events and never stopped a single
+      // sequence on a reply since it shipped. Fixed 2026-09-11.
       const { data: convs } = await gc
         .from('email_conversations')
-        .select('id, status, sent_at, resend_id, opened_at, bounced_at, replied_at')
+        .select('id, status, sent_at, provider_message_id, opened_at, bounced_at')
         .eq('to_email', email)
         .order('created_at', { ascending: true });
+
+      const { data: replies } = await gc
+        .from('email_conversations')
+        .select('id, created_at')
+        .eq('from_email', email)
+        .eq('direction', 'inbound')
+        .order('created_at', { ascending: true });
+      const firstReplyAt = replies?.[0]?.created_at as string | undefined;
 
       if (!convs?.length) continue;
 
       for (const c of convs) {
         // Delivery states worth recording, in the order they can occur.
         const events: [string, string | null][] = [
-          ['sent', c.sent_at], ['opened', c.opened_at],
-          ['bounced', c.bounced_at], ['replied', c.replied_at],
+          ['sent', c.sent_at], ['opened', c.opened_at], ['bounced', c.bounced_at],
         ];
         for (const [type, at] of events) {
           if (!at) continue;
@@ -76,8 +91,22 @@ Deno.serve(async (req) => {
 
         // A reply or a bounce ends the sequence immediately. A follow-up sent
         // after a reply reads as automated and undoes the email that worked.
-        const stopReason = c.replied_at ? 'replied' : c.bounced_at ? 'bounced' : null;
+        const stopReason = firstReplyAt ? 'replied' : c.bounced_at ? 'bounced' : null;
         if (stopReason && !seq.stopped_at) {
+          if (firstReplyAt) {
+            const { data: seen } = await supabase
+              .from('bd_events').select('id')
+              .eq('firm_id', seq.firm_id).eq('event_type', 'replied')
+              .eq('occurred_at', firstReplyAt).maybeSingle();
+            if (!seen) {
+              await supabase.from('bd_events').insert({
+                org_id: BD_ORG_ID, firm_id: seq.firm_id, sequence_id: seq.id,
+                step: seq.step, event_type: 'replied', occurred_at: firstReplyAt,
+                detail: { conversation_id: c.id },
+              });
+              updated++;
+            }
+          }
           await supabase.from('bd_sequences').update({
             stopped_at: new Date().toISOString(), stop_reason: stopReason, step: 'done',
             next_due_at: null, updated_at: new Date().toISOString(),
@@ -91,9 +120,9 @@ Deno.serve(async (req) => {
 
         // Capture the real Message-ID for threading. Resend returns it on the
         // sent message; without it a follow-up opens a new thread.
-        if (!seq.thread_message_id && c.resend_id && resendKey) {
+        if (!seq.thread_message_id && c.provider_message_id && resendKey) {
           try {
-            const r = await fetch(`https://api.resend.com/emails/${c.resend_id}`, {
+            const r = await fetch(`https://api.resend.com/emails/${c.provider_message_id}`, {
               headers: { Authorization: `Bearer ${resendKey}` },
               signal: AbortSignal.timeout(10_000),
             });
