@@ -55,13 +55,13 @@ const FOLLOWUP_FACTS = [
 // each recipient's read, not the words introducing it.
 const CASE_STUDY_URL = 'https://crm-marketing-store.echocommunicator.workers.dev/bd-outreach/InSync_CaseStudy_RMPL.pdf';
 const CASE_STUDY_FILENAME = 'InSync_CaseStudy_RMPL.pdf';
-const caseStudyFollowup = (firstName: string, fact: string) => `Hi ${firstName},
+// Same "following up on my earlier note" handshake as the LinkedIn method's
+// own follow-up step (see bd-draft's assemble() for the full context on why).
+const caseStudyFollowup = (firstName: string, fact: string) => `Hi ${firstName}, following up on my earlier note.
 
-One thing worth adding: on the platform behind that number, I wasn't hired for a sprint board — I scoped it directly with the client, built it in phases over ten months, ran the rollout myself, and it's still in daily use today (111 of 111 staff, nine months in). ${fact}
+Wanted to share how this plays out elsewhere: I scoped this platform directly with the client, built it in phases over ten months, ran the rollout myself, and it's still in daily use today — 111 of 111 staff, nine months in. ${fact} I've attached a quick case study on it.
 
-That's the gap I'd fill for you — not another name on the bench, someone who can own a piece of delivery end to end with your client and hand it back working. Case study attached.
-
-Still happy to start small.
+Thought this might be useful context before we talk.
 
 Amit`.replace(/\n/g, '<br>');
 
