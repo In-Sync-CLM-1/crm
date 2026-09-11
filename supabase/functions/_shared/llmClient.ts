@@ -88,30 +88,47 @@ async function callGroq(
     body.response_format = { type: 'json_object' };
   }
 
-  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(30_000),
-  });
+  // Cerebras — this tier's only fallback — has been unusable account-wide
+  // (402 payment_required on every real model) since at least 2026-09-11, so
+  // a transient Groq rate limit used to be an instant, unrecoverable failure
+  // with no working safety net behind it. Retry Groq itself first, same
+  // pattern already used for the Anthropic and Cerebras calls below.
+  let lastError: Error | null = null;
 
-  if (!response.ok) {
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(30_000),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content || '';
+      return {
+        content,
+        model: groqModel,
+        input_tokens: data.usage?.prompt_tokens || 0,
+        output_tokens: data.usage?.completion_tokens || 0,
+      };
+    }
+
     const errText = await response.text();
+    if ((response.status === 429 || response.status === 503) && attempt < MAX_RETRIES) {
+      const waitMs = Math.min(RETRY_DELAY_MS * attempt * 2, 8000);
+      await new Promise((r) => setTimeout(r, waitMs));
+      lastError = new Error(`Groq API error ${response.status}: ${errText}`);
+      continue;
+    }
+
     throw new Error(`Groq API error ${response.status}: ${errText}`);
   }
 
-  const data = await response.json();
-  const content = data.choices?.[0]?.message?.content || '';
-
-  return {
-    content,
-    model: groqModel,
-    input_tokens: data.usage?.prompt_tokens || 0,
-    output_tokens: data.usage?.completion_tokens || 0,
-  };
+  throw lastError || new Error('Groq call failed after retries');
 }
 
 /**
