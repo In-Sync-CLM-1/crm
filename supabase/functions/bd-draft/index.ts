@@ -43,13 +43,19 @@ const SUBJECTS: Record<number, string[]> = {
 // Matches the structure of Amit's own LinkedIn outreach (see
 // InSync_Lead_Recommendations_Enriched.xlsx, column PersonalizedMessage):
 // warm handshake -> researched hook, softened to a timing question rather
-// than a flat assertion -> ONE value line carrying the proof number ->
-// a soft, specific-week call ask. That method carries no personal-resume
-// line at all -- it leans entirely on the hook + one concrete number, which
-// this now matches. (2026-09-11: the old version opened cold, straight into
-// the researched hook with no greeting, then spent two more paragraphs on
-// Amit's own history before ever getting to the ask -- flagged by Amit as
-// missing the "handshake" his LinkedIn messages always open with.)
+// than a flat assertion -> a value paragraph -> a soft, specific-week call
+// ask. (2026-09-11: the old version opened cold, straight into the
+// researched hook with no greeting -- flagged by Amit as missing the
+// "handshake" his LinkedIn messages always open with. First fix cut the
+// value paragraph down to just the one industry-matched proof stat, which
+// then raised a second, separate concern: leading on a single narrow
+// number -- e.g. an ATS story to every staffing-shaped firm -- risks
+// reading as "the ATS guy" rather than the broader proposition. The value
+// paragraph now states the actual breadth ground truth from
+// amitResume.ts -- 11 years as the buyer, then 10 building 14 systems sold
+// to 90+ companies across unrelated industries -- and explicitly frames
+// the one matched proof as a single example within that, not the whole
+// pitch.)
 const CLOSERS = [
   'Would you be open to a quick 15-minute call this week to see how this could fit in?',
   'Open to a quick 15-minute call this week to see how this could fit in?',
@@ -65,13 +71,21 @@ function assemble(version: number, firstName: string, firstLine: string, proofTe
     4: `I've built this exact kind of system for clients like yours before, which is the reason I'm writing.`,
   };
 
+  // PROOFS entries are lowercase fragments (written to slot mid-sentence,
+  // e.g. "One number for scale: an ATS I built runs...") -- capitalize when
+  // it now opens its own sentence instead, or it reads as a typo straight
+  // after a period.
+  const proofSentence = proofText.charAt(0).toUpperCase() + proofText.slice(1);
+
   return `Hi ${firstName}, hope you're doing well.
 
 ${firstLine}
 
 ${openings[version]}
 
-I do this kind of work myself: ${proofText}. India-based, available 8am–1pm ET — contract, through your entity or mine.
+I ran these exact functions as the buyer for 11 years before I started building them — HDFC Life, Canara HSBC, up to $25M of budget under management. Since then, 14 production systems, sold to 90+ companies from Motherson to InCred to Quess Corp. ${proofSentence} is one of them.
+
+Available 8am–1pm ET, India-based — contract, through your entity or mine.
 
 ${closer}
 
@@ -169,12 +183,18 @@ ${factLines}
 
 RULES
 - Name ONE specific thing from the facts above: a client, a case title, a stack item.
-- State what it IMPLIES about their clients or their work, not that it is good.
+- Make it unmistakable that thing is THEIRS — "your client X", "the X case study on your site",
+  "you built X" — before you say what it implies. A proper noun stated with no ownership
+  context reads as a non-sequitur to a stranger who has never heard of it.
   good: "AS/400 on your stack page in 2026 means clients who can't move and won't be told to."
-  bad:  "Impressive work with legacy systems."
+  good: "Your Dedica Health case study is a remote patient-monitoring build — a regulated,
+         can't-be-wrong kind of client."
+  bad:  "Impressive work with legacy systems." (no implication, just praise)
+  bad:  "Dedica Health indicates a focus on remote patient care." (states a name with no
+         ownership context — reads as a fact about a stranger, not a remark to one)
 - Write about THEM. Never mention yourself, your firm, or what you noticed.
 - Never say anything critical about the firm or its size.
-- One or two sentences. No adjectives. No exclamation marks.
+- One or two COMPLETE sentences, ending in a period. No adjectives. No exclamation marks.
 
 Return only the line.`;
 
@@ -186,12 +206,32 @@ Return only the line.`;
       let firstLine = '';
       for (let attempt = 0; attempt < 2 && !firstLine; attempt++) {
         try {
-          const res = await callLLM(prompt, { max_tokens: 200, temperature: attempt === 0 ? 0.6 : 0.8 });
+          // gpt-oss (the haiku tier's real model, via Groq/Cerebras) is a
+          // reasoning model — it spends tokens on a hidden reasoning block
+          // that shares the same max_tokens budget as the visible answer.
+          // Left at the provider default this occasionally cut the actual
+          // line off mid-sentence ("Their Oracle stack implies they" —
+          // confirmed live, 2026-09-11): 157 of 200 tokens went to invisible
+          // reasoning in one measured call, and nothing was checking that the
+          // line actually ended. reasoning_effort: 'low' cut that to 24 in
+          // the same test, so 200 tokens is plenty again without needing to
+          // widen the budget (which would just slow every call down).
+          const res = await callLLM(prompt, { max_tokens: 200, temperature: attempt === 0 ? 0.6 : 0.8, reasoning_effort: 'low' });
           const line = String(res.content ?? '').trim().replace(/^["']|["']$/g, '');
           // A line that opens with the firm's own name reads as a report about
           // them rather than a remark to them.
           const startsWithName = line.toLowerCase().startsWith(String(f.firm_name).toLowerCase());
-          if (line && line.length > 25 && line.length < 320 && !BAD_LINE.test(line) && !startsWithName) firstLine = line;
+          // Requires the line to actually tie its named fact back to the
+          // reader ("your", "you", "you've") — the Dedica Health failure named
+          // a real, grounded fact but stated it as if the reader already knew
+          // who that was, with nothing connecting it to "your site/client/work".
+          const hasOwnershipMarker = /\byou(r|'?re|'?ve)?\b/i.test(line);
+          // A line cut off mid-sentence (no terminal punctuation) passed every
+          // other check before — reject it the same way a bad implication gets
+          // rejected, rather than silently sending half a thought.
+          const endsComplete = /[.!?]['")\]]?$/.test(line);
+          if (line && line.length > 25 && line.length < 320 && !BAD_LINE.test(line)
+            && !startsWithName && hasOwnershipMarker && endsComplete) firstLine = line;
         } catch (e) {
           results.push({ firm: f.firm_name, skipped: `line generation failed: ${e instanceof Error ? e.message : String(e)}` });
           break;
