@@ -75,18 +75,22 @@ const STATUS_STYLE: Record<string, string> = {
   bounced: "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300",
   opted_out: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
   complained: "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300",
+  upcoming: "bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300",
+  awaiting_approval: "bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300",
 };
 const STATUS_LABEL: Record<string, string> = {
   scheduled: "Scheduled", sent: "Sent", opened: "Opened", replied: "Replied",
   bounced: "Bounced", opted_out: "Opted out", complained: "Complained",
+  upcoming: "Upcoming", awaiting_approval: "Awaiting your approval",
 };
 
 interface KanbanCard {
   firm_id: string;
   firm_name: string;
   step: string;
-  date: string; // yyyy-MM-dd bucket
+  date: string; // yyyy-MM-dd bucket, "" for not-yet-dated (awaiting approval)
   status: string;
+  upcoming?: boolean; // not yet actually sent — from bd-schedule's own dry run
 }
 
 export default function BDOutreach() {
@@ -162,6 +166,36 @@ export default function BDOutreach() {
     enabled: !!effectiveOrgId && tab === "kanban",
   });
 
+  // What's coming next — bd-schedule's OWN dry-run selection, not a
+  // re-implementation of its due/cap/ordering logic. Returns exactly what the
+  // next real run would send: firms with an approved draft due now (which
+  // is effectively "the next send day", since the cron only fires Tue/Wed/
+  // Thu) get a real date; a due step with nothing approved yet comes back as
+  // an action note instead of a date — surfaced here too, so a stalled
+  // follow-up is visible on the board, not just buried in the review queue.
+  const { data: upcomingCards } = useQuery({
+    queryKey: ["bd-kanban-upcoming", effectiveOrgId],
+    queryFn: async () => {
+      if (!effectiveOrgId) return [];
+      const { data, error } = await supabase.functions.invoke("bd-schedule", { body: { dry_run: true } });
+      if (error) throw error;
+      const items = (data?.items || []) as Array<Record<string, unknown>>;
+      const cards: KanbanCard[] = [];
+      for (const it of items) {
+        const step = String(it.step || "");
+        if (!["email_1", "followup_1", "followup_2"].includes(step)) continue;
+        const firmName = String(it.firm || "Unknown");
+        if (it.scheduled_for) {
+          cards.push({ firm_id: `upcoming:${firmName}:${step}`, firm_name: firmName, step, date: String(it.scheduled_for).slice(0, 10), status: "upcoming", upcoming: true });
+        } else if (typeof it.action === "string" && it.action.includes("awaiting")) {
+          cards.push({ firm_id: `upcoming:${firmName}:${step}`, firm_name: firmName, step, date: "", status: "awaiting_approval", upcoming: true });
+        }
+      }
+      return cards;
+    },
+    enabled: !!effectiveOrgId && tab === "kanban",
+  });
+
   // Columns are pipeline stages (Initial contact -> Follow-up 1 -> Follow-up
   // 2), not dates — a company moves left to right as its sequence advances,
   // and each card carries the date THAT step's email actually went out.
@@ -171,9 +205,23 @@ export default function BDOutreach() {
     for (const c of kanbanCards || []) {
       if (byStep[c.step]) byStep[c.step].push(c);
     }
-    for (const step of KANBAN_STEPS) byStep[step].sort((a, b) => b.date.localeCompare(a.date));
+    for (const step of KANBAN_STEPS) {
+      // Most recently sent first, so the column reads newest-at-top.
+      byStep[step].sort((a, b) => b.date.localeCompare(a.date));
+    }
+    // Upcoming cards go ABOVE the sent history, nearest-due first; an
+    // "awaiting approval" card (no date yet) leads, since it's the one that
+    // needs action before anything else in its column can move.
+    const upcomingByStep: Record<string, KanbanCard[]> = { email_1: [], followup_1: [], followup_2: [] };
+    for (const c of upcomingCards || []) {
+      if (upcomingByStep[c.step]) upcomingByStep[c.step].push(c);
+    }
+    for (const step of KANBAN_STEPS) {
+      upcomingByStep[step].sort((a, b) => (a.date || "0").localeCompare(b.date || "0"));
+      byStep[step] = [...upcomingByStep[step], ...byStep[step]];
+    }
     return KANBAN_STEPS.map((step) => [step, byStep[step]] as const);
-  }, [kanbanCards]);
+  }, [kanbanCards, upcomingCards]);
 
   const { data: stats } = useQuery({
     queryKey: ["bd-stats", effectiveOrgId],
@@ -320,10 +368,12 @@ export default function BDOutreach() {
                 </div>
                 <div className="space-y-2">
                   {cards.map((c) => (
-                    <Card key={`${c.firm_id}-${c.step}`} className="p-3 space-y-1.5">
+                    <Card key={`${c.firm_id}-${c.step}`} className={`p-3 space-y-1.5 ${c.upcoming ? "border-dashed" : ""}`}>
                       <p className="text-sm font-medium">{c.firm_name}</p>
                       <div className="flex items-center justify-between">
-                        <span className="text-xs text-muted-foreground">{format(new Date(c.date), "d MMM")}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {c.date ? format(new Date(c.date), "d MMM") : "Due now"}
+                        </span>
                         <Badge className={STATUS_STYLE[c.status] || STATUS_STYLE.scheduled}>
                           {STATUS_LABEL[c.status] || c.status}
                         </Badge>
