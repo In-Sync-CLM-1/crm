@@ -60,6 +60,12 @@ const STEP_LABEL: Record<string, string> = {
   followup_2: "Follow-up 2 (breakup)",
 };
 
+const STEP_COLOR: Record<string, { bar: string; badge: string }> = {
+  email_1: { bar: "bg-blue-500", badge: "bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300" },
+  followup_1: { bar: "bg-amber-500", badge: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300" },
+  followup_2: { bar: "bg-violet-500", badge: "bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300" },
+};
+
 const STATUS_STYLE: Record<string, string> = {
   scheduled: "bg-muted text-muted-foreground",
   sent: "bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300",
@@ -85,7 +91,7 @@ interface KanbanCard {
 export default function BDOutreach() {
   const { effectiveOrgId } = useOrgContext();
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<"pending" | "scheduled" | "flagged" | "kanban">("pending");
+  const [tab, setTab] = useState<"pending" | "scheduled" | "flagged" | "kanban">("kanban");
   const [edits, setEdits] = useState<Record<string, { subject: string; body: string }>>({});
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -301,9 +307,10 @@ export default function BDOutreach() {
           <div className="flex gap-3 overflow-x-auto pb-2">
             {kanbanColumns.map(([step, cards]) => (
               <div key={step} className="min-w-[260px] w-[260px] shrink-0">
+                <div className={`h-1 rounded-full mb-2 ${STEP_COLOR[step].bar}`} />
                 <div className="flex items-center justify-between px-1 mb-2">
                   <h3 className="text-sm font-medium">{STEP_LABEL[step]}</h3>
-                  <Badge variant="outline">{cards.length}</Badge>
+                  <Badge className={STEP_COLOR[step].badge}>{cards.length}</Badge>
                 </div>
                 <div className="space-y-2">
                   {cards.map((c) => (
