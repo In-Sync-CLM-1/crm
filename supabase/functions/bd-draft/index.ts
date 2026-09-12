@@ -71,21 +71,27 @@ function assemble(version: number, firstName: string, firstLine: string, proofTe
     4: `I've built this exact kind of system for clients like yours before, which is the reason I'm writing.`,
   };
 
-  // PROOFS entries are lowercase fragments (written to slot mid-sentence,
-  // e.g. "One number for scale: an ATS I built runs...") -- capitalize when
-  // it now opens its own sentence instead, or it reads as a typo straight
-  // after a period.
-  const proofSentence = proofText.charAt(0).toUpperCase() + proofText.slice(1);
-
+  // PROOFS entries are lowercase fragments written to slot after a colon
+  // ("One of them: an ATS I built runs...") -- used as-is, no capitalization
+  // needed since a colon doesn't start a new sentence. (2026-09-12: the
+  // previous shape appended the fragment BEFORE "is one of them", which never
+  // resolves grammatically -- e.g. "An ATS I built runs ... operated by 47
+  // users is one of them." reads as two sentences welded together. Flagged
+  // by Amit on a real draft, alongside a second, separate concern: leading
+  // the paragraph on years/budget/company-count before any mention of
+  // availability reads as someone too established to be asking for
+  // contract work, which buries the actual ask. Cut the "$25M of budget"
+  // figure and turned "Available 8am-1pm ET" from a scheduling footnote
+  // into an active statement of current availability.)
   return `Hi ${firstName}, hope you're doing well.
 
 ${firstLine}
 
 ${openings[version]}
 
-I ran these exact functions as the buyer for 11 years before I started building them — HDFC Life, Canara HSBC, up to $25M of budget under management. Since then, 14 production systems, sold to 90+ companies from Motherson to InCred to Quess Corp. ${proofSentence} is one of them.
+I ran these exact functions as the buyer for 11 years — HDFC Life, Canara HSBC — before spending 10 building them: 14 production systems now live across 90+ companies, from Motherson to InCred to Quess Corp. One of them: ${proofText}.
 
-Available 8am–1pm ET, India-based — contract, through your entity or mine.
+I'm taking on contract delivery work now — 8am–1pm ET, India-based, through your entity or mine.
 
 ${closer}
 
