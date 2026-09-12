@@ -267,7 +267,7 @@ export const PROOFS = {
     why: 'the legacy constraint IS the job',
   },
   routing: {
-    text: '11 live AI features on primary/fallback model routing across Groq and Claude — one of them killed when it did not earn its place',
+    text: '11 live AI features on primary/fallback model routing across Groq and Claude — one killed when it did not earn its place',
     matches: ['ai development', 'generative ai', 'ai agents', 'machine learning', 'llm'],
     why: 'AI-native shops recognise the failure modes',
   },
