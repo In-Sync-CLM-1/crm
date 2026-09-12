@@ -54,10 +54,38 @@ const ANGLE_LABEL: Record<number, string> = {
   4: "v4 · domain anchor",
 };
 
+const STEP_LABEL: Record<string, string> = {
+  email_1: "Initial email",
+  followup_1: "Follow-up 1",
+  followup_2: "Follow-up 2 (breakup)",
+};
+
+const STATUS_STYLE: Record<string, string> = {
+  scheduled: "bg-muted text-muted-foreground",
+  sent: "bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300",
+  opened: "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300",
+  replied: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
+  bounced: "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300",
+  opted_out: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
+  complained: "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300",
+};
+const STATUS_LABEL: Record<string, string> = {
+  scheduled: "Scheduled", sent: "Sent", opened: "Opened", replied: "Replied",
+  bounced: "Bounced", opted_out: "Opted out", complained: "Complained",
+};
+
+interface KanbanCard {
+  firm_id: string;
+  firm_name: string;
+  step: string;
+  date: string; // yyyy-MM-dd bucket
+  status: string;
+}
+
 export default function BDOutreach() {
   const { effectiveOrgId } = useOrgContext();
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<"pending" | "scheduled" | "flagged">("pending");
+  const [tab, setTab] = useState<"pending" | "scheduled" | "flagged" | "kanban">("pending");
   const [edits, setEdits] = useState<Record<string, { subject: string; body: string }>>({});
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -75,8 +103,70 @@ export default function BDOutreach() {
       if (error) throw error;
       return data as Draft[];
     },
-    enabled: !!effectiveOrgId,
+    enabled: !!effectiveOrgId && tab !== "kanban",
   });
+
+  // The send schedule as date buckets: one card per firm per queued step
+  // (initial email + each follow-up), bucketed by the date it was scheduled
+  // for. Status per firm comes from the latest terminal bd_events row
+  // (sent/opened/bounced/replied/opted_out/complained) bd-track has recorded
+  // — a firm with no terminal event yet and a future date is still
+  // "Scheduled"; past with no terminal event is "Sent" (bd-track just hasn't
+  // confirmed delivery back from globalcrm yet).
+  const { data: kanbanCards } = useQuery({
+    queryKey: ["bd-kanban", effectiveOrgId],
+    queryFn: async () => {
+      if (!effectiveOrgId) return [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const sb = supabase as any;
+      const [{ data: queuedEvents, error: qErr }, { data: statusEvents, error: sErr }] = await Promise.all([
+        sb.from("bd_events")
+          .select("firm_id, step, detail, occurred_at, bd_firms(firm_name)")
+          .eq("org_id", effectiveOrgId).eq("event_type", "queued")
+          .order("occurred_at", { ascending: true }),
+        sb.from("bd_events")
+          .select("firm_id, event_type, occurred_at")
+          .eq("org_id", effectiveOrgId)
+          .in("event_type", ["sent", "opened", "bounced", "replied", "opted_out", "complained"])
+          .order("occurred_at", { ascending: false }),
+      ]);
+      if (qErr) throw qErr;
+      if (sErr) throw sErr;
+
+      const latestStatus: Record<string, string> = {};
+      for (const e of statusEvents || []) {
+        if (!latestStatus[e.firm_id]) latestStatus[e.firm_id] = e.event_type;
+      }
+
+      const now = Date.now();
+      return (queuedEvents || []).map((e: Record<string, any>) => {
+        const scheduledFor = (e.detail?.scheduled_for as string) || e.occurred_at;
+        const isFuture = new Date(scheduledFor).getTime() > now;
+        const status = latestStatus[e.firm_id] || (isFuture ? "scheduled" : "sent");
+        return {
+          firm_id: e.firm_id,
+          firm_name: e.bd_firms?.firm_name || "Unknown",
+          step: e.step,
+          date: scheduledFor.slice(0, 10),
+          status,
+        } as KanbanCard;
+      });
+    },
+    enabled: !!effectiveOrgId && tab === "kanban",
+  });
+
+  // Columns are pipeline stages (Initial contact -> Follow-up 1 -> Follow-up
+  // 2), not dates — a company moves left to right as its sequence advances,
+  // and each card carries the date THAT step's email actually went out.
+  const KANBAN_STEPS = ["email_1", "followup_1", "followup_2"] as const;
+  const kanbanColumns = useMemo(() => {
+    const byStep: Record<string, KanbanCard[]> = { email_1: [], followup_1: [], followup_2: [] };
+    for (const c of kanbanCards || []) {
+      if (byStep[c.step]) byStep[c.step].push(c);
+    }
+    for (const step of KANBAN_STEPS) byStep[step].sort((a, b) => b.date.localeCompare(a.date));
+    return KANBAN_STEPS.map((step) => [step, byStep[step]] as const);
+  }, [kanbanCards]);
 
   const { data: stats } = useQuery({
     queryKey: ["bd-stats", effectiveOrgId],
@@ -200,14 +290,43 @@ export default function BDOutreach() {
         )}
 
         <div className="flex gap-1">
-          {(["pending", "scheduled", "flagged"] as const).map((t) => (
+          {(["pending", "scheduled", "flagged", "kanban"] as const).map((t) => (
             <Button key={t} size="sm" variant={tab === t ? "default" : "outline"} onClick={() => setTab(t)}>
-              {t === "pending" ? "Review queue" : t === "scheduled" ? "Scheduled" : "Flagged"}
+              {t === "pending" ? "Review queue" : t === "scheduled" ? "Scheduled" : t === "flagged" ? "Flagged" : "Kanban"}
             </Button>
           ))}
         </div>
 
-        {!visible.length && (
+        {tab === "kanban" && (
+          <div className="flex gap-3 overflow-x-auto pb-2">
+            {kanbanColumns.map(([step, cards]) => (
+              <div key={step} className="min-w-[260px] w-[260px] shrink-0">
+                <div className="flex items-center justify-between px-1 mb-2">
+                  <h3 className="text-sm font-medium">{STEP_LABEL[step]}</h3>
+                  <Badge variant="outline">{cards.length}</Badge>
+                </div>
+                <div className="space-y-2">
+                  {cards.map((c) => (
+                    <Card key={`${c.firm_id}-${c.step}`} className="p-3 space-y-1.5">
+                      <p className="text-sm font-medium">{c.firm_name}</p>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-muted-foreground">{format(new Date(c.date), "d MMM")}</span>
+                        <Badge className={STATUS_STYLE[c.status] || STATUS_STYLE.scheduled}>
+                          {STATUS_LABEL[c.status] || c.status}
+                        </Badge>
+                      </div>
+                    </Card>
+                  ))}
+                  {!cards.length && (
+                    <Card className="p-3 text-xs text-muted-foreground text-center">None yet</Card>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {tab !== "kanban" && !visible.length && (
           <Card className="p-8 text-center text-sm text-muted-foreground">
             Nothing here. If the queue is empty on a send day, nothing goes out — an unreviewed email is worse than a skipped day.
           </Card>
