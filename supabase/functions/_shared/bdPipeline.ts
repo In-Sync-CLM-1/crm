@@ -332,3 +332,125 @@ export function nextSendSlot(tz: string, after: Date, slotIndex = 0): Date {
   }
   return new Date(after.getTime() + 86400000);
 }
+
+// ── Opening-line generation — shared by every step of the sequence ──────────
+// 2026-09-12: follow-ups used to be fixed boilerplate (same wording for every
+// firm, only the first name and one rotating stock line varied). Amit's rule:
+// "every communication has to follow the same rule, no templated work" — so
+// the initial email, follow-up 1 and follow-up 2 all get their own line
+// generated from this firm's own research facts, through the identical
+// quality gate (one grounded fact, tied back to "your/you", no hedging, ends
+// complete). Extracted from bd-draft so bd-draft itself can call it three
+// times per firm with a different `kind` each time.
+import { callLLM } from './llmClient.ts';
+
+export interface UsableFacts {
+  clients: string[];
+  cases: string[];
+  stack: string[];
+  verticals: string[];
+}
+
+/** True when there is at least one real, named thing to open a line on. */
+export function hasOpeningHook(usable: UsableFacts): boolean {
+  return usable.clients.length > 0 || usable.cases.length > 0 || usable.stack.length > 0;
+}
+
+export function factLinesFor(usable: UsableFacts): string {
+  // Only non-empty categories reach the prompt: a printed "none" is
+  // something the model will comment on.
+  return Object.entries(usable)
+    .filter(([, v]) => v.length)
+    .map(([k, v]) => `  ${k}: ${v.slice(0, 10).join(', ')}`)
+    .join('\n');
+}
+
+const BAD_LINE = /\b(I noticed|I saw|our firm|we also|suggesting|implying|may indicate|might indicate|could indicate|may suggest|likely means|probably|may not|might not|appears to|seems to|unfortunately|impressive|great job|none)\b/i;
+
+export async function generateOpeningLine(opts: {
+  firmName: string;
+  city: string | null;
+  state: string | null;
+  factLines: string;
+  kind: 'cold_open' | 'follow_up_1' | 'follow_up_2';
+  avoidLines?: string[]; // earlier steps' lines for this same firm — pick a different fact where possible
+}): Promise<string | null> {
+  const { firmName, city, state, factLines, kind, avoidLines } = opts;
+
+  const framing = kind === 'cold_open'
+    ? 'You write one opening line for a COLD EMAIL to a US software consultancy. Peer to peer, never an applicant. They have not heard from you before.'
+    : kind === 'follow_up_1'
+      ? 'You write one opening line for a FOLLOW-UP email — the first nudge after an initial cold email that got no reply. Peer to peer, never an applicant. Do not apologise for following up and do not say "just checking in" — go straight to the specific thing.'
+      : 'You write one closing remark for a BREAKUP email — the last, low-pressure note in a sequence that got no reply. Peer to peer. It should read as a genuine parting observation, not another pitch.';
+
+  const avoid = avoidLines?.length
+    ? `\nALREADY USED IN AN EARLIER MESSAGE TO THIS SAME FIRM (pick a DIFFERENT fact if the research supports one; repeat only if there is truly nothing else):\n${avoidLines.map((l) => `  "${l}"`).join('\n')}\n`
+    : '';
+
+  const prompt = `${framing}
+
+FIRM: ${firmName} — ${city}, ${state}
+VERBATIM FACTS FETCHED FROM THEIR SITE:
+${factLines}
+${avoid}
+RULES
+- Name ONE specific thing from the facts above: a client, a case title, a stack item.
+- Make it unmistakable that thing is THEIRS — "your client X", "the X case study on your site",
+  "you built X" — before you say what it implies. A proper noun stated with no ownership
+  context reads as a non-sequitur to a stranger who has never heard of it.
+  good: "AS/400 on your stack page in 2026 means clients who can't move and won't be told to."
+  good: "Your Dedica Health case study is a remote patient-monitoring build — a regulated,
+         can't-be-wrong kind of client."
+  bad:  "Impressive work with legacy systems." (no implication, just praise)
+  bad:  "Dedica Health indicates a focus on remote patient care." (states a name with no
+         ownership context — reads as a fact about a stranger, not a remark to one)
+- Write about THEM. Never mention yourself, your firm, or what you noticed.
+- Never say anything critical about the firm or its size.
+- One or two COMPLETE sentences, ending in a period. No adjectives. No exclamation marks.
+
+Return only the line.`;
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      // reasoning_effort: 'low' — see bd-draft history: left at the provider
+      // default, gpt-oss occasionally burns the whole token budget on hidden
+      // reasoning and cuts the visible line off mid-sentence.
+      const res = await callLLM(prompt, { max_tokens: 200, temperature: attempt === 0 ? 0.6 : 0.8, reasoning_effort: 'low' });
+      const line = String(res.content ?? '').trim().replace(/^["']|["']$/g, '');
+      const startsWithName = line.toLowerCase().startsWith(firmName.toLowerCase());
+      const hasOwnershipMarker = /\byou(r|'?re|'?ve)?\b/i.test(line);
+      const endsComplete = /[.!?]['")\]]?$/.test(line);
+      if (line && line.length > 25 && line.length < 320 && !BAD_LINE.test(line)
+        && !startsWithName && hasOwnershipMarker && endsComplete) return line;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+const FOLLOWUP_SIGNATURE = 'Amit';
+
+/** Follow-up 1: the case-study nudge. Structure is fixed, the opening line is not. */
+export function assembleFollowup1(firstName: string, openingLine: string): string {
+  return `Hi ${firstName},
+
+${openingLine}
+
+Wanted to share how this plays out elsewhere: I scoped this platform directly with the client, built it in phases over ten months, ran the rollout myself, and it's still in daily use today — 111 of 111 staff, nine months in. I've attached a quick case study on it.
+
+Thought this might be useful context before we talk.
+
+${FOLLOWUP_SIGNATURE}`;
+}
+
+/** Follow-up 2: the breakup. Deliberately short — the closing line is the personalised part. */
+export function assembleFollowup2(firstName: string, closingLine: string): string {
+  return `Hi ${firstName},
+
+Last note from me — I'll assume the timing isn't right. ${closingLine}
+
+If capacity becomes the constraint later, I'm at a@in-sync.co.in.
+
+${FOLLOWUP_SIGNATURE}`;
+}
