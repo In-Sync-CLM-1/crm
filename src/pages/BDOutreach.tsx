@@ -30,6 +30,7 @@ interface Draft {
   id: string;
   firm_id: string;
   contact_id: string | null;
+  step: string;
   angle_version: number | null;
   proof_key: string | null;
   subject: string | null;
@@ -102,7 +103,7 @@ export default function BDOutreach() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data, error } = await (supabase as any)
         .from("bd_drafts")
-        .select("id, firm_id, contact_id, angle_version, proof_key, subject, first_line, body, reasoning, status, created_at, bd_firms(firm_name, city, state, grade, fit_score, headcount_band, bill_rate_band, time_zone, research_facts, disqualifier_flags), bd_contacts(first_name, last_name, title, email)")
+        .select("id, firm_id, contact_id, step, angle_version, proof_key, subject, first_line, body, reasoning, status, created_at, bd_firms(firm_name, city, state, grade, fit_score, headcount_band, bill_rate_band, time_zone, research_facts, disqualifier_flags), bd_contacts(first_name, last_name, title, email)")
         .eq("org_id", effectiveOrgId)
         .in("status", tab === "scheduled" ? ["scheduled", "sent"] : ["pending", "approved"])
         .order("created_at", { ascending: true });
@@ -216,16 +217,21 @@ export default function BDOutreach() {
         .eq("id", draft.id);
       if (error) throw error;
 
-      // Rejecting the draft parks the firm too — otherwise the next generation
-      // run drafts it again tomorrow.
-      if (status === "rejected") {
+      // Rejecting the INITIAL email parks the firm too — otherwise the next
+      // generation run drafts it again tomorrow. Rejecting a follow-up only
+      // drops that one step; the firm's other approved steps (and the firm
+      // itself) are unaffected — bd-schedule just won't have anything to
+      // send for that step until it's redrafted.
+      if (status === "rejected" && draft.step === "email_1") {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await (supabase as any).from("bd_firms")
           .update({ state_flag: "PARKED", state_reason: "draft rejected at review", updated_at: new Date().toISOString() })
           .eq("id", draft.firm_id);
       }
       await queryClient.invalidateQueries({ queryKey: ["bd-drafts"] });
-      toast.success(status === "approved" ? "Approved — enters the send schedule." : status === "rejected" ? "Rejected and firm parked." : "Deferred.");
+      toast.success(status === "approved" ? "Approved — enters the send schedule."
+        : status === "rejected" ? (draft.step === "email_1" ? "Rejected and firm parked." : "Follow-up rejected.")
+        : "Deferred.");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not update the draft.");
     } finally {
@@ -353,6 +359,9 @@ export default function BDOutreach() {
                 <div>
                   <div className="flex items-center gap-2">
                     <h2 className="font-medium">{f?.firm_name}</h2>
+                    {d.step !== "email_1" && (
+                      <Badge className={STEP_COLOR[d.step]?.badge}>{STEP_LABEL[d.step] || d.step}</Badge>
+                    )}
                     <Badge variant="outline">{f?.grade}</Badge>
                     {d.status === "approved" && <Badge className="bg-emerald-600">approved</Badge>}
                     {d.status === "scheduled" && <Badge variant="secondary">scheduled</Badge>}
@@ -387,7 +396,7 @@ export default function BDOutreach() {
                   {[
                     ["Why this firm", r.why_firm],
                     ["Why this contact", r.why_contact],
-                    ["Why this angle", `${ANGLE_LABEL[d.angle_version || 0] || ""} — ${r.why_angle || ""}`],
+                    ["Why this angle", d.angle_version ? `${ANGLE_LABEL[d.angle_version] || ""} — ${r.why_angle || ""}` : ""],
                     ["Why this proof", r.why_proof],
                     ["Fallback contact", r.fallback_contact],
                   ].map(([label, value]) => value ? (
@@ -434,7 +443,7 @@ export default function BDOutreach() {
                     <Clock className="h-3.5 w-3.5 mr-1.5" />Defer
                   </Button>
                   <Button size="sm" variant="outline" className="text-red-600" onClick={() => act(d, "rejected")} disabled={busy === d.id}>
-                    <X className="h-3.5 w-3.5 mr-1.5" />Reject firm
+                    <X className="h-3.5 w-3.5 mr-1.5" />{d.step === "email_1" ? "Reject firm" : "Reject follow-up"}
                   </Button>
                   <span className="text-xs text-muted-foreground self-center ml-auto">
                     drafted {format(new Date(d.created_at), "d MMM")}

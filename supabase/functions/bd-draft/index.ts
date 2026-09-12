@@ -1,17 +1,32 @@
 /**
- * bd-draft — assemble a review-ready email for each eligible firm.
+ * bd-draft — assemble a review-ready email for EVERY step of a firm's
+ * sequence in one pass: the initial email, follow-up 1 and follow-up 2.
  *
- * The angle, the proof and the body are deterministic: they follow the rules in
- * _shared/bdPipeline.ts. Only the FIRST LINE is generated, because it is the
- * one part that has to name something specific about this firm and say what it
- * implies. Everything else is chosen, not invented.
+ * 2026-09-12: follow-ups used to be fixed boilerplate assembled by
+ * bd-schedule at send time, with no review. Amit's rule: "every
+ * communication has to follow the same rule, no templated work" — so all
+ * three steps now get their own opening line generated from this firm's own
+ * research facts (via _shared/bdPipeline.ts's generateOpeningLine, shared
+ * so all three go through the identical quality gate), and all three land in
+ * the review queue as `pending` up front — drafted alongside the initial
+ * email rather than close to their due date, so there is always days of lead
+ * time to review a follow-up before bd-schedule is allowed to send it.
+ * bd-schedule now REQUIRES an approved draft for a step before it will send
+ * that step; nothing sends unreviewed, at any step.
  *
- * Drafts land in the review queue as `pending`. Nothing sends unreviewed.
+ * The angle, the proof and the body scaffold are deterministic: they follow
+ * the rules in _shared/bdPipeline.ts. Only the opening/closing line per step
+ * is generated, because it is the one part that has to name something
+ * specific about this firm and say what it implies. Everything else is
+ * chosen, not invented.
  *
  *   POST { limit: 5 }
  */
-import { callLLM } from '../_shared/llmClient.ts';
-import { BD_ORG_ID, pickAngle, pickProof, scoreContact, PROOFS, type FirmRow } from '../_shared/bdPipeline.ts';
+import {
+  BD_ORG_ID, pickAngle, pickProof, scoreContact, PROOFS, type FirmRow,
+  hasOpeningHook, factLinesFor, generateOpeningLine, assembleFollowup1, assembleFollowup2,
+  type UsableFacts,
+} from '../_shared/bdPipeline.ts';
 import { corsHeaders } from '../_shared/corsHeaders.ts';
 import { getSupabaseClient } from '../_shared/supabaseClient.ts';
 
@@ -127,10 +142,15 @@ Deno.serve(async (req) => {
     for (const f of firms) {
       if (made >= limit) break;
 
-      const { data: existing } = await supabase
-        .from('bd_drafts').select('id').eq('firm_id', f.id)
-        .in('status', ['pending', 'approved', 'scheduled']).maybeSingle();
-      if (existing) continue;
+      // Per-step, not per-firm: a firm that already has all three steps
+      // drafted is fully done and skipped, but one missing only its
+      // follow-ups (e.g. from a prior run where line generation failed
+      // partway) gets topped up rather than skipped forever.
+      const { data: existingRows } = await supabase
+        .from('bd_drafts').select('step, subject, first_line').eq('firm_id', f.id)
+        .in('status', ['pending', 'approved', 'scheduled']);
+      const existingSteps = new Set((existingRows || []).map((r) => r.step));
+      if (existingSteps.has('email_1') && existingSteps.has('followup_1') && existingSteps.has('followup_2')) continue;
 
       // Contact: highest-priority title that isn't on the never-contact list.
       const { data: contacts } = await supabase
@@ -160,123 +180,156 @@ Deno.serve(async (req) => {
       // lists 'none' under clients, suggesting you may not have secured any
       // paid engagements" — it treated the placeholder as a fact and insulted
       // the firm. A deterministic gate removes that whole class of failure.
-      const usable = {
+      const usable: UsableFacts = {
         clients: (facts.clients || []).filter(Boolean),
         cases: (facts.cases || []).filter(Boolean),
         stack: (facts.stack || []).filter(Boolean),
         verticals: (facts.verticals || []).filter(Boolean),
       };
-      // A named client or a case study title is a real hook. Stack alone only
-      // counts when it is a distinctive platform — "AWS" is true of everyone.
-      const hasHook = usable.clients.length > 0 || usable.cases.length > 0 || usable.stack.length > 0;
-      if (!hasHook) {
+      if (!hasOpeningHook(usable)) {
         results.push({ firm: f.firm_name, skipped: 'no named client, case study or distinctive stack item — nothing specific to open on' });
         continue;
       }
+      const factLines = factLinesFor(usable);
+      const genArgs = { firmName: f.firm_name, city: f.city, state: f.state, factLines };
 
-      // Only non-empty categories reach the prompt: a printed "none" is
-      // something the model will comment on.
-      const factLines = Object.entries(usable)
-        .filter(([, v]) => v.length)
-        .map(([k, v]) => `  ${k}: ${v.slice(0, 10).join(', ')}`)
-        .join('\n');
+      const stepsAdded: string[] = [];
+      const usedLines: string[] = [];
+      let emailSubject = (existingRows || []).find((r) => r.step === 'email_1')?.subject as string | undefined;
 
-      const prompt = `You write one opening line for a cold email to a US software consultancy. Peer to peer, never an applicant.
+      // ── Step 1: the initial cold email ───────────────────────────────────
+      let coldLine = (existingRows || []).find((r) => r.step === 'email_1')?.first_line as string | undefined;
+      if (!existingSteps.has('email_1')) {
+        coldLine = await generateOpeningLine({ ...genArgs, kind: 'cold_open' }) ?? undefined;
+        if (!coldLine) {
+          results.push({ firm: f.firm_name, skipped: 'could not produce a usable opening line from these facts — left for a human' });
+          continue; // no usable hook at all — don't draft follow-ups on nothing either
+        }
+        const subjects = SUBJECTS[angle.version];
+        emailSubject = subjects[made % subjects.length];
+        const closer = CLOSERS[made % CLOSERS.length];
+        const draftBody = assemble(angle.version, chosen.c.first_name, coldLine, PROOFS[proof.key].text, closer);
 
-FIRM: ${f.firm_name} — ${f.city}, ${f.state}
-VERBATIM FACTS FETCHED FROM THEIR SITE:
-${factLines}
+        const { error: insErr } = await supabase.from('bd_drafts').insert({
+          org_id: BD_ORG_ID, firm_id: f.id, contact_id: chosen.c.id, step: 'email_1',
+          angle_version: angle.version, proof_key: proof.key,
+          subject: emailSubject, first_line: coldLine, body: draftBody,
+          reasoning: {
+            why_firm: `grade ${f.grade}${f.has_domain_anchor ? ' · domain anchor in the client list' : ''}${f.has_crm_erp_line ? ' · declared CRM/ERP line' : ''}${f.has_staff_aug ? ' · declared staff-aug line' : ''}`,
+            why_contact: `${chosen.c.title || 'no title'} — ${chosen.s!.why}`,
+            why_angle: `v${angle.version}: ${angle.why}`,
+            why_proof: `${proof.key} — ${proof.why}`,
+            fallback_contact: ranked[1] ? `${ranked[1].c.first_name || ''} ${ranked[1].c.last_name || ''} (${ranked[1].c.title || 'no title'})`.trim() : 'none on file',
+            flags: f.disqualifier_flags || null,
+          },
+          status: 'pending',
+        });
+        if (insErr) { results.push({ firm: f.firm_name, error: `email_1: ${insErr.message}` }); continue; }
+        stepsAdded.push('email_1');
+      }
+      if (coldLine) usedLines.push(coldLine);
 
-RULES
-- Name ONE specific thing from the facts above: a client, a case title, a stack item.
-- Make it unmistakable that thing is THEIRS — "your client X", "the X case study on your site",
-  "you built X" — before you say what it implies. A proper noun stated with no ownership
-  context reads as a non-sequitur to a stranger who has never heard of it.
-  good: "AS/400 on your stack page in 2026 means clients who can't move and won't be told to."
-  good: "Your Dedica Health case study is a remote patient-monitoring build — a regulated,
-         can't-be-wrong kind of client."
-  bad:  "Impressive work with legacy systems." (no implication, just praise)
-  bad:  "Dedica Health indicates a focus on remote patient care." (states a name with no
-         ownership context — reads as a fact about a stranger, not a remark to one)
-- Write about THEM. Never mention yourself, your firm, or what you noticed.
-- Never say anything critical about the firm or its size.
-- One or two COMPLETE sentences, ending in a period. No adjectives. No exclamation marks.
+      // ── Step 2: follow-up 1 (case-study nudge) ───────────────────────────
+      let f1Line = (existingRows || []).find((r) => r.step === 'followup_1')?.first_line as string | undefined;
+      if (!existingSteps.has('followup_1')) {
+        f1Line = await generateOpeningLine({ ...genArgs, kind: 'follow_up_1', avoidLines: usedLines }) ?? undefined;
+        if (f1Line) {
+          const { error: insErr } = await supabase.from('bd_drafts').insert({
+            org_id: BD_ORG_ID, firm_id: f.id, contact_id: chosen.c.id, step: 'followup_1',
+            subject: emailSubject ? `Re: ${emailSubject}` : '(no subject)',
+            first_line: f1Line, body: assembleFollowup1(chosen.c.first_name, f1Line),
+            reasoning: { why_firm: 'same firm as the initial email', why_contact: 'same contact as the initial email' },
+            status: 'pending',
+          });
+          if (insErr) results.push({ firm: f.firm_name, error: `followup_1: ${insErr.message}` });
+          else stepsAdded.push('followup_1');
+        } else {
+          results.push({ firm: f.firm_name, skipped: 'follow-up 1 line generation failed — email_1 still drafted, will retry next run' });
+        }
+      }
+      if (f1Line) usedLines.push(f1Line);
 
-Return only the line.`;
-
-      // Anything that reads as self-referential, hedged, or critical is
-      // rejected outright — these are the shapes a small model falls into when
-      // the facts are thin, and every one of them undoes the email.
-      const BAD_LINE = /\b(I noticed|I saw|our firm|we also|suggesting|implying|may indicate|might indicate|could indicate|may suggest|likely means|probably|may not|might not|appears to|seems to|unfortunately|impressive|great job|none)\b/i;
-
-      let firstLine = '';
-      for (let attempt = 0; attempt < 2 && !firstLine; attempt++) {
-        try {
-          // gpt-oss (the haiku tier's real model, via Groq/Cerebras) is a
-          // reasoning model — it spends tokens on a hidden reasoning block
-          // that shares the same max_tokens budget as the visible answer.
-          // Left at the provider default this occasionally cut the actual
-          // line off mid-sentence ("Their Oracle stack implies they" —
-          // confirmed live, 2026-09-11): 157 of 200 tokens went to invisible
-          // reasoning in one measured call, and nothing was checking that the
-          // line actually ended. reasoning_effort: 'low' cut that to 24 in
-          // the same test, so 200 tokens is plenty again without needing to
-          // widen the budget (which would just slow every call down).
-          const res = await callLLM(prompt, { max_tokens: 200, temperature: attempt === 0 ? 0.6 : 0.8, reasoning_effort: 'low' });
-          const line = String(res.content ?? '').trim().replace(/^["']|["']$/g, '');
-          // A line that opens with the firm's own name reads as a report about
-          // them rather than a remark to them.
-          const startsWithName = line.toLowerCase().startsWith(String(f.firm_name).toLowerCase());
-          // Requires the line to actually tie its named fact back to the
-          // reader ("your", "you", "you've") — the Dedica Health failure named
-          // a real, grounded fact but stated it as if the reader already knew
-          // who that was, with nothing connecting it to "your site/client/work".
-          const hasOwnershipMarker = /\byou(r|'?re|'?ve)?\b/i.test(line);
-          // A line cut off mid-sentence (no terminal punctuation) passed every
-          // other check before — reject it the same way a bad implication gets
-          // rejected, rather than silently sending half a thought.
-          const endsComplete = /[.!?]['")\]]?$/.test(line);
-          if (line && line.length > 25 && line.length < 320 && !BAD_LINE.test(line)
-            && !startsWithName && hasOwnershipMarker && endsComplete) firstLine = line;
-        } catch (e) {
-          results.push({ firm: f.firm_name, skipped: `line generation failed: ${e instanceof Error ? e.message : String(e)}` });
-          break;
+      // ── Step 3: follow-up 2 (breakup) ────────────────────────────────────
+      if (!existingSteps.has('followup_2')) {
+        const f2Line = await generateOpeningLine({ ...genArgs, kind: 'follow_up_2', avoidLines: usedLines });
+        if (f2Line) {
+          const { error: insErr } = await supabase.from('bd_drafts').insert({
+            org_id: BD_ORG_ID, firm_id: f.id, contact_id: chosen.c.id, step: 'followup_2',
+            subject: emailSubject ? `Re: ${emailSubject}` : '(no subject)',
+            first_line: f2Line, body: assembleFollowup2(chosen.c.first_name, f2Line),
+            reasoning: { why_firm: 'same firm as the initial email', why_contact: 'same contact as the initial email' },
+            status: 'pending',
+          });
+          if (insErr) results.push({ firm: f.firm_name, error: `followup_2: ${insErr.message}` });
+          else stepsAdded.push('followup_2');
+        } else {
+          results.push({ firm: f.firm_name, skipped: 'follow-up 2 line generation failed — will retry next run' });
         }
       }
 
-      if (!firstLine) {
-        results.push({ firm: f.firm_name, skipped: 'could not produce a usable first line from these facts — left for a human' });
-        continue;
+      if (stepsAdded.length) {
+        made++;
+        results.push({ firm: f.firm_name, drafted_steps: stepsAdded, angle: angle.version, proof: proof.key, contact: chosen.c.first_name, flagged: !!f.disqualifier_flags });
       }
+    }
 
-      const subjects = SUBJECTS[angle.version];
-      const subject = subjects[made % subjects.length];
-      const closer = CLOSERS[made % CLOSERS.length];
-      const draftBody = assemble(angle.version, chosen.c.first_name, firstLine, PROOFS[proof.key].text, closer);
+    // ── Top-up: firms already mid-sequence, missing their NEXT follow-up ────
+    // Firms sent BEFORE 2026-09-12 never got followup_1/followup_2 rows
+    // drafted (the old code assembled their text inline at send time). This
+    // only tops up bd_sequences.step — the step still AHEAD of them — never
+    // a step already sent; there is nothing to backfill for history that
+    // already went out under the old template. Reuses the original email's
+    // stored contact_id (via bd_sequences), not a re-ranked contact — the
+    // thread is already running with that person.
+    const room = limit - made;
+    if (room > 0) {
+      const { data: liveSeqs } = await supabase
+        .from('bd_sequences')
+        .select('firm_id, contact_id, draft_id, step, bd_firms(firm_name, city, state, research_facts, other_services), bd_contacts(first_name)')
+        .eq('org_id', BD_ORG_ID)
+        .is('stopped_at', null)
+        .in('step', ['followup_1', 'followup_2'])
+        .limit(room * 3);
 
-      const { error: insErr } = await supabase.from('bd_drafts').insert({
-        org_id: BD_ORG_ID,
-        firm_id: f.id,
-        contact_id: chosen.c.id,
-        angle_version: angle.version,
-        proof_key: proof.key,
-        subject,
-        first_line: firstLine,
-        body: draftBody,
-        reasoning: {
-          why_firm: `grade ${f.grade}${f.has_domain_anchor ? ' · domain anchor in the client list' : ''}${f.has_crm_erp_line ? ' · declared CRM/ERP line' : ''}${f.has_staff_aug ? ' · declared staff-aug line' : ''}`,
-          why_contact: `${chosen.c.title || 'no title'} — ${chosen.s!.why}`,
-          why_angle: `v${angle.version}: ${angle.why}`,
-          why_proof: `${proof.key} — ${proof.why}`,
-          fallback_contact: ranked[1] ? `${ranked[1].c.first_name || ''} ${ranked[1].c.last_name || ''} (${ranked[1].c.title || 'no title'})`.trim() : 'none on file',
-          flags: f.disqualifier_flags || null,
-        },
-        status: 'pending',
-      });
-      if (insErr) { results.push({ firm: f.firm_name, error: insErr.message }); continue; }
+      let topped = 0;
+      for (const seq of liveSeqs || []) {
+        if (topped >= room) break;
+        const f = (seq as Record<string, any>).bd_firms;
+        const contact = (seq as Record<string, any>).bd_contacts;
+        if (!f || !contact?.first_name) continue;
 
-      made++;
-      results.push({ firm: f.firm_name, angle: angle.version, proof: proof.key, contact: chosen.c.first_name, flagged: !!f.disqualifier_flags });
+        const { data: existingRows } = await supabase
+          .from('bd_drafts').select('step, subject, first_line').eq('firm_id', seq.firm_id)
+          .in('status', ['pending', 'approved', 'scheduled']);
+        const existingSteps = new Set((existingRows || []).map((r) => r.step));
+        if (existingSteps.has(seq.step)) continue; // already drafted (or already approved/scheduled)
+
+        const facts = (f.research_facts || {}) as Record<string, string[]>;
+        const usable: UsableFacts = {
+          clients: (facts.clients || []).filter(Boolean), cases: (facts.cases || []).filter(Boolean),
+          stack: (facts.stack || []).filter(Boolean), verticals: (facts.verticals || []).filter(Boolean),
+        };
+        if (!hasOpeningHook(usable)) continue;
+        const factLines = factLinesFor(usable);
+        const genArgs = { firmName: f.firm_name, city: f.city, state: f.state, factLines };
+        const emailSubject = (existingRows || []).find((r) => r.step === 'email_1')?.subject as string | undefined;
+        const usedLines = [(existingRows || []).find((r) => r.step === 'email_1')?.first_line as string | undefined].filter(Boolean) as string[];
+
+        const kind = seq.step === 'followup_1' ? 'follow_up_1' as const : 'follow_up_2' as const;
+        const line = await generateOpeningLine({ ...genArgs, kind, avoidLines: usedLines });
+        if (!line) continue;
+        const bodyBuilder = seq.step === 'followup_1' ? assembleFollowup1 : assembleFollowup2;
+
+        const { error } = await supabase.from('bd_drafts').insert({
+          org_id: BD_ORG_ID, firm_id: seq.firm_id, contact_id: seq.contact_id, step: seq.step,
+          subject: emailSubject ? `Re: ${emailSubject}` : '(no subject)',
+          first_line: line, body: bodyBuilder(contact.first_name, line),
+          reasoning: { why_firm: 'top-up: mid-sequence firm from before per-step drafting existed', why_contact: 'same contact as the initial email' },
+          status: 'pending',
+        });
+        if (!error) { topped++; results.push({ firm: f.firm_name, top_up: seq.step }); }
+      }
+      made += topped;
     }
 
     console.log(`[bd-draft] drafted ${made}`);

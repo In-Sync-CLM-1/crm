@@ -39,39 +39,13 @@ const BD_PLACEHOLDER_CONTACT_ID = '4681237e-dfcb-442f-9df6-8916e48ead52';
 const FROM_NAME = 'Amit Sengupta';
 const DAILY_CAP = 5;
 
-// Follow-up 1 rotates its fact across firms — fifteen identical nudges is the
-// thing that makes a sequence read as automated.
-const FOLLOWUP_FACTS = [
-  'The ATS I mentioned runs on 47 users because the workflow does the work, not the headcount.',
-  'The loan origination system took a 9-day approval cycle to under 48 hours.',
-  'The AI intake desk resolves 76% of complaints before a human sees them.',
-];
-
-// Follow-up 1 also carries the case-study attachment: proof of full-cycle
+// Follow-up 1 carries the case-study attachment: proof of full-cycle
 // delivery, not bench capacity — scoped it, built it in phases, ran the
-// rollout, still owns it in production nine months later. The rotated fact
-// gives it variety across firms; the attachment and the "not a bench"
-// framing deliberately stay fixed, since the document itself is what varies
-// each recipient's read, not the words introducing it.
+// rollout, still owns it in production nine months later. This is a fixed
+// system-level attachment, unrelated to the (now generated, reviewed)
+// wording of the email itself.
 const CASE_STUDY_URL = 'https://crm-marketing-store.echocommunicator.workers.dev/bd-outreach/InSync_CaseStudy_RMPL.pdf';
 const CASE_STUDY_FILENAME = 'InSync_CaseStudy_RMPL.pdf';
-// Same "following up on my earlier note" handshake as the LinkedIn method's
-// own follow-up step (see bd-draft's assemble() for the full context on why).
-const caseStudyFollowup = (firstName: string, fact: string) => `Hi ${firstName}, following up on my earlier note.
-
-Wanted to share how this plays out elsewhere: I scoped this platform directly with the client, built it in phases over ten months, ran the rollout myself, and it's still in daily use today — 111 of 111 staff, nine months in. ${fact} I've attached a quick case study on it.
-
-Thought this might be useful context before we talk.
-
-Amit`.replace(/\n/g, '<br>');
-
-const BREAKUP = (firstName: string) => `Hi ${firstName},
-
-Last note from me — I'll assume the timing isn't right.
-
-If capacity becomes the constraint later, I'm at a@in-sync.co.in.
-
-Amit`;
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -91,7 +65,7 @@ Deno.serve(async (req) => {
     // ── 1. Follow-ups first: an existing conversation outranks a new one ──────
     const { data: due } = await supabase
       .from('bd_sequences')
-      .select('id, firm_id, contact_id, step, next_due_at, thread_message_id, conversation_id, mailbox, batch_no, bd_firms(firm_name, time_zone), bd_contacts(first_name, email), bd_drafts(subject)')
+      .select('id, firm_id, contact_id, step, next_due_at, thread_message_id, conversation_id, bd_firms(firm_name, time_zone), bd_contacts(first_name, email)')
       .eq('org_id', BD_ORG_ID)
       .is('stopped_at', null)
       .lte('next_due_at', now.toISOString())
@@ -110,19 +84,26 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      const isBreakup = seq.step === 'followup_2';
-      const isCaseStudyStep = seq.step === 'followup_1';
-      const fact = FOLLOWUP_FACTS[(seq.batch_no || 0 + queued.length) % FOLLOWUP_FACTS.length];
-      const html = isBreakup
-        ? BREAKUP(contact.first_name).replace(/\n/g, '<br>')
-        : isCaseStudyStep
-          ? caseStudyFollowup(contact.first_name, fact)
-          : `Hi ${contact.first_name},<br><br>${fact}<br><br>Still happy to start small.<br><br>Amit`;
+      // 2026-09-12: follow-ups are no longer assembled here from a fixed
+      // template — bd-draft generates and a human approves them the same way
+      // it does the initial email, days ahead of the due date. If nothing
+      // has been approved for this step yet, the step stays due and gets
+      // retried next run rather than sending unreviewed text.
+      const { data: draft } = await supabase
+        .from('bd_drafts').select('id, subject, body')
+        .eq('firm_id', seq.firm_id).eq('step', seq.step).eq('status', 'approved')
+        .order('reviewed_at', { ascending: true }).limit(1).maybeSingle();
 
+      if (!draft) {
+        queued.push({ firm: firm?.firm_name, step: seq.step, action: 'awaiting an approved follow-up draft — not sent' });
+        continue;
+      }
+
+      const isCaseStudyStep = seq.step === 'followup_1';
+      const html = String(draft.body).replace(/\n/g, '<br>');
       const slot = nextSendSlot(firm?.time_zone || 'ET', now, queued.length);
 
       if (!dryRun) {
-        const origSubject = (seq as Record<string, any>).bd_drafts?.subject || '';
         await gc.from('email_conversations').insert({
           org_id: GLOBALCRM_ORG,
           contact_id: BD_PLACEHOLDER_CONTACT_ID,
@@ -130,7 +111,7 @@ Deno.serve(async (req) => {
           direction: 'outbound',
           from_email: 'a@in-sync.co.in',
           to_email: contact.email,
-          subject: origSubject ? `Re: ${origSubject}` : '(no subject)',
+          subject: draft.subject || '(no subject)',
           html_content: html,
           email_content: html,
           status: 'scheduled',
@@ -140,6 +121,8 @@ Deno.serve(async (req) => {
           in_reply_to: seq.thread_message_id,
           ...(isCaseStudyStep ? { attachment_url: CASE_STUDY_URL, attachment_filename: CASE_STUDY_FILENAME } : {}),
         });
+
+        await supabase.from('bd_drafts').update({ status: 'scheduled', updated_at: new Date().toISOString() }).eq('id', draft.id);
 
         const nextStep = seq.step === 'followup_1' ? 'followup_2' : seq.step === 'followup_2' ? 'linkedin_connect' : 'done';
         const nextDue = new Date(slot.getTime() + (seq.step === 'followup_1' ? 7 : 1) * 86400000);
@@ -151,7 +134,7 @@ Deno.serve(async (req) => {
 
         await supabase.from('bd_events').insert({
           org_id: BD_ORG_ID, firm_id: seq.firm_id, sequence_id: seq.id,
-          step: seq.step, event_type: 'queued', detail: { scheduled_for: slot.toISOString() },
+          step: seq.step, event_type: 'queued', detail: { scheduled_for: slot.toISOString(), draft_id: draft.id },
         });
       }
 
@@ -166,6 +149,7 @@ Deno.serve(async (req) => {
         .select('id, firm_id, contact_id, subject, body, angle_version, proof_key, bd_firms(firm_name, time_zone), bd_contacts(first_name, email)')
         .eq('org_id', BD_ORG_ID)
         .eq('status', 'approved')
+        .eq('step', 'email_1')
         .order('reviewed_at', { ascending: true })
         .limit(room);
 
