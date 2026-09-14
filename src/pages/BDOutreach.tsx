@@ -109,7 +109,7 @@ export default function BDOutreach() {
         .from("bd_drafts")
         .select("id, firm_id, contact_id, step, angle_version, proof_key, subject, first_line, body, reasoning, status, created_at, bd_firms(firm_name, city, state, grade, fit_score, headcount_band, bill_rate_band, time_zone, research_facts, disqualifier_flags), bd_contacts(first_name, last_name, title, email)")
         .eq("org_id", effectiveOrgId)
-        .in("status", tab === "scheduled" ? ["scheduled", "sent"] : ["pending", "approved"])
+        .in("status", tab === "scheduled" ? ["scheduled", "sent"] : ["pending"])
         .order("created_at", { ascending: true });
       if (error) throw error;
       return data as Draft[];
@@ -350,7 +350,7 @@ export default function BDOutreach() {
         )}
 
         <div className="flex gap-1">
-          {(["pending", "scheduled", "flagged", "kanban"] as const).map((t) => (
+          {(["kanban", "pending", "scheduled", "flagged"] as const).map((t) => (
             <Button key={t} size="sm" variant={tab === t ? "default" : "outline"} onClick={() => setTab(t)}>
               {t === "pending" ? "Review queue" : t === "scheduled" ? "Scheduled" : t === "flagged" ? "Flagged" : "Kanban"}
             </Button>
