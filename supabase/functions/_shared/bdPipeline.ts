@@ -431,6 +431,10 @@ Return only the line.`;
 
 const FOLLOWUP_SIGNATURE = 'Amit';
 
+// Every scaffold below is checked by hand against HUMAN_WRITING_STYLE
+// (see _shared/humanWritingStyle.ts) — continuity acknowledged, sentences
+// bridged, nothing presumed, blunt statements softened, warm sign-off.
+
 /** Follow-up 1: the case-study nudge. Structure is fixed, the opening line is not. */
 export function assembleFollowup1(firstName: string, openingLine: string): string {
   return `Hi ${firstName},
