@@ -435,12 +435,13 @@ const FOLLOWUP_SIGNATURE = 'Amit';
 export function assembleFollowup1(firstName: string, openingLine: string): string {
   return `Hi ${firstName},
 
-${openingLine}
+Following up on my note last week. ${openingLine}
 
-Wanted to share how this plays out elsewhere: I scoped this platform directly with the client, built it in phases over ten months, ran the rollout myself, and it's still in daily use today — 111 of 111 staff, nine months in. I've attached a quick case study on it.
+It reminded me of how this played out for another client: I scoped the platform directly with them, built it in phases over ten months, ran the rollout myself, and it's still in daily use today — 111 of 111 staff, nine months in. Attaching a quick case study in case it's useful.
 
-Thought this might be useful context before we talk.
+Happy to walk you through it whenever you have a few minutes.
 
+Best,
 ${FOLLOWUP_SIGNATURE}`;
 }
 
@@ -448,9 +449,10 @@ ${FOLLOWUP_SIGNATURE}`;
 export function assembleFollowup2(firstName: string, closingLine: string): string {
   return `Hi ${firstName},
 
-Last note from me — I'll assume the timing isn't right. ${closingLine}
+I don't want to keep cluttering your inbox, so I'll leave it here for now. ${closingLine}
 
-If capacity becomes the constraint later, I'm at a@in-sync.co.in.
+If timing changes and capacity becomes the constraint, I'm easy to find — a@in-sync.co.in.
 
+Best,
 ${FOLLOWUP_SIGNATURE}`;
 }
