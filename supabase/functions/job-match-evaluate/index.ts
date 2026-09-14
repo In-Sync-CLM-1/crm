@@ -48,6 +48,12 @@ interface EvalRequest {
 
 const RECENCY_LIMIT_DAYS = 7;
 
+// Amit's call, 2026-09-14: only these three channels are worth evaluating.
+// The table's platform column stays free text (Mercor/Micro1/Wellfound/
+// Handshake rows already exist historically) -- this just stops NEW ones
+// from spending research + Opus judgment on a channel that's out of scope.
+const FOCUS_PLATFORMS = ['linkedin', 'naukri', 'indeed'];
+
 // Obvious, cheap-to-detect location disqualifiers — checked before spending a
 // real company-research pass on something that can't be taken regardless of
 // fit. Nuanced cases (e.g. "Remote (US)") still go to Opus, which sees the
@@ -173,6 +179,19 @@ Deno.serve(async (req) => {
   };
 
   try {
+    // ── Gate 0: channel focus ─────────────────────────────────────────────
+    if (!FOCUS_PLATFORMS.includes(body.platform.toLowerCase())) {
+      const { data, error } = await supabase.from('job_applications').insert({
+        ...base,
+        verdict: 'reject',
+        confidence: 'high',
+        match_reasoning: `Rejected before research: "${body.platform}" is outside the current focus set (LinkedIn, Naukri, Indeed).`,
+        status: 'evaluated',
+      }).select().single();
+      if (error) throw error;
+      return ok({ ...data, gate: 'platform' });
+    }
+
     // ── Gate 1: recency ──────────────────────────────────────────────────
     const recency = checkRecency(body.posted_date);
     if (!recency.ok) {
