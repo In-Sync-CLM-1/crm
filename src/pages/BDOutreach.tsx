@@ -350,7 +350,7 @@ export default function BDOutreach() {
         )}
 
         <div className="flex gap-1">
-          {(["pending", "scheduled", "flagged", "kanban"] as const).map((t) => (
+          {(["kanban", "pending", "scheduled", "flagged"] as const).map((t) => (
             <Button key={t} size="sm" variant={tab === t ? "default" : "outline"} onClick={() => setTab(t)}>
               {t === "pending" ? "Review queue" : t === "scheduled" ? "Scheduled" : t === "flagged" ? "Flagged" : "Kanban"}
             </Button>
