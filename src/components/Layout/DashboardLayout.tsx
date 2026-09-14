@@ -28,6 +28,7 @@ import {
   Megaphone,
   UserPlus,
   Linkedin,
+  Search,
 } from "lucide-react";
 import { useNotification } from "@/hooks/useNotification";
 import { OnboardingDialog } from "@/components/Onboarding/OnboardingDialog";
@@ -257,6 +258,14 @@ function DashboardLayout({ children }: DashboardLayoutProps) {
               >
                 <Package size={16} className="shrink-0 text-sidebar-muted" />
                 <span>Products</span>
+              </Link>
+              <Link
+                to="/job-search"
+                className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors"
+                onClick={() => setSidebarOpen(false)}
+              >
+                <Search size={16} className="shrink-0 text-sidebar-muted" />
+                <span>Job Search</span>
               </Link>
 
               {/* Operations Section */}

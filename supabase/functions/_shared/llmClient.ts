@@ -36,6 +36,8 @@ interface LLMResponse {
   model: string;
   input_tokens: number;
   output_tokens: number;
+  /** true when the provider cut the response off at max_tokens, not when it finished naturally. */
+  truncated: boolean;
 }
 
 const MODEL_MAP: Record<'sonnet' | 'opus', string> = {
@@ -127,6 +129,7 @@ async function callGroq(
         model: groqModel,
         input_tokens: data.usage?.prompt_tokens || 0,
         output_tokens: data.usage?.completion_tokens || 0,
+        truncated: data.choices?.[0]?.finish_reason === 'length',
       };
     }
 
@@ -215,6 +218,7 @@ async function callCerebras(
         model: CEREBRAS_MODEL,
         input_tokens: data.usage?.prompt_tokens || 0,
         output_tokens: data.usage?.completion_tokens || 0,
+        truncated: data.choices?.[0]?.finish_reason === 'length',
       };
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
@@ -346,6 +350,7 @@ export async function callLLM(
         model: modelId,
         input_tokens: data.usage?.input_tokens || 0,
         output_tokens: data.usage?.output_tokens || 0,
+        truncated: data.stop_reason === 'max_tokens',
       };
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
@@ -364,10 +369,16 @@ export async function callLLM(
 /**
  * Call LLM and parse the response as JSON.
  * Handles markdown code fences that the LLM sometimes wraps JSON in.
- * If the first response is not valid JSON (the usual culprit is an unescaped
- * double quote inside a long string value), retries the call once with an
- * explicit escaping reminder before giving up — long-form content generators
- * hit this often enough that one retry meaningfully cuts failed runs.
+ * If the first response is not valid JSON, retries once — the fix depends on
+ * WHY it failed, not just that it failed: a response the provider itself
+ * marked truncated (stop_reason/finish_reason = max_tokens/length) gets a
+ * bigger budget on retry, since an escaping reminder can't fix a response
+ * that was cut off mid-string; anything else (the usual culprit is an
+ * unescaped double quote inside a long string value) gets the escaping
+ * reminder as before. Conflating the two used to retry a token-budget
+ * failure with the identical budget and fail again (see job-match-evaluate,
+ * 2026-09-10 — an 'Unterminated string' error that a second identical-length
+ * attempt could never have fixed).
  */
 export async function callLLMJson<T = unknown>(
   prompt: string,
@@ -375,13 +386,20 @@ export async function callLLMJson<T = unknown>(
 ): Promise<{ data: T; tokens: { input: number; output: number } }> {
   let lastParseError: unknown = null;
   let lastRaw = '';
+  let wasTruncated = false;
 
   for (let attempt = 1; attempt <= 2; attempt++) {
-    const attemptPrompt = attempt === 1
-      ? prompt
-      : prompt + '\n\nCRITICAL: Your previous response was not valid JSON. Return strictly valid JSON. Escape any double quote inside a string value as \\" (better: use single quotes for quoted phrases inside text).';
+    const attemptOptions = { ...options };
+    let attemptPrompt = prompt;
+    if (attempt === 2) {
+      if (wasTruncated) {
+        attemptOptions.max_tokens = Math.round((options.max_tokens || 1024) * 1.6);
+      } else {
+        attemptPrompt += '\n\nCRITICAL: Your previous response was not valid JSON. Return strictly valid JSON. Escape any double quote inside a string value as \\" (better: use single quotes for quoted phrases inside text).';
+      }
+    }
 
-    const response = await callLLM(attemptPrompt, { ...options, json_mode: true });
+    const response = await callLLM(attemptPrompt, { ...attemptOptions, json_mode: true });
 
     let jsonStr = response.content.trim();
 
@@ -402,10 +420,11 @@ export async function callLLMJson<T = unknown>(
     } catch (parseError) {
       lastParseError = parseError;
       lastRaw = jsonStr;
+      wasTruncated = response.truncated;
     }
   }
 
   throw new Error(
-    `Failed to parse LLM JSON response after retry: ${lastParseError}. Raw content: ${lastRaw.substring(0, 200)}`
+    `Failed to parse LLM JSON response after retry${wasTruncated ? ' (truncated at max_tokens both times)' : ''}: ${lastParseError}. Raw content: ${lastRaw.substring(0, 200)}`
   );
 }
