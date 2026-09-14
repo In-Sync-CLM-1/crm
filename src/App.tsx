@@ -53,6 +53,7 @@ const ContentCalendar = lazy(() => import("./pages/ContentCalendar"));
 const BDOutreach = lazy(() => import("./pages/BDOutreach"));
 const LinkedInOutreach = lazy(() => import("./pages/LinkedInOutreach"));
 const LinkedInMessages = lazy(() => import("./pages/LinkedInMessages"));
+const JobSearch = lazy(() => import("./pages/JobSearch"));
 
 // Lazy loaded pages - Admin
 const ApprovalMatrix = lazy(() => import("./pages/ApprovalMatrix"));
@@ -238,6 +239,12 @@ const App = () => (
           <Route path="/marketing/linkedin-messages" element={
             <ProtectedRoute>
               <LinkedInMessages />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/job-search" element={
+            <ProtectedRoute>
+              <JobSearch />
             </ProtectedRoute>
           } />
 
