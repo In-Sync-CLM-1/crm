@@ -6,6 +6,7 @@ import DashboardLayout from "@/components/Layout/DashboardLayout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { LoadingState } from "@/components/common/LoadingState";
 import { useOrgContext } from "@/hooks/useOrgContext";
 import { Check, ExternalLink, X } from "lucide-react";
@@ -35,6 +36,8 @@ interface Prospect {
   created_at: string;
 }
 
+const PRODUCT_OPTIONS = ["In-Sync CRM", "Work-Sync", "ATS", "Vendor Verification", "Expense Claims", "Event"];
+
 const STATUS_STYLE: Record<string, string> = {
   invited: "bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300",
   accepted: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
@@ -46,6 +49,7 @@ export default function LinkedInOutreach() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<"pending" | "invited" | "accepted">("pending");
   const [busy, setBusy] = useState<string | null>(null);
+  const [productOverride, setProductOverride] = useState<Record<string, string>>({});
 
   const { data: prospects, isLoading } = useQuery({
     queryKey: ["li-prospects", effectiveOrgId, tab],
@@ -89,10 +93,13 @@ export default function LinkedInOutreach() {
   const act = async (p: Prospect, status: "approved" | "rejected") => {
     setBusy(p.id);
     try {
+      const override = productOverride[p.id];
+      const update: Record<string, unknown> = { status, reviewed_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+      if (override && override !== p.matched_product) update.matched_product = override;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error } = await (supabase as any)
         .from("li_prospects")
-        .update({ status, reviewed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .update(update)
         .eq("id", p.id);
       if (error) throw error;
       await queryClient.invalidateQueries({ queryKey: ["li-prospects"] });
@@ -155,7 +162,23 @@ export default function LinkedInOutreach() {
                 <div>
                   <div className="flex items-center gap-2">
                     <h2 className="font-medium">{p.full_name}</h2>
-                    {p.matched_product && <Badge variant="outline">{p.matched_product}</Badge>}
+                    {p.status === "pending" ? (
+                      <Select
+                        value={productOverride[p.id] ?? p.matched_product ?? "In-Sync CRM"}
+                        onValueChange={(v) => setProductOverride((prev) => ({ ...prev, [p.id]: v }))}
+                      >
+                        <SelectTrigger className="h-7 w-auto text-xs gap-1 px-2">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {PRODUCT_OPTIONS.map((opt) => (
+                            <SelectItem key={opt} value={opt} className="text-xs">{opt}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      p.matched_product && <Badge variant="outline">{p.matched_product}</Badge>
+                    )}
                     {p.status !== "pending" && (
                       <Badge className={STATUS_STYLE[p.status]}>{p.status}</Badge>
                     )}
@@ -173,6 +196,9 @@ export default function LinkedInOutreach() {
                 <p className="text-sm">{p.reason}</p>
                 {facts.title_line && (
                   <p className="text-xs text-muted-foreground mt-0.5">Matched on: "{facts.title_line}"</p>
+                )}
+                {productOverride[p.id] && productOverride[p.id] !== p.matched_product && (
+                  <p className="text-xs text-amber-600 mt-0.5">Product changed to {productOverride[p.id]} for this approval — the reason above still reflects the original match.</p>
                 )}
               </div>
 
