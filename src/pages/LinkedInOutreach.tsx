@@ -90,6 +90,19 @@ export default function LinkedInOutreach() {
 
   const visible = useMemo(() => prospects || [], [prospects]);
 
+  const productColumns = useMemo(() => {
+    if (tab !== "pending") return [];
+    const buckets = new Map<string, Prospect[]>();
+    for (const opt of PRODUCT_OPTIONS) buckets.set(opt, []);
+    buckets.set("Unmatched", []);
+    for (const p of visible) {
+      const key = productOverride[p.id] ?? p.matched_product ?? "Unmatched";
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key)!.push(p);
+    }
+    return Array.from(buckets.entries()).filter(([key, items]) => key !== "Unmatched" || items.length > 0);
+  }, [visible, tab, productOverride]);
+
   const act = async (p: Prospect, status: "approved" | "rejected") => {
     setBusy(p.id);
     try {
@@ -116,7 +129,7 @@ export default function LinkedInOutreach() {
 
   return (
     <DashboardLayout>
-      <div className="p-4 lg:p-6 space-y-4 max-w-[1000px]">
+      <div className={`p-4 lg:p-6 space-y-4 ${tab === "pending" ? "" : "max-w-[1000px]"}`}>
         <div>
           <h1 className="text-xl font-semibold">LinkedIn Connection Builder</h1>
           <p className="text-sm text-muted-foreground">
@@ -154,71 +167,93 @@ export default function LinkedInOutreach() {
           </Card>
         )}
 
-        {visible.map((p) => {
-          const facts = (p.research_facts || {}) as Record<string, string>;
-          return (
-            <Card key={p.id} className="p-4 space-y-2">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="font-medium">{p.full_name}</h2>
-                    {p.status === "pending" ? (
-                      <Select
-                        value={productOverride[p.id] ?? p.matched_product ?? "In-Sync CRM"}
-                        onValueChange={(v) => setProductOverride((prev) => ({ ...prev, [p.id]: v }))}
-                      >
-                        <SelectTrigger className="h-7 w-auto text-xs gap-1 px-2">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {PRODUCT_OPTIONS.map((opt) => (
-                            <SelectItem key={opt} value={opt} className="text-xs">{opt}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      p.matched_product && <Badge variant="outline">{p.matched_product}</Badge>
-                    )}
-                    {p.status !== "pending" && (
-                      <Badge className={STATUS_STYLE[p.status]}>{p.status}</Badge>
-                    )}
-                  </div>
-                  <p className="text-sm text-muted-foreground">{p.headline}</p>
-                  {p.current_company && <p className="text-xs text-muted-foreground">{p.current_company}</p>}
+        {tab === "pending" && visible.length > 0 && (
+          <div className="flex gap-3 overflow-x-auto pb-2">
+            {productColumns.map(([product, items]) => (
+              <div key={product} className="w-[300px] shrink-0 space-y-2">
+                <div className="flex items-center justify-between px-1">
+                  <span className="text-sm font-medium">{product}</span>
+                  <Badge variant="secondary">{items.length}</Badge>
                 </div>
-                <a href={p.linkedin_url} target="_blank" rel="noreferrer" className="text-xs text-primary flex items-center gap-1 shrink-0">
-                  View profile <ExternalLink className="h-3 w-3" />
-                </a>
-              </div>
-
-              <div>
-                <span className="text-xs uppercase tracking-wide text-muted-foreground">Why this connection</span>
-                <p className="text-sm">{p.reason}</p>
-                {facts.title_line && (
-                  <p className="text-xs text-muted-foreground mt-0.5">Matched on: "{facts.title_line}"</p>
-                )}
-                {productOverride[p.id] && productOverride[p.id] !== p.matched_product && (
-                  <p className="text-xs text-amber-600 mt-0.5">Product changed to {productOverride[p.id]} for this approval — the reason above still reflects the original match.</p>
-                )}
-              </div>
-
-              {p.status === "pending" && (
-                <div className="flex flex-wrap gap-2 pt-1">
-                  <Button size="sm" onClick={() => act(p, "approved")} disabled={busy === p.id}>
-                    <Check className="h-3.5 w-3.5 mr-1.5" />Approve
-                  </Button>
-                  <Button size="sm" variant="outline" className="text-red-600" onClick={() => act(p, "rejected")} disabled={busy === p.id}>
-                    <X className="h-3.5 w-3.5 mr-1.5" />Reject
-                  </Button>
-                  <span className="text-xs text-muted-foreground self-center ml-auto">
-                    found {format(new Date(p.created_at), "d MMM")}
-                  </span>
+                <div className="space-y-2 max-h-[75vh] overflow-y-auto pr-1">
+                  {items.length === 0 ? (
+                    <Card className="p-4 text-center text-xs text-muted-foreground">None suggested</Card>
+                  ) : (
+                    items.map((p) => renderCard(p))
+                  )}
                 </div>
-              )}
-            </Card>
-          );
-        })}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {tab !== "pending" && visible.map((p) => renderCard(p))}
       </div>
     </DashboardLayout>
   );
+
+  function renderCard(p: Prospect) {
+    const facts = (p.research_facts || {}) as Record<string, string>;
+    return (
+      <Card key={p.id} className="p-4 space-y-2">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="font-medium">{p.full_name}</h2>
+              {p.status === "pending" ? (
+                <Select
+                  value={productOverride[p.id] ?? p.matched_product ?? "In-Sync CRM"}
+                  onValueChange={(v) => setProductOverride((prev) => ({ ...prev, [p.id]: v }))}
+                >
+                  <SelectTrigger className="h-7 w-auto text-xs gap-1 px-2">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PRODUCT_OPTIONS.map((opt) => (
+                      <SelectItem key={opt} value={opt} className="text-xs">{opt}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                p.matched_product && <Badge variant="outline">{p.matched_product}</Badge>
+              )}
+              {p.status !== "pending" && (
+                <Badge className={STATUS_STYLE[p.status]}>{p.status}</Badge>
+              )}
+            </div>
+            <p className="text-sm text-muted-foreground">{p.headline}</p>
+            {p.current_company && <p className="text-xs text-muted-foreground">{p.current_company}</p>}
+          </div>
+          <a href={p.linkedin_url} target="_blank" rel="noreferrer" className="text-xs text-primary flex items-center gap-1 shrink-0">
+            View profile <ExternalLink className="h-3 w-3" />
+          </a>
+        </div>
+
+        <div>
+          <span className="text-xs uppercase tracking-wide text-muted-foreground">Why this connection</span>
+          <p className="text-sm">{p.reason}</p>
+          {facts.title_line && (
+            <p className="text-xs text-muted-foreground mt-0.5">Matched on: "{facts.title_line}"</p>
+          )}
+          {productOverride[p.id] && productOverride[p.id] !== p.matched_product && (
+            <p className="text-xs text-amber-600 mt-0.5">Product changed to {productOverride[p.id]} for this approval — the reason above still reflects the original match.</p>
+          )}
+        </div>
+
+        {p.status === "pending" && (
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Button size="sm" onClick={() => act(p, "approved")} disabled={busy === p.id}>
+              <Check className="h-3.5 w-3.5 mr-1.5" />Approve
+            </Button>
+            <Button size="sm" variant="outline" className="text-red-600" onClick={() => act(p, "rejected")} disabled={busy === p.id}>
+              <X className="h-3.5 w-3.5 mr-1.5" />Reject
+            </Button>
+            <span className="text-xs text-muted-foreground self-center ml-auto">
+              found {format(new Date(p.created_at), "d MMM")}
+            </span>
+          </div>
+        )}
+      </Card>
+    );
+  }
 }
