@@ -101,6 +101,23 @@ const PARKED: { name: string; ref: string; web: string; parkedOn: string }[] = [
 type Status = "ok" | "fail" | "warn";
 interface Check { label: string; status: Status; detail: string }
 
+// Runs `fn` over `items` with at most `limit` in flight at once — enough
+// concurrency to keep the fleet sweep inside the edge function's wall-clock
+// budget (see runProject), without firing every project's Management API
+// calls in one uncapped burst.
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
 const primaryToken = () => Deno.env.get("MGMT_TOKEN") ?? "";
 
 // Cross-account tokens, tried during discovery in addition to the primary.
@@ -710,14 +727,19 @@ async function checkFrontend(ref: string, web: string): Promise<Check> {
     }
 
     // The ref (https://<ref>.supabase.co) is baked in only if VITE_SUPABASE_URL
-    // was present at build time. Scan the bundles for it.
-    let baked = false;
-    for (const b of bundles.slice(0, 6)) {
-      const jr = await fetchT(b, 20000);
-      if (jr.status !== 200) continue;
-      const js = await jr.text();
-      if (js.includes(ref)) { baked = true; break; }
-    }
+    // was present at build time. Scan the bundles for it — concurrently, not
+    // one at a time: up to 6 bundles x a 20s timeout sequentially could burn
+    // 120s on a single slow project, which is most of the digest's 2026-09-22
+    // 504 timeout postmortem (see runProject).
+    const found = await Promise.all(bundles.slice(0, 6).map(async (b) => {
+      try {
+        const jr = await fetchT(b, 20000);
+        if (jr.status !== 200) return false;
+        const js = await jr.text();
+        return js.includes(ref);
+      } catch { return false; }
+    }));
+    const baked = found.some(Boolean);
     return baked
       ? { label: L, status: "ok", detail: `renders; DB config baked into bundle` }
       : {
@@ -970,34 +992,51 @@ async function checkModules(ref: string): Promise<Check[]> {
   return out;
 }
 
+// Runs one project's whole checklist. The individual checks are independent
+// of each other (each is its own read-only probe against that project), so
+// they run CONCURRENTLY, not one after another — a sequential sweep across a
+// growing project x check-count matrix is exactly what pushed the whole
+// digest past the edge function's wall-clock budget and cost it a silent
+// 504 on 2026-09-22 (see the Sentinel-going-dark postmortem). Concurrency
+// here does not change what is checked or the order it's reported in — each
+// group's position in `checks` is fixed by its slot in the Promise.all array,
+// matching the original sequential push order exactly.
 async function runProject(ref: string): Promise<{ ref: string; name: string; checks: Check[] }> {
   const m = META[ref] ?? { name: ref };
   const checks: Check[] = [];
-  checks.push(await checkDb(ref));
-  // The frontend probe is independent of DB health — a blank-screen SPA HAS a
-  // healthy DB — so it always runs. undefined web = coverage gap, flag it amber
-  // (never silent); null = intentional backend-only opt-out.
-  if (m.web) checks.push(await checkFrontend(ref, m.web));
-  else if (m.web === undefined) {
-    checks.push({ label: "Frontend render", status: "warn", detail: "not monitored — add a web URL to Sentinel META (frontend blind spot)" });
-  }
+
+  // DB health and the frontend probe don't depend on each other — run together.
+  // undefined web = coverage gap, flag it amber (never silent); null = intentional
+  // backend-only opt-out.
+  const [dbCheck, frontendCheck] = await Promise.all([
+    checkDb(ref),
+    m.web
+      ? checkFrontend(ref, m.web)
+      : m.web === undefined
+      ? Promise.resolve<Check>({ label: "Frontend render", status: "warn", detail: "not monitored — add a web URL to Sentinel META (frontend blind spot)" })
+      : Promise.resolve<Check | null>(null),
+  ]);
+  checks.push(dbCheck);
+  if (frontendCheck) checks.push(frontendCheck);
+
   // Skip the heavy DB checks if the DB itself is down.
-  if (checks[0].status !== "fail") {
-    checks.push(await checkRegistration(ref));
-    checks.push(await checkRlsExposure(ref));
-    if (m.dialer || m.demoConfirm) {
-      const dialingActive = await fetchDialingActive(ref);
-      if (m.dialer) checks.push(...(await checkDialer(ref, dialingActive)));
-      if (m.demoConfirm) checks.push(await checkDemoConfirmation(ref, dialingActive));
-    }
-    if (m.marketing) checks.push(await checkMarketing(ref));
-    if (m.bdOutreach) checks.push(await checkBdOutreach(ref));
-    if (m.jobMatch) checks.push(await checkJobMatchEngine(ref));
-    if (m.jobMatch) checks.push(await checkPlatformSessions(ref));
-    if (m.feedCheck) checks.push(await checkSmbFeed(ref));
-    checks.push(...(await checkQueues(ref)));
-    if (ref === "ufwvyybrctjpwipbveqe") checks.push(await checkWebhookInboxStale(ref));
-    checks.push(...(await checkModules(ref)));
+  if (dbCheck.status !== "fail") {
+    const dialingActive = (m.dialer || m.demoConfirm) ? await fetchDialingActive(ref) : false;
+    const groups = await Promise.all([
+      checkRegistration(ref).then((c) => [c]),
+      checkRlsExposure(ref).then((c) => [c]),
+      m.dialer ? checkDialer(ref, dialingActive) : Promise.resolve<Check[]>([]),
+      m.demoConfirm ? checkDemoConfirmation(ref, dialingActive).then((c) => [c]) : Promise.resolve<Check[]>([]),
+      m.marketing ? checkMarketing(ref).then((c) => [c]) : Promise.resolve<Check[]>([]),
+      m.bdOutreach ? checkBdOutreach(ref).then((c) => [c]) : Promise.resolve<Check[]>([]),
+      m.jobMatch ? checkJobMatchEngine(ref).then((c) => [c]) : Promise.resolve<Check[]>([]),
+      m.jobMatch ? checkPlatformSessions(ref).then((c) => [c]) : Promise.resolve<Check[]>([]),
+      m.feedCheck ? checkSmbFeed(ref).then((c) => [c]) : Promise.resolve<Check[]>([]),
+      checkQueues(ref),
+      ref === "ufwvyybrctjpwipbveqe" ? checkWebhookInboxStale(ref).then((c) => [c]) : Promise.resolve<Check[]>([]),
+      checkModules(ref),
+    ]);
+    for (const g of groups) checks.push(...g);
   }
   return { ref, name: m.name, checks };
 }
@@ -1256,8 +1295,7 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "project discovery failed for every configured account" }), { status: 502 });
     }
 
-    const results = [];
-    for (const ref of refs) results.push(await runProject(ref));
+    const results = await mapLimit(refs, 4, runProject);
     // Stable, friendly ordering.
     results.sort((a, b) => a.name.localeCompare(b.name));
 
