@@ -5,8 +5,9 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TrendingUp, Clock, AlertTriangle, IndianRupee, Plus, FileX2 } from "lucide-react";
-import { formatCurrencyINR, statusLabel } from "@/utils/billingUtils";
+import { formatCurrencyINR, statusLabel, getCurrentFinancialYear, getFinancialYearForDate, formatFinancialYear } from "@/utils/billingUtils";
 import { DOC_TYPE_LABELS, DOC_TYPE_COLORS, STATUS_COLORS } from "@/types/billing";
 import type { BillingDocument } from "@/types/billing";
 
@@ -20,10 +21,31 @@ interface BillingDashboardProps {
 }
 
 export function BillingDashboard({ documents, onCreateInvoice, onViewDocument, onCardClick }: BillingDashboardProps) {
+  const currentFY = useMemo(() => getCurrentFinancialYear(), []);
+
+  // Duration filter — every financial year that has at least one document
+  // (invoice, proforma, or credit note, regardless of which brand — ECR
+  // Technical Innovations or Prosync AI Solutions — issued it), newest first,
+  // plus the current FY even if it has no documents yet, plus "All Time".
+  const availableFYs = useMemo(() => {
+    const fys = new Set<string>([currentFY]);
+    documents.forEach(d => { if (d.doc_date) fys.add(getFinancialYearForDate(d.doc_date)); });
+    return Array.from(fys).sort((a, b) => b.localeCompare(a));
+  }, [documents, currentFY]);
+
+  const [duration, setDuration] = useState<string>(currentFY);
+
+  // Scope the whole dashboard to the selected duration. Documents from both
+  // ECR- and Prosync-branded eras are combined here (unlike Accounting, which
+  // is Prosync's own books only) — this dashboard has never split by seller.
+  const scopedDocuments = useMemo(() =>
+    duration === "all" ? documents : documents.filter(d => d.doc_date && getFinancialYearForDate(d.doc_date) === duration),
+  [documents, duration]);
+
   // All billable documents (invoices + proformas)
-  const billable = useMemo(() => documents.filter(d => d.doc_type === "invoice" || d.doc_type === "proforma"), [documents]);
-  const invoices = useMemo(() => documents.filter(d => d.doc_type === "invoice"), [documents]);
-  const creditNotes = useMemo(() => documents.filter(d => d.doc_type === "credit_note"), [documents]);
+  const billable = useMemo(() => scopedDocuments.filter(d => d.doc_type === "invoice" || d.doc_type === "proforma"), [scopedDocuments]);
+  const invoices = useMemo(() => scopedDocuments.filter(d => d.doc_type === "invoice"), [scopedDocuments]);
+  const creditNotes = useMemo(() => scopedDocuments.filter(d => d.doc_type === "credit_note"), [scopedDocuments]);
 
   // Revenue = actual cash received across all billable documents, including
   // partial payments on invoices that haven't fully settled yet — summing
@@ -116,7 +138,22 @@ export function BillingDashboard({ documents, onCreateInvoice, onViewDocument, o
           <h2 className="text-2xl font-bold">Billing Dashboard</h2>
           <p className="text-sm text-muted-foreground mt-0.5">Financial overview</p>
         </div>
-        <Button onClick={onCreateInvoice}><Plus className="h-4 w-4 mr-1" />New Proforma Invoice</Button>
+        <div className="flex items-center gap-3">
+          <Select value={duration} onValueChange={setDuration}>
+            <SelectTrigger className="w-[160px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {availableFYs.map(fy => (
+                <SelectItem key={fy} value={fy}>
+                  FY {formatFinancialYear(fy)}{fy === currentFY ? " (Current)" : ""}
+                </SelectItem>
+              ))}
+              <SelectItem value="all">All Time</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button onClick={onCreateInvoice}><Plus className="h-4 w-4 mr-1" />New Proforma Invoice</Button>
+        </div>
       </div>
 
       {/* KPI Cards */}
@@ -202,12 +239,12 @@ export function BillingDashboard({ documents, onCreateInvoice, onViewDocument, o
               </TableRow>
             </TableHeader>
             <TableBody>
-              {documents.length === 0 ? (
+              {scopedDocuments.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground py-8">No documents yet. Create your first invoice.</TableCell>
+                  <TableCell colSpan={6} className="text-center text-muted-foreground py-8">No documents in this period.</TableCell>
                 </TableRow>
               ) : (
-                documents.slice(0, 10).map(d => (
+                scopedDocuments.slice(0, 10).map(d => (
                   <TableRow key={d.id} className="cursor-pointer hover:bg-muted/50" onClick={() => onViewDocument(d.id)}>
                     <TableCell className="font-semibold text-primary">{d.doc_number}</TableCell>
                     <TableCell><Badge variant="secondary" className={DOC_TYPE_COLORS[d.doc_type]}>{DOC_TYPE_LABELS[d.doc_type]}</Badge></TableCell>

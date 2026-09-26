@@ -114,6 +114,18 @@ export function formatFinancialYear(fy: string): string {
   return `20${fy.substring(0, 2)}-${fy.substring(2)}`;
 }
 
+// Indian FY (April–March) that a given doc_date (YYYY-MM-DD) falls in, in the
+// same "2526" shorthand getCurrentFinancialYear() uses.
+export function getFinancialYearForDate(dateStr: string): string {
+  const d = new Date(dateStr);
+  const year = d.getFullYear();
+  const month = d.getMonth(); // 0-indexed
+  if (month >= 3) {
+    return `${String(year).slice(2)}${String(year + 1).slice(2)}`;
+  }
+  return `${String(year - 1).slice(2)}${String(year).slice(2)}`;
+}
+
 export function statusLabel(s: string): string {
   return s.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }
