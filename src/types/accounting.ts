@@ -27,6 +27,7 @@ export interface BankStatement {
   filename: string | null;
   row_count: number;
   uploaded_at: string;
+  statement_type?: "company" | "director_personal" | "director_card";
 }
 
 export interface BankTransaction {

@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { Upload, FileText, CheckCircle, AlertCircle, X, Building2, User } from "lucide-react";
+import { Upload, FileText, CheckCircle, AlertCircle, X, Building2, User, CreditCard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -8,6 +8,8 @@ import { useToast } from "@/hooks/use-toast";
 import type { ParsedBankRow } from "@/types/accounting";
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
+import { extractPdfLines } from "@/utils/pdfText";
+import { parseCardStatementLines } from "@/utils/cardStatementParser";
 
 function parseAmount(raw: string): number {
   if (!raw || raw.trim() === "" || raw.trim() === "-") return 0;
@@ -146,7 +148,22 @@ async function parseBankExcel(file: File): Promise<ParsedBankRow[]> {
   return parseBankRows(grid);
 }
 
-type StatementType = "company" | "director_personal";
+type StatementType = "company" | "director_personal" | "director_card";
+
+async function parseCardPdf(file: File): Promise<ParsedBankRow[]> {
+  const lines = await extractPdfLines(await file.arrayBuffer());
+  const rows = parseCardStatementLines(lines);
+  if (rows.length === 0) throw new Error("No card transactions found. Please upload the IDFC FIRST credit card statement PDF.");
+  return rows.map(r => ({
+    transaction_date: r.transaction_date,
+    value_date: "",
+    narration: r.card ? `${r.narration} [Card ${r.card}]` : r.narration,
+    reference: "",
+    debit: r.debit,
+    credit: r.credit,
+    balance: null,
+  })) as ParsedBankRow[];
+}
 
 export function AccountingImport() {
   const { importStatement, statements, statementsLoading } = useAccountingData();
@@ -167,7 +184,9 @@ export function AccountingImport() {
     setFilename(file.name);
     try {
       const isExcel = /\.(xlsx|xls)$/i.test(file.name);
-      const rows = isExcel ? await parseBankExcel(file) : parseBankCsv(await file.text());
+      const rows = stmtType === "director_card"
+        ? await parseCardPdf(file)
+        : isExcel ? await parseBankExcel(file) : parseBankCsv(await file.text());
       if (rows.length === 0) throw new Error("No transactions found in the file.");
       setParsed(rows);
     } catch (err: unknown) {
@@ -188,7 +207,7 @@ export function AccountingImport() {
     if (!parsed || parsed.length === 0) return;
     setImporting(true);
     try {
-      const relevantRows = stmtType === "director_personal" ? parsed.filter(r => r.debit > 0) : parsed;
+      const relevantRows = stmtType !== "company" ? parsed.filter(r => r.debit > 0) : parsed;
       const dates = relevantRows.map(r => r.transaction_date).sort();
       const res = await importStatement.mutateAsync({
         rows: parsed,
@@ -210,7 +229,8 @@ export function AccountingImport() {
     }
   }
 
-  const isPersonal = stmtType === "director_personal";
+  const isPersonal = stmtType !== "company";
+  const isCard = stmtType === "director_card";
 
   // Preview: for personal statement, only show debit rows
   const previewRows = isPersonal ? (parsed?.filter(r => r.debit > 0) ?? []) : (parsed ?? []);
@@ -226,7 +246,7 @@ export function AccountingImport() {
           <CardTitle className="text-base">Which account is this statement from?</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <button
               type="button"
               onClick={() => handleTypeChange("company")}
@@ -257,6 +277,21 @@ export function AccountingImport() {
                 <p className="text-xs text-muted-foreground mt-0.5">Business expenses paid personally</p>
               </div>
             </button>
+            <button
+              type="button"
+              onClick={() => handleTypeChange("director_card")}
+              className={`flex items-start gap-3 rounded-lg border-2 p-4 text-left transition-colors ${
+                stmtType === "director_card"
+                  ? "border-primary bg-primary/5"
+                  : "border-border hover:border-muted-foreground"
+              }`}
+            >
+              <CreditCard className="h-5 w-5 mt-0.5 shrink-0 text-primary" />
+              <div>
+                <p className="font-medium text-sm">Amit Sengupta — Credit Card</p>
+                <p className="text-xs text-muted-foreground mt-0.5">IDFC FIRST card statement (PDF)</p>
+              </div>
+            </button>
           </div>
         </CardContent>
       </Card>
@@ -265,14 +300,16 @@ export function AccountingImport() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
-            {isPersonal ? "Upload Amit's Personal Bank Statement" : "Upload Company Bank Statement"}
+            {isCard ? "Upload Amit's Credit Card Statement" : isPersonal ? "Upload Amit's Personal Bank Statement" : "Upload Company Bank Statement"}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {isPersonal && (
             <div className="rounded-md bg-blue-50 border border-blue-200 p-3 text-sm text-blue-800">
-              Only <strong>debit transactions</strong> (money out) will be imported as business expenses. Credits are ignored.
-              Each imported transaction will go to the review queue for expense categorization.
+              {isCard
+                ? <>Only <strong>charges</strong> are imported; payments and refunds are ignored. Each charge goes to the review queue: pick the expense (or GST) for business charges, and press <strong>Ignore</strong> for personal ones. Payments the company makes to the card are recorded as drawings automatically.</>
+                : <>Only <strong>debit transactions</strong> (money out) will be imported as business expenses. Credits are ignored.
+              Each imported transaction will go to the review queue for expense categorization.</>}
             </div>
           )}
 
@@ -288,7 +325,7 @@ export function AccountingImport() {
           >
             <Upload className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
             <p className="text-sm text-muted-foreground">
-              Drag & drop your bank statement (CSV or Excel) here, or click to browse
+              {isCard ? "Drag & drop your credit card statement (PDF) here, or click to browse" : "Drag & drop your bank statement (CSV or Excel) here, or click to browse"}
             </p>
             <p className="text-xs text-muted-foreground mt-1">
               {isPersonal
@@ -296,7 +333,7 @@ export function AccountingImport() {
                 : "Download from Internet Banking → Accounts → Statement → Export as CSV or Excel"}
             </p>
           </div>
-          <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" className="hidden"
+          <input ref={fileRef} type="file" accept={isCard ? ".pdf" : ".csv,.xlsx,.xls"} className="hidden"
             onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }}
           />
 
@@ -413,7 +450,7 @@ export function AccountingImport() {
               {statements.map(s => (
                 <div key={s.id} className="flex items-center justify-between py-2 border-b last:border-0 text-sm">
                   <div className="flex items-center gap-2">
-                    {(s as { statement_type?: string }).statement_type === "director_personal"
+                    {["director_personal", "director_card"].includes((s as { statement_type?: string }).statement_type ?? "")
                       ? <User className="h-4 w-4 text-muted-foreground shrink-0" />
                       : <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />}
                     <div>
