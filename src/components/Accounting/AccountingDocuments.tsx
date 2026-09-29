@@ -174,8 +174,8 @@ export function AccountingDocuments() {
                         <p className="truncate">{s.filename ?? "—"}</p>
                       </td>
                       <td className="px-4 py-2">
-                        <Badge variant={s.statement_type === "director_personal" ? "secondary" : "outline"} className="text-xs">
-                          {s.statement_type === "director_personal" ? "Personal (Amit)" : "Company"}
+                        <Badge variant={s.statement_type !== "company" ? "secondary" : "outline"} className="text-xs">
+                          {s.statement_type === "director_card" ? "Credit card (Amit)" : s.statement_type === "director_personal" ? "Personal (Amit)" : "Company"}
                         </Badge>
                       </td>
                       <td className="px-4 py-2 text-muted-foreground whitespace-nowrap text-xs">
