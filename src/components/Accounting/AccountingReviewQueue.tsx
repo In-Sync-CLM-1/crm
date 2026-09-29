@@ -12,7 +12,6 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import type { BankTransaction, ChartOfAccount } from "@/types/accounting";
 import { format } from "date-fns";
-import { suggestCardCategory } from "@/utils/cardStatementParser";
 
 function AccountPicker({
   accounts,
@@ -79,13 +78,7 @@ function TransactionCard({
 }) {
   const { categorize, ignoreTransaction, settleDirectorDrawings, accountByCode } = useAccountingData();
   const { toast } = useToast();
-  const isCardCharge = txn.statement?.statement_type === "director_card";
-  const cardGuess = isCardCharge ? suggestCardCategory(txn) : null;
-  const [contraAccountId, setContraAccountId] = useState(() => {
-    if (cardGuess === "software") return accountByCode("5030")?.id ?? "";
-    if (cardGuess === "advertising") return accountByCode("5100")?.id ?? "";
-    return "";
-  });
+  const [contraAccountId, setContraAccountId] = useState("");
   const [narration, setNarration] = useState(txn.narration);
   const [saving, setSaving] = useState(false);
 
@@ -280,10 +273,7 @@ function TransactionCard({
         <CardContent className="pt-4 space-y-4">
           <div className="flex items-start justify-between gap-4">
             <div className="space-y-1">
-              <Badge variant="secondary" className="text-xs mb-1">{isCardCharge ? "Amit's credit card" : "Amit's personal account"}</Badge>
-              {cardGuess === "personal" && (
-                <p className="text-xs text-amber-700">Looks personal — press Ignore unless this was for the business.</p>
-              )}
+              <Badge variant="secondary" className="text-xs mb-1">Amit's personal account</Badge>
               <p className="text-xs text-muted-foreground">
                 {format(new Date(txn.transaction_date), "dd MMM yyyy")}
                 {txn.reference && <span className="ml-2">Ref: {txn.reference}</span>}

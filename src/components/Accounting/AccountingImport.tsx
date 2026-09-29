@@ -307,7 +307,7 @@ export function AccountingImport() {
           {isPersonal && (
             <div className="rounded-md bg-blue-50 border border-blue-200 p-3 text-sm text-blue-800">
               {isCard
-                ? <>Only <strong>charges</strong> are imported; payments and refunds are ignored. Each charge goes to the review queue: pick the expense (or GST) for business charges, and press <strong>Ignore</strong> for personal ones. Payments the company makes to the card are recorded as drawings automatically.</>
+                ? <>Only <strong>charges</strong> are imported; payments and refunds are ignored. Every charge is booked automatically as a business expense (tools and subscriptions to Software, cash/fuel/food to Travel, card fees to Bank Charges) and recorded as owed to Amit. Blinkit and Amazon purchases are treated as personal and not booked. Payments the company makes to the card are recorded as drawings and netted against it.</>
                 : <>Only <strong>debit transactions</strong> (money out) will be imported as business expenses. Credits are ignored.
               Each imported transaction will go to the review queue for expense categorization.</>}
             </div>

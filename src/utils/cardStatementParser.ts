@@ -58,17 +58,19 @@ export function parseCardStatementLines(lines: string[]): CardStatementRow[] {
   return rows;
 }
 
-// What a charge most likely is. The reviewer can change it before posting.
-export type CardSuggestion = "software" | "advertising" | "personal";
+// Every charge on Amit's card is a business expense. The account depends on
+// what it is: tools and subscriptions, card fees, or meeting spend (cash,
+// fuel, food).
+const SOFTWARE_MERCHANTS = ["BOLNA", "MICROSOFT", "CLOUDFLARE", "EXOTEL", "ANTHROPIC", "ELEVENLABS", "SUPABASE", "OPENAI", "GITHUB", "RESEND", "GROQ", "GOOGLE", "ZOOM", "CANVA", "SPOTIFY"];
 
-const SOFTWARE_MERCHANTS = ["BOLNA", "MICROSOFT", "CLOUDFLARE", "EXOTEL", "ANTHROPIC", "ELEVENLABS", "SUPABASE", "OPENAI", "GITHUB", "RESEND", "GROQ", "GOOGLE WORKSPACE", "GOOGLE CLOUD", "ZOOM", "CANVA"];
-const ADVERTISING_MERCHANTS = ["GOOGLE ADS", "GOOGLEADS", "FACEBK", "META ADS", "LINKEDIN ADS"];
+// Blinkit and Amazon purchases are personal: never booked in the company accounts.
+export function isPersonalCardSpend(narration: string): boolean {
+  return /BLINKIT|GROFERS|AMAZON|AMZN/i.test(narration);
+}
 
-export function suggestCardCategory(row: Pick<CardStatementRow, "narration" | "debit" | "credit">): CardSuggestion {
-  const n = row.narration.toUpperCase();
-  if (ADVERTISING_MERCHANTS.some(m => n.includes(m))) return "advertising";
-  if (SOFTWARE_MERCHANTS.some(m => n.includes(m))) return "software";
-  // everything else on a personal card (cash, fuel, food, fees, IGST on fees)
-  // is presumed personal until the reviewer says otherwise
-  return "personal";
+export function cardExpenseCode(narration: string): "5030" | "5050" | "5060" {
+  const n = narration.toUpperCase().trim();
+  if (SOFTWARE_MERCHANTS.some(m => n.includes(m))) return "5030"; // Software & Subscriptions
+  if (/CASH ADVANCE FEE|JOINING FEE|SURCHARGE/.test(n) || /^IGST/.test(n)) return "5050"; // Bank Charges
+  return "5060"; // Travel & Conveyance (meetings: cash, fuel, food)
 }

@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useOrgContext } from "@/hooks/useOrgContext";
 import { useAuth } from "@/contexts/AuthProvider";
 import { isProsyncIssuedDoc } from "@/utils/billingUtils";
+import { cardExpenseCode, isPersonalCardSpend } from "@/utils/cardStatementParser";
 import type {
   ChartOfAccount, BankStatement, BankTransaction,
   JournalEntry, NewJournalEntry, ParsedBankRow,
@@ -182,7 +183,46 @@ export function useAccountingData() {
             auto_rule: "director_expense",
             suggested_invoice_id: null,
           }));
-        if (toInsert.length > 0) {
+        if (statementType === "director_card") {
+          // Every card charge is a business expense owed to Amit: Dr expense, Cr Due to Director.
+          const dueId = accounts.find(a => a.code === "2241")?.id;
+          const suspenseId = accounts.find(a => a.code === "1170")?.id;
+          if (!dueId) throw new Error("Due to Director account not found");
+          if (toInsert.length > 0) {
+            const { data: inserted, error: txnErr } = await supabase
+              .from("bank_transactions")
+              .insert(toInsert.map(t => isPersonalCardSpend(t.narration)
+                ? { ...t, auto_rule: "card_personal", status: "ignored" as const }
+                : { ...t, auto_rule: "card_charge" }))
+              .select("id, transaction_date, narration, debit");
+            if (txnErr) throw txnErr;
+            for (const t of (inserted ?? []).filter(x => !isPersonalCardSpend(x.narration))) {
+              const expenseId = accounts.find(a => a.code === cardExpenseCode(t.narration))?.id;
+              if (!expenseId) continue;
+              const { data: je } = await supabase.from("journal_entries")
+                .insert({
+                  org_id: effectiveOrgId,
+                  entry_date: t.transaction_date,
+                  narration: `Credit card - ${t.narration}`,
+                  source: "bank_import",
+                  bank_transaction_id: t.id,
+                  created_by: user?.id,
+                })
+                .select().single();
+              if (!je) continue;
+              await supabase.from("journal_entry_lines").insert([
+                { entry_id: je.id, account_id: expenseId, debit: t.debit, credit: 0,       sort_order: 0 },
+                { entry_id: je.id, account_id: dueId,     debit: 0,       credit: t.debit, sort_order: 1 },
+              ]);
+              await supabase.from("bank_transactions")
+                .update({ status: "categorized", journal_entry_id: je.id })
+                .eq("id", t.id);
+            }
+            // Net what the company already paid toward the card against what it now owes Amit
+            if (suspenseId) await runSettlement(effectiveOrgId, suspenseId, dueId);
+          }
+          qc.invalidateQueries({ queryKey: ["journal-entries"] });
+        } else if (toInsert.length > 0) {
           const { error: txnErr } = await supabase.from("bank_transactions").insert(toInsert);
           if (txnErr) throw txnErr;
         }
