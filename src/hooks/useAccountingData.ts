@@ -276,7 +276,7 @@ export function useAccountingData() {
         .map(row => {
           const narrationUpper = row.narration.toUpperCase();
           // bank narrations sometimes truncate the name to "AMIT SEN"
-          const isAmit = /AMIT SEN(GUPTA)?/.test(narrationUpper);
+          const isAmit = /AMIT SEN(GUPTA)?\b/.test(narrationUpper);
 
           let auto_rule: string | null = null;
           let status: "pending" | "suggested" = "pending";
