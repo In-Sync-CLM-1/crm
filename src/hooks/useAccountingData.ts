@@ -275,7 +275,8 @@ export function useAccountingData() {
         .filter(r => !existingKeys.has(`${r.transaction_date}|${r.narration}|${r.debit}|${r.credit}`))
         .map(row => {
           const narrationUpper = row.narration.toUpperCase();
-          const isAmit = narrationUpper.includes("AMIT SENGUPTA");
+          // bank narrations sometimes truncate the name to "AMIT SEN"
+          const isAmit = /AMIT SEN(GUPTA)?/.test(narrationUpper);
 
           let auto_rule: string | null = null;
           let status: "pending" | "suggested" = "pending";
