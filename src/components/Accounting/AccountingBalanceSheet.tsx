@@ -112,6 +112,8 @@ function buildBS(
   const cashAmount          = getAmount("1110");
   const tradeReceivables    = getAmount("1120");
   const tdsReceivable       = getAmount("1150");
+  // Customer payments recorded in Billing but not yet matched to a bank credit
+  const undepositedFunds    = getAmount("1121");
   const advancePrepaid      = getAmount("1140");
   const gstInputCgst        = getAmount("1130");
   const gstInputSgst        = getAmount("1131");
@@ -123,7 +125,7 @@ function buildBS(
   const directorDrawings    = getAmount("1170");
 
   const totalCurrentAssets  =
-    bankAmount + cashAmount + tradeReceivables + tdsReceivable +
+    bankAmount + cashAmount + tradeReceivables + undepositedFunds + tdsReceivable +
     advancePrepaid + gstInputCgst + gstInputSgst + gstInputIgst + otherCurrentAssets +
     directorDrawings;
   const totalAssets         = totalFixedAssets + totalCurrentAssets;
@@ -133,7 +135,7 @@ function buildBS(
     directorLoan, accruedInterest, longTermBorrowings,
     currentLiabItems, totalCurrentLiab, totalEquityLiab,
     fixedAssetItems, accDepItems, grossFixedAssets, totalAccDep, totalFixedAssets,
-    bankAmount, cashAmount, tradeReceivables, tdsReceivable,
+    bankAmount, cashAmount, tradeReceivables, undepositedFunds, tdsReceivable,
     advancePrepaid, gstInputCgst, gstInputSgst, gstInputIgst, otherCurrentAssets,
     directorDrawings, totalCurrentAssets, totalAssets,
   };
@@ -268,6 +270,8 @@ export function AccountingBalanceSheet({
                     accountCode="1111" onAccountClick={onAccountClick} />
                   <BSRow label="Trade Receivables" amount={bs.tradeReceivables} indent
                     accountCode="1120" onAccountClick={onAccountClick} />
+                  <BSRow label="Undeposited Funds (payments not yet matched to bank)" amount={bs.undepositedFunds} indent
+                    accountCode="1121" onAccountClick={onAccountClick} />
                   <BSRow label="TDS Receivable" amount={bs.tdsReceivable} indent
                     accountCode="1150" onAccountClick={onAccountClick} />
                   <BSRow label="Advance &amp; Prepaid Expenses" amount={bs.advancePrepaid} indent
