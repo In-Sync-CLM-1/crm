@@ -245,6 +245,9 @@ export function useAccountingData() {
             auto_rule = "amit_loan";
           } else if (isAmit && row.debit > 0) {
             auto_rule = "amit_drawing";
+          } else if (row.debit > 0 && /^BILLPAY\//i.test(row.narration)) {
+            // BillDesk bill payments settle the credit card used for licences
+            auto_rule = "billdesk_software";
           } else if (row.credit > 0 && invoices) {
             const match = invoices.find(inv => Math.abs(inv.balance_due - row.credit) < 1);
             if (match) {
@@ -282,6 +285,14 @@ export function useAccountingData() {
 
       const { error: txnErr } = await supabase.from("bank_transactions").insert(toInsert);
       if (txnErr) throw txnErr;
+
+      // 4a. Auto-categorize BillDesk payments to Software & Subscriptions.
+      const softwareAccountId = accounts.find(a => a.code === "5030")?.id;
+      if (bankAccountId && softwareAccountId) {
+        for (const row of toInsert.filter(r => r.auto_rule === "billdesk_software")) {
+          await createJournalEntryForAutoRule(row, bankAccountId, softwareAccountId, softwareAccountId);
+        }
+      }
 
       // 4. Auto-categorize Amit rows immediately.
       if (bankAccountId && loanAccountId && suspenseAccountId) {
@@ -333,11 +344,14 @@ export function useAccountingData() {
     if (!txn) return;
 
     const isLoan = row.auto_rule === "amit_loan";
+    const isSoftware = row.auto_rule === "billdesk_software";
     const amount = isLoan ? row.credit : row.debit;
 
     const narration = isLoan
       ? `Director's Loan received - ${row.narration}`
-      : `Director Drawing - ${row.narration}`;
+      : isSoftware
+        ? `Software & Subscriptions - ${row.narration}`
+        : `Director Drawing - ${row.narration}`;
 
     const { data: je, error: jeErr } = await supabase
       .from("journal_entries")
@@ -353,7 +367,13 @@ export function useAccountingData() {
       .single();
     if (jeErr || !je) return;
 
-    const lines = isLoan
+    // For software, loanAccountId carries the expense account and suspenseAccountId is unused.
+    const lines = isSoftware
+      ? [
+          { entry_id: je.id, account_id: loanAccountId, debit: amount, credit: 0,      sort_order: 0 },
+          { entry_id: je.id, account_id: bankAccountId, debit: 0,      credit: amount, sort_order: 1 },
+        ]
+      : isLoan
       ? [
           { entry_id: je.id, account_id: bankAccountId,     debit: amount, credit: 0,      sort_order: 0 },
           { entry_id: je.id, account_id: loanAccountId,     debit: 0,      credit: amount,  sort_order: 1 },
