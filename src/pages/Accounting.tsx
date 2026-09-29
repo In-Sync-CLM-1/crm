@@ -15,7 +15,8 @@ import { AccountingOutstanding } from "@/components/Accounting/AccountingOutstan
 import { AccountingReceiptPayment } from "@/components/Accounting/AccountingReceiptPayment";
 import { useAccountingData } from "@/hooks/useAccountingData";
 import { Badge } from "@/components/ui/badge";
-import { format, startOfYear, endOfYear } from "date-fns";
+import { format } from "date-fns";
+import { getFinancialYearRange } from "@/utils/financialYear";
 
 function DateRangeBar({
   fromDate, toDate, asOf,
@@ -57,8 +58,8 @@ export default function Accounting() {
   const [tab, setTab] = useState("import");
   const [selectedLedgerCode, setSelectedLedgerCode] = useState<string | undefined>(undefined);
 
-  const [fromDate, setFromDate] = useState(format(startOfYear(new Date()), "yyyy-MM-dd"));
-  const [toDate, setToDate] = useState(format(endOfYear(new Date()), "yyyy-MM-dd"));
+  const [fromDate, setFromDate] = useState(getFinancialYearRange().from);
+  const [toDate, setToDate] = useState(getFinancialYearRange().to);
   const [asOf, setAsOf] = useState(format(new Date(), "yyyy-MM-dd"));
 
   const pendingCount = pendingTransactions.length;

@@ -10,7 +10,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { JournalEntryEditDialog } from "./JournalEntryEditDialog";
 import { isProsyncIssuedDoc } from "@/utils/billingUtils";
 import type { LedgerRow, ChartOfAccount, JournalEntry } from "@/types/accounting";
-import { format, startOfYear, endOfYear } from "date-fns";
+import { format } from "date-fns";
+import { getFinancialYearRange } from "@/utils/financialYear";
 
 type LedgerMode = "account" | "party";
 
@@ -98,8 +99,8 @@ export function AccountingLedger({ defaultAccountCode }: { defaultAccountCode?: 
   const [selectedCode, setSelectedCode] = useState(defaultAccountCode ?? "1111");
   const [selectedParty, setSelectedParty] = useState("");
   const [comboOpen, setComboOpen] = useState(false);
-  const [fromDate, setFromDate] = useState(format(startOfYear(new Date()), "yyyy-MM-dd"));
-  const [toDate, setToDate] = useState(format(endOfYear(new Date()), "yyyy-MM-dd"));
+  const [fromDate, setFromDate] = useState(getFinancialYearRange().from);
+  const [toDate, setToDate] = useState(getFinancialYearRange().to);
   const [editEntry, setEditEntry] = useState<JournalEntry | null>(null);
 
   const [parties, setParties] = useState<string[]>([]);
