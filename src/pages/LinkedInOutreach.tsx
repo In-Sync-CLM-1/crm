@@ -36,7 +36,7 @@ interface Prospect {
   created_at: string;
 }
 
-const PRODUCT_OPTIONS = ["In-Sync CRM", "Work-Sync", "ATS", "Vendor Verification", "Expense Claims", "Event"];
+const PRODUCT_OPTIONS = ["In-Sync CRM", "Work-Sync", "ATS", "Vendor-Sync", "Expense Claims", "Event"];
 
 const STATUS_STYLE: Record<string, string> = {
   invited: "bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300",
@@ -193,7 +193,7 @@ export default function LinkedInOutreach() {
   );
 
   function renderCard(p: Prospect) {
-    const facts = (p.research_facts || {}) as Record<string, string>;
+    const facts = (p.research_facts || {}) as Record<string, string> & { tech_stack?: string[] };
     return (
       <Card key={p.id} className="p-4 space-y-2">
         <div className="flex flex-wrap items-start justify-between gap-2">
@@ -234,6 +234,9 @@ export default function LinkedInOutreach() {
           <p className="text-sm">{p.reason}</p>
           {facts.title_line && (
             <p className="text-xs text-muted-foreground mt-0.5">Matched on: "{facts.title_line}"</p>
+          )}
+          {facts.tech_stack && facts.tech_stack.length > 0 && (
+            <p className="text-xs text-muted-foreground mt-0.5">Their company uses: {facts.tech_stack.join(", ")}</p>
           )}
           {productOverride[p.id] && productOverride[p.id] !== p.matched_product && (
             <p className="text-xs text-amber-600 mt-0.5">Product changed to {productOverride[p.id]} for this approval — the reason above still reflects the original match.</p>
