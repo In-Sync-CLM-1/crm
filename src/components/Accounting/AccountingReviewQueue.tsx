@@ -207,7 +207,7 @@ function TransactionCard({
         payment_date: txn.transaction_date,
         amount: bankAmt,
         tds_amount: tdsAmt,
-        payment_mode: "bank_transfer",
+        payment_mode: /^UPI/i.test(txn.narration) ? "upi" : "neft",
         reference_number: txn.reference ?? null,
         journal_entry_id: je.id,
         cleared_journal_entry_id: je.id,

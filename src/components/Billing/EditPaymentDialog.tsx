@@ -18,7 +18,7 @@ interface EditPaymentDialogProps {
 export function EditPaymentDialog({ open, onClose, payment, onSave }: EditPaymentDialogProps) {
   const [form, setForm] = useState({
     tds_amount: "0",
-    payment_mode: "bank_transfer",
+    payment_mode: "neft",
     reference_number: "",
     notes: "",
   });
@@ -27,7 +27,7 @@ export function EditPaymentDialog({ open, onClose, payment, onSave }: EditPaymen
     if (payment) {
       setForm({
         tds_amount: String(payment.tds_amount || 0),
-        payment_mode: payment.payment_mode || "bank_transfer",
+        payment_mode: payment.payment_mode || "neft",
         reference_number: payment.reference_number || "",
         notes: payment.notes || "",
       });
@@ -68,12 +68,8 @@ export function EditPaymentDialog({ open, onClose, payment, onSave }: EditPaymen
             <Select value={form.payment_mode} onValueChange={v => setForm({ ...form, payment_mode: v })}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                <SelectItem value="neft">NEFT</SelectItem>
                 <SelectItem value="upi">UPI</SelectItem>
-                <SelectItem value="cheque">Cheque</SelectItem>
-                <SelectItem value="cash">Cash</SelectItem>
-                <SelectItem value="online">Online Gateway</SelectItem>
-                <SelectItem value="advance">Advance</SelectItem>
               </SelectContent>
             </Select>
           </div>

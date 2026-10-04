@@ -22,7 +22,7 @@ export const INDIAN_STATES = [
 export type SupplyType = "intra_state" | "inter_state";
 export type BillingDocumentType = "proforma" | "invoice" | "credit_note";
 export type BillingDocumentStatus = "draft" | "sent" | "paid" | "partially_paid" | "overdue" | "cancelled" | "accepted" | "rejected" | "expired" | "issued" | "converted" | "credited";
-export type PaymentMethod = "bank_transfer" | "upi" | "cheque" | "cash" | "online" | "advance";
+export type PaymentMethod = "bank_transfer" | "neft" | "upi" | "cheque" | "cash" | "online" | "advance";
 
 export interface BillingDocumentItem {
   id?: string;
