@@ -20,7 +20,7 @@ export function RecordPaymentDialog({ open, onClose, doc, onRecordPayment }: Rec
     payment_date: new Date().toISOString().split("T")[0],
     amount: String(doc.balance_due),
     tds_amount: "0",
-    payment_mode: "bank_transfer",
+    payment_mode: "neft",
     reference_number: "",
     notes: "",
   });
@@ -84,11 +84,8 @@ export function RecordPaymentDialog({ open, onClose, doc, onRecordPayment }: Rec
             <Select value={form.payment_mode} onValueChange={v => setForm({ ...form, payment_mode: v })}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                <SelectItem value="neft">NEFT</SelectItem>
                 <SelectItem value="upi">UPI</SelectItem>
-                <SelectItem value="cheque">Cheque</SelectItem>
-                <SelectItem value="cash">Cash</SelectItem>
-                <SelectItem value="online">Online Gateway</SelectItem>
               </SelectContent>
             </Select>
           </div>
