@@ -55,7 +55,7 @@ const META: Record<string, { name: string; dialer?: boolean; marketing?: boolean
   ejzjrvazegaxrhqizgaa: { name: "globalcrm", dialer: true, demoConfirm: true, web: "https://globalcrm.in-sync.co.in" },
   gwfofzqrfpwojejjodgz: { name: "event", web: "https://event.in-sync.co.in" },
   htdwkhtfdifwajdkkpul: { name: "ats", web: "https://ats-6t2.pages.dev" },
-  oygyrpjjwtwvrdvxjzbg: { name: "vendorverification", web: "https://vendorverification.in-sync.co.in" },
+  oygyrpjjwtwvrdvxjzbg: { name: "vendorverification", web: "https://vendor.in-sync.co.in" },
   sbplwrtlsbhwcvfvuxel: { name: "ticket", web: "https://ci.in-sync.co.in" },
   wdamzbyvsbergvxhefkl: { name: "smbconnect", feedCheck: true, web: "https://smbconnect.in" },
   ufwvyybrctjpwipbveqe: { name: "RMPL", web: "https://rmpl-sync.pages.dev" },
