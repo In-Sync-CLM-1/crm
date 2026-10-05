@@ -40,13 +40,13 @@ const POSTS = [
   {
     product_key: 'vendorsync', file: 'vendor-sync-promo-vertical.mp4',
     title: 'Vendorsync — know your vendor before you commit',
-    url: 'https://in-sync.co.in/products/vendor-verification',
+    url: 'https://in-sync.co.in/products/vendorsync',
     caption: [
       "Every new vendor is a stranger you're about to pay.",
       'A PAN, a bank line, nobody actually checked — and the fraud surfaces after the purchase order is signed.',
       'Vendorsync checks PAN, GST and bank against government sources in minutes, and flags duplicate identities and tampered documents before you commit. Then it keeps that verified identity attached through onboarding, every invoice, every advance and every settlement — not a report you file away and forget.',
       'Vendors file their own paperwork. The AI reads it. Your team just approves.',
-      'Audit-ready, without a spreadsheet → https://in-sync.co.in/products/vendor-verification',
+      'Audit-ready, without a spreadsheet → https://in-sync.co.in/products/vendorsync',
     ].join('\n\n'),
   },
   {
