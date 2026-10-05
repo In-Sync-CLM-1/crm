@@ -36,7 +36,7 @@ interface Prospect {
   created_at: string;
 }
 
-const PRODUCT_OPTIONS = ["In-Sync CRM", "Work-Sync", "ATS", "Vendor-Sync", "Expense Claims", "Event"];
+const PRODUCT_OPTIONS = ["In-Sync CRM", "Work-Sync", "ATS", "Vendorsync", "Expense Claims", "Event"];
 
 const STATUS_STYLE: Record<string, string> = {
   invited: "bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300",

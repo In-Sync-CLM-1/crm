@@ -99,7 +99,7 @@ interface StepContext {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** "Vendor Verification" -> "vendor-verification" */
+/** "Vendorsync" -> "vendorsync" */
 function deriveProductKey(name: string): string {
   return name
     .toLowerCase()
@@ -108,7 +108,7 @@ function deriveProductKey(name: string): string {
     .replace(/\s+/g, '-');
 }
 
-/** "Vendor Verification" -> "VV" */
+/** "Work Sync" -> "WS" */
 function deriveInitials(name: string): string {
   return name
     .split(/\s+/)

@@ -55,7 +55,7 @@ const CEREBRAS_MODEL = 'gemma-4-31b';
 // llama-3.1-8b-instant and llama-3.3-70b-versatile were both retired by Groq
 // (2026-09, confirmed live: 404 model_not_found on this account). Replaced
 // with the gpt-oss pair, same tiering intent (20b = fast/cheap, 120b = the
-// bigger fallback) -- already proven in production via globalcrm/Vendor-Sync.
+// bigger fallback) -- already proven in production via globalcrm/Vendorsync.
 const GROQ_MODEL_MAP: Record<LLMModel, string> = {
   haiku: 'openai/gpt-oss-20b',
   sonnet: 'openai/gpt-oss-120b',

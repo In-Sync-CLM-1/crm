@@ -254,7 +254,7 @@ VALUES
   ('4050', 'Revenue - Email Platform',            'income', 'operating_revenue', 'credit', false, true, '4000'),
   ('4060', 'Revenue - WA Platform',               'income', 'operating_revenue', 'credit', false, true, '4000'),
   ('4070', 'Revenue - Event-Sync',                'income', 'operating_revenue', 'credit', false, true, '4000'),
-  ('4080', 'Revenue - Vendor Verification',       'income', 'operating_revenue', 'credit', false, true, '4000'),
+  ('4080', 'Revenue - Vendorsync',       'income', 'operating_revenue', 'credit', false, true, '4000'),
   ('4090', 'Revenue - CRM / Consulting',          'income', 'operating_revenue', 'credit', false, true, '4000'),
   ('4099', 'Revenue - Other Services',            'income', 'operating_revenue', 'credit', false, true, '4000'),
 
