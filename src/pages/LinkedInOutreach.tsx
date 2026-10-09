@@ -74,15 +74,17 @@ export default function LinkedInOutreach() {
       if (!effectiveOrgId) return null;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const sb = supabase as any;
-      const [pending, invited, accepted, known] = await Promise.all([
+      const [pending, invited, accepted, network] = await Promise.all([
         sb.from("li_prospects").select("id", { count: "exact", head: true }).eq("org_id", effectiveOrgId).eq("status", "pending"),
         sb.from("li_prospects").select("id", { count: "exact", head: true }).eq("org_id", effectiveOrgId).eq("status", "invited"),
         sb.from("li_prospects").select("id", { count: "exact", head: true }).eq("org_id", effectiveOrgId).eq("status", "accepted"),
-        sb.from("li_known_connections").select("id", { count: "exact", head: true }).eq("org_id", effectiveOrgId),
+        sb.from("li_network_stats").select("connections_count, read_at").eq("org_id", effectiveOrgId).maybeSingle(),
       ]);
       return {
         pending: pending.count ?? 0, invited: invited.count ?? 0,
-        accepted: accepted.count ?? 0, known: known.count ?? 0,
+        accepted: accepted.count ?? 0,
+        connections: network.data?.connections_count ?? null,
+        connectionsReadAt: network.data?.read_at ?? null,
       };
     },
     enabled: !!effectiveOrgId,
@@ -143,11 +145,16 @@ export default function LinkedInOutreach() {
               ["Awaiting your review", stats.pending],
               ["Invited, not yet accepted", stats.invited],
               ["Accepted", stats.accepted],
-              ["Existing connections (excluded)", stats.known],
+              ["LinkedIn connections", stats.connections ?? "—"],
             ].map(([label, value]) => (
               <Card key={String(label)} className="p-3">
                 <p className="text-xs text-muted-foreground">{label}</p>
-                <p className="text-2xl font-semibold">{String(value)}</p>
+                <p className="text-2xl font-semibold">{typeof value === "number" ? value.toLocaleString("en-IN") : String(value)}</p>
+                {label === "LinkedIn connections" && stats.connectionsReadAt && (
+                  <p className="text-xs text-muted-foreground">
+                    as of {new Date(stats.connectionsReadAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                  </p>
+                )}
               </Card>
             ))}
           </div>
