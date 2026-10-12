@@ -11,6 +11,7 @@ import { CopyButton } from "@/components/common/CopyButton";
 import { Pause, Play, IndianRupee, Megaphone, ExternalLink } from "lucide-react";
 import { useState, useMemo } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useUrlState } from "@/hooks/useUrlState";
 
 const ACQUISITION_DASHBOARD_URL = "https://worksync-ads-dashboard.echocommunicator.workers.dev/";
 
@@ -62,9 +63,9 @@ function GoogleAdsCampaignsSection() {
   const notify = useNotification();
   const queryClient = useQueryClient();
 
-  const [range, setRange] = useState<RangeOption>("latest");
-  const [customFrom, setCustomFrom] = useState(() => toISODate(new Date(Date.now() - 7 * 86400000)));
-  const [customTo, setCustomTo] = useState(() => toISODate(new Date(Date.now() - 86400000)));
+  const [range, setRange] = useUrlState<RangeOption>("range", "latest");
+  const [customFrom, setCustomFrom] = useUrlState("from", toISODate(new Date(Date.now() - 7 * 86400000)));
+  const [customTo, setCustomTo] = useUrlState("to", toISODate(new Date(Date.now() - 86400000)));
 
   const { data: campaigns, isLoading } = useQuery({
     queryKey: ["mkt-google-ads-campaigns-live", effectiveOrgId],

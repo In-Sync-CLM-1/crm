@@ -15,6 +15,7 @@ import { BillingSettingsPanel } from "@/components/Billing/BillingSettings";
 import { LoadingState } from "@/components/common/LoadingState";
 import type { BillingDocument, BillingDocumentType, BillingClient } from "@/types/billing";
 import { INDIAN_STATES } from "@/types/billing";
+import { useUrlState } from "@/hooks/useUrlState";
 
 type BillingView = "dashboard" | "proformas" | "invoices" | "credit_notes" | "payments" | "settings";
 
@@ -27,13 +28,19 @@ function getStateCode(stateName: string | null): string {
 
 export default function BillingSystem() {
   const { effectiveOrgId } = useOrgContext();
-  const [view, setView] = useState<BillingView>("dashboard");
-  const [viewDocId, setViewDocId] = useState<string | null>(null);
-  const [createDocType, setCreateDocType] = useState<BillingDocumentType | null>(null);
+  const [view, setView] = useUrlState<BillingView>("view", "dashboard", { push: true });
+  const [viewDocIdRaw, setViewDocIdRaw] = useUrlState("doc", "", { push: true });
+  const viewDocId = viewDocIdRaw || null;
+  const setViewDocId = (id: string | null) => setViewDocIdRaw(id ?? "");
+  const [createDocTypeRaw, setCreateDocTypeRaw] = useUrlState("new", "", { push: true });
+  const createDocType = (createDocTypeRaw || null) as BillingDocumentType | null;
+  const setCreateDocType = (t: BillingDocumentType | null) => setCreateDocTypeRaw(t ?? "");
   const [editDoc, setEditDoc] = useState<BillingDocument | null>(null);
   // The tax invoice a new credit note is being issued against (pre-fills the form).
   const [creditNoteSource, setCreditNoteSource] = useState<BillingDocument | null>(null);
-  const [invoiceStatusFilter, setInvoiceStatusFilter] = useState<string | undefined>(undefined);
+  const [invoiceStatusFilterRaw, setInvoiceStatusFilterRaw] = useUrlState("invstatus", "");
+  const invoiceStatusFilter = invoiceStatusFilterRaw || undefined;
+  const setInvoiceStatusFilter = (v: string | undefined) => setInvoiceStatusFilterRaw(v ?? "");
 
   const {
     documents, payments, settings, loading: billingLoading, busy: billingBusy,

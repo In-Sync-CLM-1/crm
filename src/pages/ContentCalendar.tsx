@@ -24,6 +24,7 @@ import { PostDetailDialog, CalendarPost } from "@/components/Marketing/PostDetai
 import { ScheduledPreviewDialog } from "@/components/Marketing/ScheduledPreviewDialog";
 import { getScheduledPlans, ScheduledPlan, themeLabel } from "@/lib/contentSchedule";
 import { Clock } from "lucide-react";
+import { useUrlState } from "@/hooks/useUrlState";
 
 const statusDot: Record<string, string> = {
   pending: "bg-blue-500",
@@ -52,7 +53,12 @@ const styleColor: Record<string, string> = {
 
 export default function ContentCalendar() {
   const { effectiveOrgId } = useOrgContext();
-  const [month, setMonth] = useState(new Date());
+  const [monthKey, setMonthKey] = useUrlState("month", format(new Date(), "yyyy-MM"));
+  const month = useMemo(() => {
+    const [y, m] = monthKey.split("-").map(Number);
+    return y && m ? new Date(y, m - 1, 1) : new Date();
+  }, [monthKey]);
+  const setMonth = (d: Date) => setMonthKey(format(d, "yyyy-MM"));
   const [selectedPost, setSelectedPost] = useState<CalendarPost | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [scheduledPreview, setScheduledPreview] = useState<{ date: Date; plan: ScheduledPlan } | null>(null);

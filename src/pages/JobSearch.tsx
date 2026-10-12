@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { LoadingState } from "@/components/common/LoadingState";
 import { AlertTriangle, Check, ChevronDown, ChevronRight, ExternalLink, RotateCw, X } from "lucide-react";
 import { toast } from "sonner";
+import { useUrlState } from "@/hooks/useUrlState";
 
 /**
  * Job Search — the review queue for Amit's job-application matching engine.
@@ -73,7 +74,7 @@ function summarize(r: JobRow): string {
 
 export default function JobSearch() {
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<Tab>("pending");
+  const [tab, setTab] = useUrlState<Tab>("tab", "pending");
   const [busy, setBusy] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 

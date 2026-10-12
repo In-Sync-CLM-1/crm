@@ -12,6 +12,7 @@ import { LoadingState } from "@/components/common/LoadingState";
 import { useOrgContext } from "@/hooks/useOrgContext";
 import { AlertTriangle, Check, Clock, RefreshCw, RotateCw, X } from "lucide-react";
 import { toast } from "sonner";
+import { useUrlState } from "@/hooks/useUrlState";
 
 /**
  * BD Outreach — the review queue.
@@ -96,7 +97,7 @@ interface KanbanCard {
 export default function BDOutreach() {
   const { effectiveOrgId } = useOrgContext();
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<"pending" | "scheduled" | "flagged" | "kanban">("kanban");
+  const [tab, setTab] = useUrlState<"pending" | "scheduled" | "flagged" | "kanban">("tab", "kanban");
   const [edits, setEdits] = useState<Record<string, { subject: string; body: string }>>({});
   const [busy, setBusy] = useState<string | null>(null);
 

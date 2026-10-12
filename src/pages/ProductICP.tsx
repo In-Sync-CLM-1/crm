@@ -86,7 +86,7 @@ export default function ProductICP() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={() => navigate("/marketing/products")} className="gap-1.5 -ml-1">
+            <Button variant="ghost" size="sm" onClick={() => (window.history.state?.idx > 0 ? navigate(-1) : navigate("/marketing/products"))} className="gap-1.5 -ml-1">
               <ArrowLeft className="h-4 w-4" />
               Products
             </Button>

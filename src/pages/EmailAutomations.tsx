@@ -34,8 +34,10 @@ import { RuleTemplatesGallery } from "@/components/EmailAutomation/RuleTemplates
 import { RuleDependencyManager } from "@/components/EmailAutomation/RuleDependencyManager";
 import { ApprovalQueueManager } from "@/components/EmailAutomation/ApprovalQueueManager";
 import { AdvancedReporting } from "@/components/EmailAutomation/AdvancedReporting";
+import { useUrlState } from "@/hooks/useUrlState";
 
 export default function EmailAutomations() {
+  const [tab, setTab] = useUrlState("tab", "rules");
   const { effectiveOrgId } = useOrgContext();
   const notify = useNotification();
   const queryClient = useQueryClient();
@@ -184,7 +186,7 @@ export default function EmailAutomations() {
         </div>
       </div>
 
-      <Tabs defaultValue="rules" className="space-y-6">
+      <Tabs value={tab} onValueChange={setTab} className="space-y-6">
         <TabsList>
           <TabsTrigger value="rules">Rules</TabsTrigger>
           <TabsTrigger value="templates">

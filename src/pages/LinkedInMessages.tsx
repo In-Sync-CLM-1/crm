@@ -10,6 +10,7 @@ import { LoadingState } from "@/components/common/LoadingState";
 import { useOrgContext } from "@/hooks/useOrgContext";
 import { AlertTriangle, Check, ExternalLink, Paperclip, X } from "lucide-react";
 import { toast } from "sonner";
+import { useUrlState } from "@/hooks/useUrlState";
 
 /**
  * LinkedIn connection MESSAGING — the review queue for phase 2.
@@ -46,7 +47,7 @@ const STEP_COLOR: Record<string, string> = {
 export default function LinkedInMessages() {
   const { effectiveOrgId } = useOrgContext();
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<"pending" | "approved" | "sent">("pending");
+  const [tab, setTab] = useUrlState<"pending" | "approved" | "sent">("tab", "pending");
   const [busy, setBusy] = useState<string | null>(null);
 
   const { data: messages, isLoading } = useQuery({

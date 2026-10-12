@@ -13,6 +13,7 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { MessageSquare, RefreshCw, Plus, Mail } from "lucide-react";
 import { format } from "date-fns";
 import { StandardEmailTemplateDialog } from "@/components/Templates/StandardEmailTemplateDialog";
+import { useUrlState } from "@/hooks/useUrlState";
 
 interface WhatsAppTemplate {
   id: string;
@@ -41,7 +42,7 @@ const Templates = () => {
   const { effectiveOrgId } = useOrgContext();
   const notify = useNotification();
   const [syncing, setSyncing] = useState(false);
-  const [activeTab, setActiveTab] = useState("whatsapp");
+  const [activeTab, setActiveTab] = useUrlState("tab", "whatsapp");
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
   const [selectedEmailTemplate, setSelectedEmailTemplate] = useState<EmailTemplate | null>(null);
 
