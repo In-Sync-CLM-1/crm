@@ -8,6 +8,7 @@ import { Plus, Search, Eye, Download, Mail, ArrowRight, IndianRupee, Trash2 } fr
 import { formatCurrencyINR, statusLabel } from "@/utils/billingUtils";
 import { DOC_TYPE_LABELS, DOC_TYPE_COLORS, STATUS_COLORS } from "@/types/billing";
 import type { BillingDocument, BillingDocumentType } from "@/types/billing";
+import { useUrlState } from "@/hooks/useUrlState";
 
 interface BillingDocumentListProps {
   documents: BillingDocument[];
@@ -21,8 +22,8 @@ interface BillingDocumentListProps {
 }
 
 export function BillingDocumentList({ documents, docType, onView, onCreate, onConvert, onConvertToInvoice, onDelete, initialStatusFilter }: BillingDocumentListProps) {
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState(initialStatusFilter || "all");
+  const [search, setSearch] = useUrlState("bq", "");
+  const [statusFilter, setStatusFilter] = useUrlState("bstatus", initialStatusFilter || "all");
 
   const typeLabel = DOC_TYPE_LABELS[docType] || "Documents";
   const docs = documents.filter(d => d.doc_type === docType);

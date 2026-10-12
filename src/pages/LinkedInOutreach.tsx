@@ -11,6 +11,7 @@ import { LoadingState } from "@/components/common/LoadingState";
 import { useOrgContext } from "@/hooks/useOrgContext";
 import { Check, ExternalLink, X } from "lucide-react";
 import { toast } from "sonner";
+import { useUrlState } from "@/hooks/useUrlState";
 
 /**
  * LinkedIn Connection Builder — the review queue.
@@ -47,7 +48,7 @@ const STATUS_STYLE: Record<string, string> = {
 export default function LinkedInOutreach() {
   const { effectiveOrgId } = useOrgContext();
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<"pending" | "invited" | "accepted">("pending");
+  const [tab, setTab] = useUrlState<"pending" | "invited" | "accepted">("tab", "pending");
   const [busy, setBusy] = useState<string | null>(null);
   const [productOverride, setProductOverride] = useState<Record<string, string>>({});
 

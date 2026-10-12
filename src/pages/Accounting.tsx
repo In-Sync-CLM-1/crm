@@ -17,6 +17,7 @@ import { useAccountingData } from "@/hooks/useAccountingData";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import { getFinancialYearRange } from "@/utils/financialYear";
+import { useUrlState } from "@/hooks/useUrlState";
 
 function DateRangeBar({
   fromDate, toDate, asOf,
@@ -55,12 +56,12 @@ function DateRangeBar({
 
 export default function Accounting() {
   const { pendingTransactions } = useAccountingData();
-  const [tab, setTab] = useState("import");
+  const [tab, setTab] = useUrlState("tab", "import");
   const [selectedLedgerCode, setSelectedLedgerCode] = useState<string | undefined>(undefined);
 
-  const [fromDate, setFromDate] = useState(getFinancialYearRange().from);
-  const [toDate, setToDate] = useState(getFinancialYearRange().to);
-  const [asOf, setAsOf] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [fromDate, setFromDate] = useUrlState("from", getFinancialYearRange().from);
+  const [toDate, setToDate] = useUrlState("to", getFinancialYearRange().to);
+  const [asOf, setAsOf] = useUrlState("asOf", format(new Date(), "yyyy-MM-dd"));
 
   const pendingCount = pendingTransactions.length;
 

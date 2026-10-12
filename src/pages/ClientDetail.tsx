@@ -21,10 +21,12 @@ import { ClientInvoices } from "@/components/Clients/ClientInvoices";
 import { ClientAlternateContacts } from "@/components/Clients/ClientAlternateContacts";
 import { MonthlyTaxSummary } from "@/components/Clients/MonthlyTaxSummary";
 import { NativeContactActions } from "@/components/Clients/NativeContactActions";
+import { useUrlState } from "@/hooks/useUrlState";
 
 type ClientStatus = 'active' | 'inactive' | 'churned';
 
 export default function ClientDetail() {
+  const [tab, setTab] = useUrlState("tab", "documents");
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -141,7 +143,7 @@ export default function ClientDetail() {
       <DashboardLayout>
         <div className="text-center py-12">
           <p className="text-muted-foreground">Client not found</p>
-          <Button variant="link" onClick={() => navigate("/clients")}>
+          <Button variant="link" onClick={() => (window.history.state?.idx > 0 ? navigate(-1) : navigate("/clients"))}>
             Back to Clients
           </Button>
         </div>
@@ -157,7 +159,7 @@ export default function ClientDetail() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={() => navigate("/clients")}>
+            <Button variant="ghost" size="icon" onClick={() => (window.history.state?.idx > 0 ? navigate(-1) : navigate("/clients"))}>
               <ArrowLeft className="h-5 w-5" />
             </Button>
             <div>
@@ -287,7 +289,7 @@ export default function ClientDetail() {
         )}
 
         {/* Tabs for Documents, Invoices, Discussion */}
-        <Tabs defaultValue="documents" className="space-y-4">
+        <Tabs value={tab} onValueChange={setTab} className="space-y-4">
           <TabsList>
             <TabsTrigger value="documents" className="flex items-center gap-2">
               <FileText className="h-4 w-4" />

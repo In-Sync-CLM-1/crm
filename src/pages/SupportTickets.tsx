@@ -18,14 +18,15 @@ import { Plus, LifeBuoy, Search, AlertTriangle, Ticket, Clock, CheckCircle2, Ale
 import { format, isPast } from "date-fns";
 import { Card, CardContent } from "@/components/ui/card";
 import { TicketDashboardCharts, formatSourceName } from "@/components/Support/TicketDashboardCharts";
+import { useUrlState } from "@/hooks/useUrlState";
 
 export default function SupportTickets() {
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [priorityFilter, setPriorityFilter] = useState("all");
-  const [categoryFilter, setCategoryFilter] = useState("all");
-  const [sourceFilter, setSourceFilter] = useState("all");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [viewFilter, setViewFilter] = useState<"all" | "open" | "resolved" | "overdue" | "critical">("all");
+  const [statusFilter, setStatusFilter] = useUrlState("status", "all");
+  const [priorityFilter, setPriorityFilter] = useUrlState("priority", "all");
+  const [categoryFilter, setCategoryFilter] = useUrlState("category", "all");
+  const [sourceFilter, setSourceFilter] = useUrlState("source", "all");
+  const [searchQuery, setSearchQuery] = useUrlState("q", "");
+  const [viewFilter, setViewFilter] = useUrlState<"all" | "open" | "resolved" | "overdue" | "critical">("view", "all");
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState<SupportTicket | null>(null);
 

@@ -19,6 +19,7 @@ import { useNotification } from "@/hooks/useNotification";
 import { LoadingState } from "@/components/common/LoadingState";
 import { EmptyState } from "@/components/common/EmptyState";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
+import { useUrlState } from "@/hooks/useUrlState";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -156,7 +157,7 @@ export default function TemplateEditor() {
   const queryClient = useQueryClient();
 
   // Tab state
-  const [activeTab, setActiveTab] = useState("whatsapp");
+  const [activeTab, setActiveTab] = useUrlState("tab", "whatsapp");
   const [syncing, setSyncing] = useState(false);
 
   // Email dialog state
