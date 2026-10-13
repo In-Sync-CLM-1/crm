@@ -251,7 +251,7 @@ export function BillingCreateDocument({ docType, clients, settings, documents, g
       doc_type: docType,
       doc_number: form.doc_number,
       client_id: form.client_id,
-      client_name: billingDetails.invoice_company_name || selectedClient?.company || `${selectedClient?.first_name || ""} ${selectedClient?.last_name || ""}`.trim() || "",
+      client_name: billingDetails.invoice_company_name || selectedClient?.invoice_company_name || selectedClient?.company || `${selectedClient?.first_name || ""} ${selectedClient?.last_name || ""}`.trim() || "",
       client: selectedClient ? {
         company: selectedClient.company,
         first_name: selectedClient.first_name,
