@@ -41,12 +41,27 @@ export function BillingSettingsPanel({ settings: initial, onSave }: BillingSetti
       toast.error("Only image files are allowed.");
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      setS(prev => ({ ...prev, [field]: reader.result as string }));
-      toast.success(`${field === "logo_url" ? "Logo" : "Signature"} uploaded`);
+    // Every issued document freezes a copy of this image, so a huge image
+    // (a 2 MB logo is ~166 megapixels) multiplies into every billing list load.
+    // Shrink it to a print-sharp size before it is stored.
+    const label = field === "logo_url" ? "Logo" : "Signature";
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, 600 / Math.max(img.naturalWidth, img.naturalHeight));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+      canvas.getContext("2d")?.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      setS(prev => ({ ...prev, [field]: canvas.toDataURL("image/png") }));
+      toast.success(`${label} uploaded`);
     };
-    reader.readAsDataURL(file);
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      toast.error("Could not read that image.");
+    };
+    img.src = url;
     e.target.value = "";
   };
 
