@@ -9,6 +9,27 @@ import type {
   JournalEntry, NewJournalEntry, ParsedBankRow,
 } from "@/types/accounting";
 
+// Customers often pay net of TDS, so a receipt matches an invoice either in
+// full (within rounding) or after adding back TDS at a standard rate on the
+// pre-GST amount. Only a single unambiguous candidate counts as a match.
+const TDS_RATES = [0.01, 0.02, 0.05, 0.10];
+function matchInvoiceToCredit<T extends { balance_due: number; subtotal: number }>(
+  invoices: T[],
+  credit: number,
+): { inv: T; tds: number } | null {
+  const hits: { inv: T; tds: number }[] = [];
+  for (const inv of invoices) {
+    const gap = inv.balance_due - credit;
+    if (Math.abs(gap) < 1) {
+      hits.push({ inv, tds: Math.max(0, Math.round(gap * 100) / 100) });
+      continue;
+    }
+    const rate = TDS_RATES.find(r => Math.abs(gap - inv.subtotal * r) < 1.5);
+    if (rate !== undefined) hits.push({ inv, tds: Math.round(gap * 100) / 100 });
+  }
+  return hits.length === 1 ? hits[0] : null;
+}
+
 export function useAccountingData() {
   const { effectiveOrgId } = useOrgContext();
   const { user } = useAuth();
@@ -236,7 +257,7 @@ export function useAccountingData() {
       // invoices must not be auto-matched against Prosync's bank statement.
       const { data: invoicesRaw } = await supabase
         .from("billing_documents")
-        .select("id, doc_number, client_name, total_amount, balance_due, seller_snapshot")
+        .select("id, doc_number, client_name, total_amount, balance_due, subtotal, seller_snapshot")
         .eq("org_id", effectiveOrgId)
         .in("status", ["issued", "sent", "partially_paid", "overdue"])
         .gt("balance_due", 0);
@@ -271,6 +292,14 @@ export function useAccountingData() {
         (existing || []).map(r => `${r.transaction_date}|${r.narration}|${r.debit}|${r.credit}`)
       );
 
+      // Invoices/payments already claimed by an earlier credit in this same
+      // upload can't be claimed twice.
+      const claimedInvoices = new Set<string>();
+      const claimedPayments = new Set<string>();
+      const autoSettle = new Map<string, { invoiceId?: string; tds: number; paymentId?: string }>();
+      const rowKey = (r: { transaction_date: string; narration: string; debit: number; credit: number }) =>
+        `${r.transaction_date}|${r.narration}|${r.debit}|${r.credit}`;
+
       const toInsert = rowsToProcess
         .filter(r => !existingKeys.has(`${r.transaction_date}|${r.narration}|${r.debit}|${r.credit}`))
         .map(row => {
@@ -292,17 +321,22 @@ export function useAccountingData() {
             // treated as a drawing, netted against what the company owes him
             auto_rule = "card_payment";
           } else if (row.credit > 0 && invoices) {
-            const match = invoices.find(inv => Math.abs(inv.balance_due - row.credit) < 1);
-            if (match) {
+            const found = matchInvoiceToCredit(invoices.filter(i => !claimedInvoices.has(i.id)), row.credit);
+            if (found) {
               auto_rule = "invoice_match";
               status = "suggested";
-              suggested_invoice_id = match.id;
+              suggested_invoice_id = found.inv.id;
+              claimedInvoices.add(found.inv.id);
+              autoSettle.set(rowKey(row), { invoiceId: found.inv.id, tds: found.tds });
             } else {
-              const pmtMatch = unclearedPayments.find(p => Math.abs(p.amount - row.credit) < 1);
-              if (pmtMatch) {
+              const pmtMatches = unclearedPayments.filter(p => !claimedPayments.has(p.id) && Math.abs(p.amount - row.credit) < 1);
+              if (pmtMatches.length === 1) {
+                const pmtMatch = pmtMatches[0];
                 auto_rule = "undeposited_funds_match";
                 status = "suggested";
                 suggested_billing_payment_id = pmtMatch.id;
+                claimedPayments.add(pmtMatch.id);
+                autoSettle.set(rowKey(row), { paymentId: pmtMatch.id, tds: 0 });
               }
             }
           }
@@ -326,8 +360,72 @@ export function useAccountingData() {
 
       if (toInsert.length === 0) return { imported: 0, skipped: rowsToProcess.length, statementId: stmt.id };
 
-      const { error: txnErr } = await supabase.from("bank_transactions").insert(toInsert);
+      const { data: insertedTxns, error: txnErr } = await supabase
+        .from("bank_transactions")
+        .insert(toInsert)
+        .select("id, transaction_date, narration, reference, debit, credit");
       if (txnErr) throw txnErr;
+
+      // 3b. Record clear-cut customer receipts straight away (payment, TDS and
+      // ledger entry together). Anything unclear stays in the review queue.
+      const trId = accounts.find(a => a.code === "1120")?.id;
+      const tdsId = accounts.find(a => a.code === "1150")?.id;
+      const undepId = accounts.find(a => a.code === "1121")?.id;
+      if (bankAccountId && trId) {
+        for (const t of insertedTxns ?? []) {
+          const plan = autoSettle.get(rowKey(t));
+          if (!plan) continue;
+          try {
+            if (plan.invoiceId) {
+              const inv = invoices.find(i => i.id === plan.invoiceId)!;
+              const bankAmt = Number(t.credit);
+              const cleared = bankAmt + plan.tds;
+              const { data: je, error: jeErr } = await supabase.from("journal_entries").insert({
+                org_id: effectiveOrgId, entry_date: t.transaction_date,
+                narration: `Payment received — ${inv.doc_number} — ${inv.client_name}`,
+                source: "bank_import", bank_transaction_id: t.id, billing_document_id: inv.id, created_by: user?.id,
+              }).select().single();
+              if (jeErr || !je) continue;
+              await supabase.from("journal_entry_lines").insert([
+                { entry_id: je.id, account_id: bankAccountId, debit: bankAmt, credit: 0, sort_order: 0 },
+                ...(plan.tds > 0 && tdsId ? [{ entry_id: je.id, account_id: tdsId, debit: plan.tds, credit: 0, sort_order: 1 }] : []),
+                { entry_id: je.id, account_id: trId, debit: 0, credit: plan.tds > 0 && tdsId ? cleared : bankAmt, sort_order: 2 },
+              ]);
+              await supabase.from("billing_payments").insert({
+                org_id: effectiveOrgId, document_id: inv.id, payment_date: t.transaction_date,
+                amount: bankAmt, tds_amount: tdsId ? plan.tds : 0,
+                payment_mode: /^UPI/i.test(t.narration) ? "upi" : "neft",
+                reference_number: t.reference ?? null,
+                journal_entry_id: je.id, cleared_journal_entry_id: je.id,
+              });
+              const newPaid = (inv.total_amount - inv.balance_due) + (tdsId ? cleared : bankAmt);
+              const newBalance = Math.max(0, inv.total_amount - newPaid);
+              await supabase.from("billing_documents").update({
+                amount_paid: newPaid, balance_due: newBalance,
+                status: newBalance <= 0.005 ? "paid" : "partially_paid",
+              }).eq("id", inv.id);
+              await supabase.from("bank_transactions").update({ status: "categorized", journal_entry_id: je.id }).eq("id", t.id);
+            } else if (plan.paymentId && undepId) {
+              const pmt = unclearedPayments.find(p => p.id === plan.paymentId)!;
+              const { data: je, error: jeErr } = await supabase.from("journal_entries").insert({
+                org_id: effectiveOrgId, entry_date: t.transaction_date,
+                narration: `Payment cleared — ${t.narration}`,
+                source: "billing_payment_clearing", bank_transaction_id: t.id, created_by: user?.id,
+              }).select().single();
+              if (jeErr || !je) continue;
+              await supabase.from("journal_entry_lines").insert([
+                { entry_id: je.id, account_id: bankAccountId, debit: Number(t.credit), credit: 0, sort_order: 0 },
+                { entry_id: je.id, account_id: undepId, debit: 0, credit: Number(t.credit), sort_order: 1 },
+              ]);
+              await supabase.from("billing_payments").update({ cleared_journal_entry_id: je.id }).eq("id", pmt.id);
+              await supabase.from("bank_transactions").update({ status: "categorized", journal_entry_id: je.id }).eq("id", t.id);
+            }
+          } catch (e) {
+            // Leave it as a suggestion in the review queue.
+            console.error("Auto-match failed, left for review:", e);
+          }
+        }
+      }
 
       // 4. Auto-categorize Amit rows immediately.
       if (bankAccountId && loanAccountId && suspenseAccountId) {
