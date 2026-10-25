@@ -35,7 +35,10 @@ export default function BillingSystem() {
   const [createDocTypeRaw, setCreateDocTypeRaw] = useUrlState("new", "", { push: true });
   const createDocType = (createDocTypeRaw || null) as BillingDocumentType | null;
   const setCreateDocType = (t: BillingDocumentType | null) => setCreateDocTypeRaw(t ?? "");
-  const [editDoc, setEditDoc] = useState<BillingDocument | null>(null);
+  // The document being edited lives in the address too, so a page reload while editing
+  // reopens the same document instead of falling back to a blank new form.
+  const [editDocId, setEditDocIdRaw] = useUrlState("edit", "", { push: true });
+  const setEditDoc = (d: BillingDocument | null) => setEditDocIdRaw(d?.id ?? "");
   // The tax invoice a new credit note is being issued against (pre-fills the form).
   const [creditNoteSource, setCreditNoteSource] = useState<BillingDocument | null>(null);
   const [invoiceStatusFilterRaw, setInvoiceStatusFilterRaw] = useUrlState("invstatus", "");
@@ -47,6 +50,8 @@ export default function BillingSystem() {
     addDocument, updateDocument, deleteDocument, convertDocument,
     recordPayment, updatePayment, updateSettings, getDocumentPayments, getNextDocNumber,
   } = useBillingData();
+
+  const editDoc = editDocId ? documents.find(d => d.id === editDocId) ?? null : null;
 
   const queryClient = useQueryClient();
 
