@@ -78,7 +78,7 @@ const roleSteps: Record<string, OnboardingStep[]> = {
     },
     {
       title: "Check Your Dashboard",
-      description: "See your assigned tickets and daily activity summary.",
+      description: "See your daily activity summary.",
       action: { label: "View Dashboard", path: "/dashboard" },
     },
   ],

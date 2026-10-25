@@ -62,7 +62,6 @@ const EmailSettings = lazy(() => import("./pages/EmailSettings"));
 // Lazy loaded pages - Other
 const BillingSystem = lazy(() => import("./pages/BillingSystem"));
 const Accounting = lazy(() => import("./pages/Accounting"));
-const SupportTickets = lazy(() => import("./pages/SupportTickets"));
 // GSTDashboard is now integrated into main Dashboard
 
 const App = () => (
@@ -268,12 +267,6 @@ const App = () => (
           } />
 
           {/* GST Dashboard is now integrated into main Dashboard */}
-
-          <Route path="/support-tickets" element={
-            <ProtectedRoute>
-              <SupportTickets />
-            </ProtectedRoute>
-          } />
 
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

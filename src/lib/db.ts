@@ -18,37 +18,11 @@ interface OfflineRow {
   serverUpdatedAt?: Date;
 }
 
-export interface SupportTicketLocal extends OfflineRow {
-  ticketNumber: string;
-  subject: string;
-  description?: string | null;
-  category: string;
-  priority: string;
-  status: string;
-  createdBy: string;
-  assignedTo?: string | null;
-  contactName?: string | null;
-  contactPhone?: string | null;
-  contactEmail?: string | null;
-  companyName?: string | null;
-  source: string;
-  createdAt: Date;
-}
-
-export interface TicketCommentLocal extends OfflineRow {
-  ticketId: string;
-  userId: string;
-  comment: string;
-  isInternal: boolean;
-  createdAt: Date;
-}
-
-// Generic note attached to any entity (contact note, deal note, ticket note).
+// Generic note attached to any entity (contact note, deal note).
 // We use the contacts.notes column for contact notes, but we also store free-form
-// notes here as a queue when the parent entity is a ticket comment or a contact
-// description update.
+// notes here as a queue when the parent entity is a contact description update.
 export interface NoteLocal extends OfflineRow {
-  parentType: "contact" | "ticket" | "task";
+  parentType: "contact" | "task";
   parentId: string;
   body: string;
   createdBy?: string | null;
@@ -60,8 +34,6 @@ export type SyncEntityType =
   | "contact"
   | "activity"
   | "call_log"
-  | "ticket"
-  | "ticket_comment"
   | "note";
 
 export interface SyncQueueItem {
@@ -82,21 +54,27 @@ export interface SyncQueueItem {
 }
 
 // IMPORTANT: Bump on every schema/index change.
-export const DB_VERSION = 2;
+export const DB_VERSION = 3;
 
 class InSyncCRMDatabase extends Dexie {
-  tickets!: Table<SupportTicketLocal, string>;
-  ticketComments!: Table<TicketCommentLocal, string>;
   notes!: Table<NoteLocal, string>;
   syncQueue!: Table<SyncQueueItem, string>;
 
   constructor() {
     super("InSyncCRMDB");
 
-    this.version(DB_VERSION).stores({
+    this.version(2).stores({
       tickets:
         "id, orgId, ticketNumber, status, assignedTo, createdBy, syncStatus, updatedAt",
       ticketComments: "id, ticketId, userId, syncStatus, createdAt",
+      notes: "id, parentType, parentId, syncStatus, createdAt",
+      syncQueue: "id, type, priority, createdAt, retryCount",
+    });
+
+    // Ticketing was retired; null drops the two ticket tables from browsers that still hold them.
+    this.version(DB_VERSION).stores({
+      tickets: null,
+      ticketComments: null,
       notes: "id, parentType, parentId, syncStatus, createdAt",
       syncQueue: "id, type, priority, createdAt, retryCount",
     });

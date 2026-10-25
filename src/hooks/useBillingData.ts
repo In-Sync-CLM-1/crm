@@ -424,6 +424,10 @@ export function useBillingData() {
     for (const f of fields) {
       if (f in updateData) row[f] = updateData[f];
     }
+    // The form holds "no due date" / "no client" as "", which Postgres rejects for date/uuid columns
+    for (const f of ["due_date", "client_id", "original_invoice_id", "financial_year", "supply_type"]) {
+      if (f in row && row[f] === "") row[f] = null;
+    }
     // Save client billing snapshot if client details are provided
     if (client) row.client_billing_snapshot = client;
 
