@@ -21,9 +21,7 @@ export interface RealtimeSyncOptions {
     | "tasks"
     | "contacts"
     | "activities"
-    | "callLogs"
-    | "tickets"
-    | "ticketComments";
+    | "callLogs";
 }
 
 /**

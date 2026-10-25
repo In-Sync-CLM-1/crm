@@ -713,13 +713,13 @@ async function checkFrontend(ref: string, web: string): Promise<Check> {
     }
 
     // Find the app's OWN entry bundle (same-origin /assets/*.js), ignoring
-    // third-party scripts (Razorpay, help-widget, analytics, service worker).
+    // third-party scripts (Razorpay, analytics, service worker).
     const origin = new URL(web).origin;
     const srcs = [...html.matchAll(/<script[^>]+src="([^"]+\.js)"/g)].map((m) => m[1]);
     const own = srcs
       .map((s) => { try { return new URL(s, web).href; } catch { return ""; } })
       .filter((u) => u && new URL(u).origin === origin)
-      .filter((u) => !/registerSW|help-widget|sw\.js$/i.test(u));
+      .filter((u) => !/registerSW|sw\.js$/i.test(u));
     const bundles = own.filter((u) => /\/assets\//.test(u)).length ? own.filter((u) => /\/assets\//.test(u)) : own;
 
     if (bundles.length === 0) {
