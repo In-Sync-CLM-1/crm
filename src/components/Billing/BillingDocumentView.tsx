@@ -44,8 +44,10 @@ export function BillingDocumentView({ doc, payments, settings, onBack, onRecordP
   const issuer = resolveIssuer(doc.seller, settings);
 
   const totalTds = payments.reduce((sum, p) => sum + (p.tds_amount || 0), 0);
+  // On a proforma every receipt is money received ahead of the tax invoice, so
+  // tranches recorded as NEFT/UPI count the same as an entered advance.
   const advanceFromPayments = payments
-    .filter(p => p.payment_mode === "advance")
+    .filter(p => doc.doc_type === "proforma" || p.payment_mode === "advance")
     .reduce((sum, p) => sum + (p.amount || 0), 0);
   // For proformas where the advance was entered on the document but not yet
   // persisted as a payment record (e.g. added via edit), fall back to amount_paid.
@@ -95,7 +97,7 @@ export function BillingDocumentView({ doc, payments, settings, onBack, onRecordP
         </div>
         {/* Workflow action buttons */}
         <div className="flex items-center gap-3 flex-wrap pl-12 relative z-10">
-          {doc.doc_type === "invoice" && doc.status !== "cancelled" && doc.status !== "paid" && doc.status !== "credited" && doc.balance_due > 0 && (
+          {(doc.doc_type === "invoice" || (doc.doc_type === "proforma" && !convertedInvoice)) && doc.status !== "cancelled" && doc.status !== "paid" && doc.status !== "credited" && doc.balance_due > 0 && (
             <Button className="gap-1.5 bg-emerald-600 hover:bg-emerald-700" onClick={() => setShowPaymentModal(true)}>
               <CreditCard className="h-4 w-4" />Record Payment
             </Button>
@@ -342,8 +344,8 @@ export function BillingDocumentView({ doc, payments, settings, onBack, onRecordP
         </div>
       </Card>
 
-      {/* Payment History for Invoices only */}
-      {doc.doc_type === "invoice" && (
+      {/* Payment History for invoices and proformas (advances arrive in tranches) */}
+      {(doc.doc_type === "invoice" || doc.doc_type === "proforma") && (
         <Card>
           <div className="px-5 py-4 border-b flex items-center justify-between">
             <h3 className="text-sm font-bold text-muted-foreground uppercase tracking-wider">Payment History</h3>
