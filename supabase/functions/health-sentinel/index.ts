@@ -13,7 +13,7 @@
 // Secrets it needs on the crm project:
 //   MGMT_TOKEN         — org-wide Supabase Management API access token (sbp_...)
 //   MGMT_TOKEN_ECHO    — Management API token for the echocommunicator@gmail.com
-//                        account (vendorverification, ticket).
+//                        account (vendor, ticket).
 //   MGMT_TOKEN_FMAMIT  — token for the fmamit@gmail.com free-tier account
 //                        (org "In-Sync-Free-Personal"). Covers BOTH smbconnect
 //                        AND expense — they share this one project-scoped-to-org
@@ -55,7 +55,7 @@ const META: Record<string, { name: string; dialer?: boolean; marketing?: boolean
   ejzjrvazegaxrhqizgaa: { name: "globalcrm", dialer: true, demoConfirm: true, web: "https://globalcrm.in-sync.co.in" },
   gwfofzqrfpwojejjodgz: { name: "event", web: "https://event.in-sync.co.in" },
   htdwkhtfdifwajdkkpul: { name: "ats", web: "https://ats-6t2.pages.dev" },
-  oygyrpjjwtwvrdvxjzbg: { name: "vendorverification", web: "https://vendor.in-sync.co.in" },
+  oygyrpjjwtwvrdvxjzbg: { name: "vendor", web: "https://vendor.in-sync.co.in" },
   sbplwrtlsbhwcvfvuxel: { name: "ticket", web: "https://ci.in-sync.co.in" },
   wdamzbyvsbergvxhefkl: { name: "smbconnect", feedCheck: true, web: "https://smbconnect.in" },
   ufwvyybrctjpwipbveqe: { name: "RMPL", web: "https://rmpl-sync.pages.dev" },
@@ -806,7 +806,7 @@ const MODULE_MAP: Record<string, ModSpec[]> = {
     ["Engagement scores", "engagement_scores"], ["Billing accounts", "billing_accounts"], ["Users", "profiles"], ["Roles", "user_roles"],
   ]),
   // (expense module map removed 2026-07-10 — PARKED, see the PARKED registry above.)
-  oygyrpjjwtwvrdvxjzbg: tbl([ // vendorverification (vendor empanelment)
+  oygyrpjjwtwvrdvxjzbg: tbl([ // vendor (vendor empanelment)
     ["Vendors", "vendors"], ["Vendor documents", "vendor_documents"], ["Verifications", "vendor_verifications"],
     ["Vendor users", "vendor_users"], ["Vendor invitations", "vendor_invitations"], ["Categories", "vendor_categories"],
     ["Category documents", "category_documents"], ["Document types", "document_types"], ["Document analyses", "document_analyses"],
