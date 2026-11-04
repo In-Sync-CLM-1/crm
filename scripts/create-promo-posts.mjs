@@ -38,7 +38,7 @@ const POSTS = [
     ].join('\n\n'),
   },
   {
-    product_key: 'vendorsync', file: 'vendor-sync-promo-vertical.mp4',
+    product_key: 'vendorsync', file: 'vendorsync-promo-vertical.mp4',
     title: 'Vendorsync — know your vendor before you commit',
     url: 'https://in-sync.co.in/products/vendorsync',
     caption: [
