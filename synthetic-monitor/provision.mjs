@@ -13,7 +13,7 @@ import fs from "node:fs";
 const { MGMT, MON_EMAIL, MON_PASS } = process.env;
 // Only projects whose backend still exists AND that MGMT can see. Deliberately
 // excluded: work / fieldsync / expense / wa / email / website (backends deleted
-// — frontends stay live on purpose), and vendorverification / smb-connect
+// — frontends stay live on purpose), and vendor / smb-connect
 // (different Supabase orgs, so they need their own MGMT token to provision).
 const APPS = [
   ["crm", "mlvgqudcwlkolsbighnn", "https://crm.in-sync.co.in"],

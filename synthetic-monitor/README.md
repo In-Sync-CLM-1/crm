@@ -35,5 +35,5 @@ baked into the shipped bundle), but there's no reason to keep a stale copy in gi
 `APPS` in `provision.mjs` lists only projects whose backend still exists and that
 the management token can see: crm, globalcrm, event, ats, rmpl. Deliberately
 excluded are work / fieldsync / expense / wa / email / website (backends deleted,
-frontends still live) and vendorverification / smb-connect (different Supabase
+frontends still live) and vendor / smb-connect (different Supabase
 orgs — they'd need their own management token).
