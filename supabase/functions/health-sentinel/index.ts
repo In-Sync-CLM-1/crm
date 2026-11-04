@@ -807,7 +807,7 @@ const MODULE_MAP: Record<string, ModSpec[]> = {
   ]),
   // (expense module map removed 2026-07-10 — PARKED, see the PARKED registry above.)
   oygyrpjjwtwvrdvxjzbg: tbl([ // vendor (vendor empanelment)
-    ["Vendors", "vendors"], ["Vendor documents", "vendor_documents"], ["Verifications", "vendor_verifications"],
+    ["Vendors", "vendors"], ["Vendor documents", "vendor_documents"], ["Verifications", "vendor_checks"],
     ["Vendor users", "vendor_users"], ["Vendor invitations", "vendor_invitations"], ["Categories", "vendor_categories"],
     ["Category documents", "category_documents"], ["Document types", "document_types"], ["Document analyses", "document_analyses"],
     ["Consent records", "consent_records"], ["Data requests", "data_requests"], ["Fraud alerts", "fraud_alerts"],
