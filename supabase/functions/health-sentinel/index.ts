@@ -62,7 +62,6 @@ const META: Record<string, { name: string; dialer?: boolean; marketing?: boolean
   upnhhrhobvdmpfnldvgb: { name: "website", web: "https://in-sync.co.in" },
   dhbeivfeuewzkdeqkjpa: { name: "work-sync", web: "https://work.in-sync.co.in" },
   ljokqicllbemfjytfhbi: { name: "expense", web: "https://expense.in-sync.co.in" },
-  mcwmrzgtrcrpkxhjugkp: { name: "field-sync", web: "https://field.in-sync.co.in" },
   jemtjynhelobhegppsbp: { name: "it-helpdesk", web: "https://helpdesk.in-sync.co.in" },
 };
 
@@ -96,6 +95,9 @@ const META: Record<string, { name: string; dialer?: boolean; marketing?: boolean
 const PARKED: { name: string; ref: string; web: string; parkedOn: string }[] = [
   { name: "wa", ref: "unmdhcjrplwntqjiciiz", web: "https://wa.in-sync.co.in", parkedOn: "2026-07-10" },
   { name: "email", ref: "xpndsoozxjrvcwhauunh", web: "https://email.in-sync.co.in", parkedOn: "2026-07-10" },
+  // field-sync parked again 2026-11-09 (no production data); schema kept as
+  // the migrations in the field-sync repo. Its META + MODULE_MAP entries removed.
+  { name: "field-sync", ref: "mcwmrzgtrcrpkxhjugkp", web: "https://field.in-sync.co.in", parkedOn: "2026-11-09" },
 ];
 
 type Status = "ok" | "fail" | "warn";
@@ -858,21 +860,6 @@ const MODULE_MAP: Record<string, ModSpec[]> = {
     ["Project travel logs", "project_expense_travel_logs"], ["Advances", "expense_advances"],
     ["Advance requests", "expense_advance_requests"], ["Org memberships", "org_memberships"],
     ["Teams", "teams"], ["Team members", "team_members"], ["API keys", "api_keys"],
-    ["Organizations", "organizations"], ["Users", "profiles"], ["Roles", "user_roles"],
-  ]),
-  mcwmrzgtrcrpkxhjugkp: tbl([ // field-sync (DSA/agent field visits) — added 2026-08-28
-    ["Customers / leads", "customers"], ["Leads", "leads"], ["Lead activities", "lead_activities"],
-    ["Visits", "visits"], ["Visit photos", "visit_photos"], ["Visit checklist templates", "visit_checklist_templates"],
-    ["Beats", "beats"], ["Beat customers", "beat_customers"], ["Daily plans", "daily_plans"],
-    ["Plan visits", "plan_visits"], ["Plan enrollments", "plan_enrollments"], ["Route deviations", "route_deviations"],
-    ["Orders", "orders"], ["Order collections", "order_collections"], ["Collections", "collections"],
-    ["Invoices", "invoices"], ["Field invoices", "field_invoices"], ["Payment transactions", "payment_transactions"],
-    ["Products", "products"], ["Subscription plans", "subscription_plans"], ["Attendance", "attendance"],
-    ["Agent locations", "agent_locations"], ["Location history", "location_history"],
-    ["Travel reimbursements", "travel_reimbursements"], ["DSAs", "dsas"], ["Sub-DSAs", "sub_dsas"],
-    ["Branches", "branches"], ["Dispositions", "dispositions"], ["Sub-dispositions", "sub_dispositions"],
-    ["Channel activity alerts", "channel_activity_alerts"], ["Consent records", "consent_records"],
-    ["Data requests", "data_requests"], ["Breach notifications", "breach_notifications"],
     ["Organizations", "organizations"], ["Users", "profiles"], ["Roles", "user_roles"],
   ]),
 };
