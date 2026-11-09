@@ -23,14 +23,15 @@ type Change = {
 type Task = { id: string; number: string; title: string; org: string; status: string; due: string | null; state: string; worker_note: string | null; worker_at: string | null; pr_url: string | null };
 type Board = { generated_at: string; changes: Change[]; tasks: Task[] };
 
-const STATUS: Record<string, { label: string; cls: string; attention?: boolean }> = {
+// problem = something went wrong after or at going live; moving = still on its way (being tested, fixed or going live).
+const STATUS: Record<string, { label: string; cls: string; problem?: boolean; moving?: boolean }> = {
   live: { label: "Live", cls: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200" },
-  live_problem: { label: "Live, check failed", cls: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200", attention: true },
-  blocked: { label: "Blocked from going live", cls: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200", attention: true },
-  failed: { label: "Tests failed", cls: "bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200", attention: true },
-  passed: { label: "Passed, waiting to go live", cls: "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200" },
+  live_problem: { label: "Live, check failed", cls: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200", problem: true },
+  blocked: { label: "Blocked from going live", cls: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200", problem: true },
+  failed: { label: "Tests failed, being fixed", cls: "bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200", moving: true },
+  passed: { label: "Passed, going live", cls: "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200", moving: true },
   waived: { label: "Testing waived", cls: "bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-200" },
-  testing: { label: "Testing", cls: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200" },
+  testing: { label: "Testing", cls: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200", moving: true },
 };
 const TASK_STATE: Record<string, { label: string; cls: string }> = {
   needs_you: { label: "Needs you", cls: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200" },
@@ -59,11 +60,12 @@ export default function ReleaseBoard() {
   });
 
   const apps = useMemo(() => [...new Set((data?.changes ?? []).map((c) => c.app))].sort(), [data]);
-  const changes = (data?.changes ?? []).filter((c) => (app === "all" || c.app === app) && (show === "all" || (show === "attention" ? STATUS[c.status]?.attention : c.status === show)));
+  const changes = (data?.changes ?? []).filter((c) => (app === "all" || c.app === app) && (show === "all" || (show === "moving" ? STATUS[c.status]?.moving : show === "problem" ? STATUS[c.status]?.problem : c.status === show)));
   const needsYou = (data?.tasks ?? []).filter((t) => t.state === "needs_you");
   const approval = (data?.tasks ?? []).filter((t) => t.state === "waiting_approval");
   const working = (data?.tasks ?? []).filter((t) => t.state === "working" || t.state === "queued");
-  const problems = (data?.changes ?? []).filter((c) => STATUS[c.status]?.attention);
+  const problems = (data?.changes ?? []).filter((c) => STATUS[c.status]?.problem);
+  const moving = (data?.changes ?? []).filter((c) => STATUS[c.status]?.moving);
   const liveToday = (data?.changes ?? []).filter((c) => c.status === "live" && Date.now() - Date.parse(c.updated_at) < 86400000).length;
 
   if (!isPlatformAdmin) {
@@ -87,9 +89,9 @@ export default function ReleaseBoard() {
           <>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {[
-                ["Needs you", needsYou.length + problems.length, needsYou.length + problems.length > 0],
+                ["Needs you", needsYou.length, needsYou.length > 0],
                 ["Waiting for \"Approved\"", approval.length, approval.length > 0],
-                ["Worker busy with", working.length, false],
+                ["In progress", moving.length + working.length, false],
                 ["Went live today", liveToday, false],
               ].map(([label, n, warn]) => (
                 <Card key={String(label)} className={`p-3 ${warn ? "border-red-300 dark:border-red-800" : ""}`}>
@@ -99,21 +101,48 @@ export default function ReleaseBoard() {
               ))}
             </div>
 
-            {(needsYou.length > 0 || problems.length > 0) && (
+            {needsYou.length > 0 && (
               <section className="space-y-2">
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-red-700 dark:text-red-300">Needs you</h2>
                 {needsYou.map((t) => (
                   <Card key={t.id} className="p-3 space-y-1">
-                    <div className="flex flex-wrap items-center gap-2"><Pill cls={TASK_STATE.needs_you.cls}>Task</Pill><b className="text-sm">{t.number}</b><span className="text-sm">{t.title}</span><span className="text-xs text-muted-foreground">{t.org}</span></div>
+                    <div className="flex flex-wrap items-center gap-2"><Pill cls={TASK_STATE.needs_you.cls}>Task</Pill><b className="text-sm">{t.number}</b><span className="text-xs text-muted-foreground">{t.org}</span></div>
+                    <div className="text-sm break-words">{t.title}</div>
                     {t.worker_note && <p className="text-sm text-muted-foreground whitespace-pre-line">{t.worker_note}</p>}
                   </Card>
                 ))}
+              </section>
+            )}
+
+            {problems.length > 0 && (
+              <section className="space-y-2">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-red-700 dark:text-red-300">Problems on live</h2>
                 {problems.map((c) => (
                   <Card key={`${c.repo}#${c.pr}`} className="p-3 space-y-1">
-                    <div className="flex flex-wrap items-center gap-2"><Pill cls={STATUS[c.status].cls}>{STATUS[c.status].label}</Pill><b className="text-sm">{c.app}</b><span className="text-sm">{c.title ?? `PR #${c.pr}`}</span></div>
-                    <p className="text-sm text-muted-foreground">{c.status === "live_problem" ? c.live?.summary : c.status === "blocked" ? c.deploy?.summary : c.test?.summary}</p>
+                    <div className="flex flex-wrap items-center gap-2"><Pill cls={STATUS[c.status].cls}>{STATUS[c.status].label}</Pill><b className="text-sm">{c.app} #{c.pr}</b></div>
+                    <div className="text-sm break-words">{c.title ?? ""}</div>
+                    <p className="text-sm text-muted-foreground">{c.status === "live_problem" ? c.live?.summary : c.deploy?.summary}</p>
                   </Card>
                 ))}
+              </section>
+            )}
+
+            {moving.length > 0 && (
+              <section className="space-y-2">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">In progress</h2>
+                <Card className="divide-y">
+                  {moving.map((c) => (
+                    <div key={`${c.repo}#${c.pr}`} className="p-2.5 space-y-1 text-sm">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Pill cls={STATUS[c.status].cls}>{STATUS[c.status].label}</Pill>
+                        <a href={c.url} target="_blank" rel="noreferrer" className="font-semibold text-primary inline-flex items-center gap-1">{c.app} #{c.pr} <ExternalLink size={12} /></a>
+                        <span className="text-xs text-muted-foreground tabular-nums">{ago(c.updated_at)}</span>
+                      </div>
+                      <div className="break-words">{c.title ?? ""}</div>
+                      {c.test && <div className="text-xs text-muted-foreground">Last test: {c.test.summary}.</div>}
+                    </div>
+                  ))}
+                </Card>
               </section>
             )}
 
@@ -145,7 +174,7 @@ export default function ReleaseBoard() {
                     <option value="all">All apps</option>{apps.map((a) => <option key={a} value={a}>{a}</option>)}
                   </select>
                   <select id="rb-show" aria-label="Status" value={show} onChange={(e) => setShow(e.target.value)} className="h-8 rounded-md border bg-background px-2 text-sm">
-                    <option value="all">Every status</option><option value="attention">Needs attention</option>
+                    <option value="all">Every status</option><option value="moving">In progress</option><option value="problem">Problems on live</option>
                     {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                   </select>
                 </div>
@@ -156,7 +185,7 @@ export default function ReleaseBoard() {
                     <div key={`${c.repo}#${c.pr}`} className="p-2.5 space-y-1">
                       <div className="flex flex-wrap items-center gap-2 text-sm">
                         <Pill cls={STATUS[c.status]?.cls ?? STATUS.testing.cls}>{STATUS[c.status]?.label ?? c.status}</Pill>
-                        <b>{c.app}</b><span className="min-w-0 basis-full sm:basis-auto sm:flex-1 break-words">{c.title ?? `PR #${c.pr}`}</span>
+                        <b>{c.app} #{c.pr}</b><span className="min-w-0 basis-full sm:basis-auto sm:flex-1 break-words">{c.title ?? ""}</span>
                         <span className="text-xs text-muted-foreground tabular-nums">{ago(c.updated_at)}</span>
                         <a href={c.url} target="_blank" rel="noreferrer" className="text-xs text-primary inline-flex items-center gap-1">#{c.pr} <ExternalLink size={12} /></a>
                       </div>
