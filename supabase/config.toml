@@ -127,3 +127,6 @@ verify_jwt = true
 # caller's session itself.
 [functions.dashboard-leads]
 verify_jwt = false
+
+[functions.release-board]
+verify_jwt = false
