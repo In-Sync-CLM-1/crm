@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import {
-  LayoutDashboard,
+  LayoutDashboard, Rocket,
   LogOut,
   Menu,
   X,
@@ -191,6 +191,16 @@ function DashboardLayout({ children }: DashboardLayoutProps) {
                 >
                   <LayoutDashboard size={16} className="shrink-0 text-sidebar-muted" />
                   <span>Dashboard</span>
+                </Link>
+              )}
+              {userData?.profile?.is_platform_admin && (
+                <Link
+                  to="/release-board"
+                  className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors"
+                  onClick={() => setSidebarOpen(false)}
+                >
+                  <Rocket size={16} className="shrink-0 text-sidebar-muted" />
+                  <span>Release board</span>
                 </Link>
               )}
 
