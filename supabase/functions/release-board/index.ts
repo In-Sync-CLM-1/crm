@@ -70,7 +70,7 @@ Deno.serve(async (req) => {
       const comments = ids.length ? await (await fetch(`${WS}/rest/v1/task_comments?select=task_id,user_id,comment,comment_type,created_at&task_id=in.(${ids.join(',')})&order=created_at.asc`, { headers: H })).json() as { task_id: string; user_id: string; comment: string; comment_type: string; created_at: string }[] : [];
       for (const t of open) {
         const cs = comments.filter((c) => c.task_id === t.id);
-        const approved = t.assigned_by === OWNER || cs.some((c) => c.user_id === OWNER && c.comment_type !== 'system' && /^\s*approved\b/i.test(c.comment));
+        const approved = t.assigned_by === OWNER || cs.some((c) => c.user_id === OWNER && c.comment_type !== 'system' && /\bapproved\b/i.test(c.comment) && !/\b(not|un|dis)\s*approved\b/i.test(c.comment));
         const worker = cs.filter((c) => c.comment.startsWith(MARK)).pop();
         const tag = worker?.comment.match(/\[(picked|question|needs-you|pr #\d+|failed|done)\]/)?.[1] ?? null;
         const answered = worker && cs.some((c) => c.created_at > worker.created_at && !c.comment.startsWith(MARK) && c.comment_type !== 'system');
