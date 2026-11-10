@@ -39,19 +39,27 @@ Deno.serve(async (req) => {
     const latest = (list: Entry[], kind: string) => list.filter((e) => e.kind === kind).sort((a, b) => b.recorded_at.localeCompare(a.recorded_at))[0];
     const changes = [...byPr.entries()].map(([k, list]) => {
       const test = latest(list, 'test_run'), waiver = latest(list, 'waiver'), deploy = latest(list, 'deploy_decision'), live = latest(list, 'live_check');
+      // A waiver recorded after the change went live (apps not on the test agent, or the owner's go-ahead) starts with "Went live".
+      const wentLiveWaiver = waiver && /^Went live/.test(waiver.summary ?? '');
       let status = 'testing';
-      if (live && deploy?.result === 'allowed' && live.recorded_at > deploy.recorded_at) status = live.result === 'pass' ? 'live' : 'live_problem';
-      else if (live && !deploy) status = live.result === 'pass' ? 'live' : 'live_problem';
+      let went_live_at: string | null = null;
+      if (live && deploy?.result === 'allowed' && live.recorded_at > deploy.recorded_at) { status = live.result === 'pass' ? 'live' : 'live_problem'; went_live_at = deploy.recorded_at; }
+      else if (live && !deploy) { status = live.result === 'pass' ? 'live' : 'live_problem'; went_live_at = wentLiveWaiver ? waiver!.recorded_at : live.recorded_at; }
       else if (deploy?.result === 'blocked') status = 'blocked';
-      else if (deploy?.result === 'allowed') status = 'live';
+      else if (deploy?.result === 'allowed') { status = 'live'; went_live_at = deploy.recorded_at; }
+      else if (wentLiveWaiver) { status = 'live'; went_live_at = waiver!.recorded_at; }
       else if (waiver) status = 'waived';
       else if (test?.result === 'pass') status = 'passed';
       else if (test) status = 'failed';
+      // the actual time it went live, when the waiver names it ("Went live on 2026-11-10 03:57 UTC ...")
+      const named = wentLiveWaiver ? waiver!.summary.match(/^Went live on (\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}) UTC/) : null;
+      if (named && !deploy) went_live_at = `${named[1]}T${named[2]}:00Z`;
+      if (status === 'live' && test?.result !== 'pass') status = 'live_untested';
       const last = list.reduce((a, b) => (a.recorded_at > b.recorded_at ? a : b));
       const [repo, pr] = k.split('#');
       return {
         repo, pr: Number(pr), app: list.find((e) => e.app)?.app ?? repo.split('/')[1], title: list.find((e) => e.title)?.title ?? null,
-        status, updated_at: last.recorded_at, test: test ? { result: test.result, summary: test.summary, at: test.recorded_at } : null,
+        status, went_live_at, updated_at: last.recorded_at, test: test ? { result: test.result, summary: test.summary, at: test.recorded_at } : null,
         deploy: deploy ? { result: deploy.result, summary: deploy.summary, at: deploy.recorded_at } : null,
         live: live ? { result: live.result, summary: live.summary, at: live.recorded_at } : null,
         waiver: waiver ? { by: waiver.actor, at: waiver.recorded_at } : null,

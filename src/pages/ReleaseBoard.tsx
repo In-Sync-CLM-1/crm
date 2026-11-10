@@ -14,7 +14,7 @@ import { ExternalLink, RotateCw } from "lucide-react";
 // WorkSync tasks that the hourly worker handles. Platform admins only; data comes from the release-board function.
 
 type Change = {
-  repo: string; pr: number; app: string; title: string | null; status: string; updated_at: string; url: string; task?: { number: string; title: string } | null;
+  repo: string; pr: number; app: string; title: string | null; status: string; went_live_at?: string | null; updated_at: string; url: string; task?: { number: string; title: string } | null;
   test: { result: string; summary: string; at: string } | null;
   deploy: { result: string; summary: string; at: string } | null;
   live: { result: string; summary: string; at: string } | null;
@@ -28,6 +28,7 @@ const TaskId = ({ c }: { c: Change }) => (c.task ? <span title={c.task.title} cl
 // problem = something went wrong after or at going live; moving = still on its way (being tested, fixed or going live).
 const STATUS: Record<string, { label: string; cls: string; problem?: boolean; moving?: boolean }> = {
   live: { label: "Live", cls: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200" },
+  live_untested: { label: "Live, not tested", cls: "bg-teal-100 text-teal-900 dark:bg-teal-900/40 dark:text-teal-200" },
   live_problem: { label: "Live, check failed", cls: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200", problem: true },
   blocked: { label: "Blocked from going live", cls: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200", problem: true },
   failed: { label: "Tests failed, being fixed", cls: "bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200", moving: true },
@@ -68,7 +69,9 @@ export default function ReleaseBoard() {
   const working = (data?.tasks ?? []).filter((t) => t.state === "working" || t.state === "queued");
   const problems = (data?.changes ?? []).filter((c) => STATUS[c.status]?.problem);
   const moving = (data?.changes ?? []).filter((c) => STATUS[c.status]?.moving);
-  const liveToday = (data?.changes ?? []).filter((c) => c.status === "live" && Date.now() - Date.parse(c.updated_at) < 86400000).length;
+  // Every change that went live today (India time), tested by the test agent or not.
+  const istDay = (d: string | number) => new Date(new Date(d).getTime() + 5.5 * 3600e3).toISOString().slice(0, 10);
+  const liveToday = (data?.changes ?? []).filter((c) => ["live", "live_untested", "live_problem"].includes(c.status) && c.went_live_at && istDay(c.went_live_at) === istDay(Date.now())).length;
 
   if (!isPlatformAdmin) {
     return <DashboardLayout><div className="p-6 text-sm text-muted-foreground">The release board is for platform administrators.</div></DashboardLayout>;
