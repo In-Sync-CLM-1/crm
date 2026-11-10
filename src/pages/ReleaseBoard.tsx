@@ -50,6 +50,7 @@ export default function ReleaseBoard() {
   const { isPlatformAdmin } = useOrgContext();
   const [app, setApp] = useUrlState("app", "all");
   const [show, setShow] = useUrlState("show", "all");
+  const [pageStr, setPageStr] = useUrlState("page", "1");
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["release-board"],
     enabled: isPlatformAdmin,
@@ -64,6 +65,14 @@ export default function ReleaseBoard() {
 
   const apps = useMemo(() => [...new Set((data?.changes ?? []).map((c) => c.app))].sort(), [data]);
   const changes = (data?.changes ?? []).filter((c) => (app === "all" || c.app === app) && (show === "all" || (show === "moving" ? STATUS[c.status]?.moving : show === "problem" ? STATUS[c.status]?.problem : c.status === show)));
+  const PAGE_SIZE = 20;
+  const pageCount = Math.max(1, Math.ceil(changes.length / PAGE_SIZE));
+  const page = Math.min(Math.max(1, parseInt(pageStr, 10) || 1), pageCount);
+  const pageChanges = changes.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const allChanges = data?.changes ?? [];
+  const liveCount = allChanges.filter((c) => ["live", "live_untested", "live_problem"].includes(c.status)).length;
+  const passedTests = allChanges.filter((c) => c.test?.result === "pass" || c.test?.result === "passed").length;
+  const byApp = Object.entries(allChanges.reduce<Record<string, number>>((m, c) => ({ ...m, [c.app]: (m[c.app] ?? 0) + 1 }), {})).sort((a, b) => b[1] - a[1]);
   const needsYou = (data?.tasks ?? []).filter((t) => t.state === "needs_you");
   const approval = (data?.tasks ?? []).filter((t) => t.state === "waiting_approval");
   const working = (data?.tasks ?? []).filter((t) => t.state === "working" || t.state === "queued");
@@ -105,6 +114,28 @@ export default function ReleaseBoard() {
                 </Card>
               ))}
             </div>
+
+            <section className="space-y-2">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Analytics</h2>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {[
+                  ["Total changes", allChanges.length],
+                  ["Live", liveCount],
+                  ["Problems", problems.length],
+                  ["Tests passed", passedTests],
+                ].map(([label, n]) => (
+                  <Card key={String(label)} className="p-3">
+                    <div className="text-2xl font-semibold tabular-nums">{n as number}</div>
+                    <div className="text-xs text-muted-foreground">{label as string}</div>
+                  </Card>
+                ))}
+              </div>
+              {byApp.length > 0 && (
+                <Card className="p-3 text-xs text-muted-foreground flex flex-wrap gap-x-4 gap-y-1">
+                  {byApp.map(([a, n]) => <span key={a}><b className="text-foreground">{a}</b> {n}</span>)}
+                </Card>
+              )}
+            </section>
 
             {needsYou.length > 0 && (
               <section className="space-y-2">
@@ -176,10 +207,10 @@ export default function ReleaseBoard() {
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Changes</h2>
                 <div className="flex flex-wrap gap-2">
-                  <select id="rb-app" aria-label="App" value={app} onChange={(e) => setApp(e.target.value)} className="h-8 rounded-md border bg-background px-2 text-sm">
+                  <select id="rb-app" aria-label="App" value={app} onChange={(e) => { setApp(e.target.value); setPageStr("1"); }} className="h-8 rounded-md border bg-background px-2 text-sm">
                     <option value="all">All apps</option>{apps.map((a) => <option key={a} value={a}>{a}</option>)}
                   </select>
-                  <select id="rb-show" aria-label="Status" value={show} onChange={(e) => setShow(e.target.value)} className="h-8 rounded-md border bg-background px-2 text-sm">
+                  <select id="rb-show" aria-label="Status" value={show} onChange={(e) => { setShow(e.target.value); setPageStr("1"); }} className="h-8 rounded-md border bg-background px-2 text-sm">
                     <option value="all">Every status</option><option value="moving">In progress</option><option value="problem">Problems on live</option>
                     {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                   </select>
@@ -187,7 +218,7 @@ export default function ReleaseBoard() {
               </div>
               {changes.length === 0 ? <Card className="p-4 text-sm text-muted-foreground">No changes match.</Card> : (
                 <Card className="divide-y">
-                  {changes.map((c) => (
+                  {pageChanges.map((c) => (
                     <div key={`${c.repo}#${c.pr}`} className="p-2.5 space-y-1">
                       <div className="flex flex-wrap items-center gap-2 text-sm">
                         <Pill cls={STATUS[c.status]?.cls ?? STATUS.testing.cls}>{STATUS[c.status]?.label ?? c.status}</Pill>
@@ -201,6 +232,16 @@ export default function ReleaseBoard() {
                     </div>
                   ))}
                 </Card>
+              )}
+              {changes.length > PAGE_SIZE && (
+                <div className="flex items-center justify-between gap-2 text-sm">
+                  <span className="text-xs text-muted-foreground tabular-nums">{(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, changes.length)} of {changes.length}</span>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPageStr(String(page - 1))}>Previous</Button>
+                    <span className="text-xs tabular-nums">Page {page} of {pageCount}</span>
+                    <Button variant="outline" size="sm" disabled={page >= pageCount} onClick={() => setPageStr(String(page + 1))}>Next</Button>
+                  </div>
+                </div>
               )}
               <p className="text-xs text-muted-foreground">From the test ledger, updated {ago(data.generated_at)}. Every entry there is permanent and checked nightly.</p>
             </section>

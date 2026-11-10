@@ -193,16 +193,6 @@ function DashboardLayout({ children }: DashboardLayoutProps) {
                   <span>Dashboard</span>
                 </Link>
               )}
-              {userData?.profile?.is_platform_admin && (
-                <Link
-                  to="/release-board"
-                  className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors"
-                  onClick={() => setSidebarOpen(false)}
-                >
-                  <Rocket size={16} className="shrink-0 text-sidebar-muted" />
-                  <span>Release board</span>
-                </Link>
-              )}
 
               <Link
                 to="/marketing/ad-campaigns"
@@ -278,12 +268,22 @@ function DashboardLayout({ children }: DashboardLayoutProps) {
               </Link>
 
               {/* Operations Section */}
-              {showOperationsSection && (
+              {(showOperationsSection || userData?.profile?.is_platform_admin) && (
                 <div className="pt-3 pb-1 px-2">
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-sidebar-primary">
                     Operations
                   </p>
                 </div>
+              )}
+              {userData?.profile?.is_platform_admin && (
+                <Link
+                  to="/release-board"
+                  className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors"
+                  onClick={() => setSidebarOpen(false)}
+                >
+                  <Rocket size={16} className="shrink-0 text-sidebar-muted" />
+                  <span>Release board</span>
+                </Link>
               )}
               
 
