@@ -59,8 +59,24 @@ Deno.serve(async (req) => {
       };
     }).sort((a, b) => b.updated_at.localeCompare(a.updated_at));
 
-    // 2. the owner's WorkSync tasks: what the worker is doing, and what needs the owner
     const WS = Deno.env.get('WORKSYNC_URL'), WK = Deno.env.get('WORKSYNC_KEY'), OWNER = Deno.env.get('OWNER_WORKSYNC_ID');
+
+    // 1b. the WorkSync task each change was built for: the worker's task comments name the PR it opened
+    if (WS && WK) {
+      const H = { apikey: WK, Authorization: `Bearer ${WK}` };
+      const links = await (await fetch(`${WS}/rest/v1/task_comments?select=task_id,comment&comment=ilike.${encodeURIComponent('*Claude worker*github.com/*/pull/*')}&order=created_at.asc&limit=5000`, { headers: H })).json() as { task_id: string; comment: string }[];
+      const byChange = new Map<string, string>();
+      for (const l of Array.isArray(links) ? links : []) for (const m of l.comment.matchAll(/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/g)) byChange.set(`${m[1]}#${m[2]}`.toLowerCase(), l.task_id);
+      const tids = [...new Set(byChange.values())];
+      const tk = tids.length ? await (await fetch(`${WS}/rest/v1/tasks?select=id,task_number,task_name&id=in.(${tids.join(',')})`, { headers: H })).json() as { id: string; task_number: string; task_name: string }[] : [];
+      const tmap = new Map(tk.map((t) => [t.id, t]));
+      for (const c of changes as { repo: string; pr: number; task?: unknown }[]) {
+        const t = tmap.get(byChange.get(`${c.repo}#${c.pr}`.toLowerCase()) ?? '');
+        if (t) c.task = { number: t.task_number, title: t.task_name };
+      }
+    }
+
+    // 2. the owner's WorkSync tasks: what the worker is doing, and what needs the owner
     const tasks: unknown[] = [];
     if (WS && WK && OWNER) {
       const H = { apikey: WK, Authorization: `Bearer ${WK}` };

@@ -14,7 +14,7 @@ import { ExternalLink, RotateCw } from "lucide-react";
 // WorkSync tasks that the hourly worker handles. Platform admins only; data comes from the release-board function.
 
 type Change = {
-  repo: string; pr: number; app: string; title: string | null; status: string; updated_at: string; url: string;
+  repo: string; pr: number; app: string; title: string | null; status: string; updated_at: string; url: string; task?: { number: string; title: string } | null;
   test: { result: string; summary: string; at: string } | null;
   deploy: { result: string; summary: string; at: string } | null;
   live: { result: string; summary: string; at: string } | null;
@@ -22,6 +22,8 @@ type Change = {
 };
 type Task = { id: string; number: string; title: string; org: string; status: string; due: string | null; state: string; worker_note: string | null; worker_at: string | null; pr_url: string | null };
 type Board = { generated_at: string; changes: Change[]; tasks: Task[] };
+// The WorkSync task a change was built for, shown next to the change.
+const TaskId = ({ c }: { c: Change }) => (c.task ? <span title={c.task.title} className="rounded bg-muted px-1.5 py-0.5 text-xs font-semibold tabular-nums">{c.task.number}</span> : null);
 
 // problem = something went wrong after or at going live; moving = still on its way (being tested, fixed or going live).
 const STATUS: Record<string, { label: string; cls: string; problem?: boolean; moving?: boolean }> = {
@@ -119,7 +121,7 @@ export default function ReleaseBoard() {
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-red-700 dark:text-red-300">Problems on live</h2>
                 {problems.map((c) => (
                   <Card key={`${c.repo}#${c.pr}`} className="p-3 space-y-1">
-                    <div className="flex flex-wrap items-center gap-2"><Pill cls={STATUS[c.status].cls}>{STATUS[c.status].label}</Pill><b className="text-sm">{c.app} #{c.pr}</b></div>
+                    <div className="flex flex-wrap items-center gap-2"><Pill cls={STATUS[c.status].cls}>{STATUS[c.status].label}</Pill><b className="text-sm">{c.app} #{c.pr}</b><TaskId c={c} /></div>
                     <div className="text-sm break-words">{c.title ?? ""}</div>
                     <p className="text-sm text-muted-foreground">{c.status === "live_problem" ? c.live?.summary : c.deploy?.summary}</p>
                   </Card>
@@ -136,6 +138,7 @@ export default function ReleaseBoard() {
                       <div className="flex flex-wrap items-center gap-2">
                         <Pill cls={STATUS[c.status].cls}>{STATUS[c.status].label}</Pill>
                         <a href={c.url} target="_blank" rel="noreferrer" className="font-semibold text-primary inline-flex items-center gap-1">{c.app} #{c.pr} <ExternalLink size={12} /></a>
+                        <TaskId c={c} />
                         <span className="text-xs text-muted-foreground tabular-nums">{ago(c.updated_at)}</span>
                       </div>
                       <div className="break-words">{c.title ?? ""}</div>
@@ -185,7 +188,7 @@ export default function ReleaseBoard() {
                     <div key={`${c.repo}#${c.pr}`} className="p-2.5 space-y-1">
                       <div className="flex flex-wrap items-center gap-2 text-sm">
                         <Pill cls={STATUS[c.status]?.cls ?? STATUS.testing.cls}>{STATUS[c.status]?.label ?? c.status}</Pill>
-                        <b>{c.app} #{c.pr}</b><span className="min-w-0 basis-full sm:basis-auto sm:flex-1 break-words">{c.title ?? ""}</span>
+                        <b>{c.app} #{c.pr}</b><TaskId c={c} /><span className="min-w-0 basis-full sm:basis-auto sm:flex-1 break-words">{c.title ?? ""}</span>
                         <span className="text-xs text-muted-foreground tabular-nums">{ago(c.updated_at)}</span>
                         <a href={c.url} target="_blank" rel="noreferrer" className="text-xs text-primary inline-flex items-center gap-1">#{c.pr} <ExternalLink size={12} /></a>
                       </div>
