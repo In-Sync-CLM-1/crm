@@ -1,5 +1,7 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { formatCurrencyINR } from "@/utils/billingUtils";
+// Totals are shown to the paisa, so they match the bills exactly.
+const formatExact = (n: number) =>
+  `₹${new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)}`;
 import type { BillingDocument } from "@/types/billing";
 
 const ALL = "__all__";
@@ -99,7 +101,7 @@ export function BillingTotalsStrip({ documents, creditNotes }: TotalsStripProps)
       {items.map(i => (
         <div key={i.label} className="bg-card px-4 py-3">
           <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{i.label}</p>
-          <p className={`text-lg font-bold mt-0.5 ${i.cls}`}>{formatCurrencyINR(i.value)}</p>
+          <p className={`text-lg font-bold mt-0.5 ${i.cls}`}>{formatExact(i.value)}</p>
         </div>
       ))}
     </div>
