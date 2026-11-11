@@ -9,6 +9,7 @@ import { formatCurrencyINR, statusLabel } from "@/utils/billingUtils";
 import { DOC_TYPE_LABELS, DOC_TYPE_COLORS, STATUS_COLORS } from "@/types/billing";
 import type { BillingDocument, BillingDocumentType } from "@/types/billing";
 import { useUrlState } from "@/hooks/useUrlState";
+import { BillingTotalsStrip } from "@/components/Billing/BillingClientFilter";
 
 interface BillingDocumentListProps {
   documents: BillingDocument[];
@@ -61,6 +62,8 @@ export function BillingDocumentList({ documents, docType, onView, onCreate, onCo
         </div>
         <Button onClick={onCreate}><Plus className="h-4 w-4 mr-1" />Create {typeLabel}</Button>
       </div>
+
+      <BillingTotalsStrip documents={filtered} creditNotes={docType === "credit_note"} />
 
       <Card>
         <div className="p-4 border-b space-y-3">

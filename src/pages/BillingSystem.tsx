@@ -12,6 +12,7 @@ import { BillingDocumentView } from "@/components/Billing/BillingDocumentView";
 import { BillingCreateDocument } from "@/components/Billing/BillingCreateDocument";
 import { BillingPaymentsList } from "@/components/Billing/BillingPaymentsList";
 import { BillingSettingsPanel } from "@/components/Billing/BillingSettings";
+import { BillingClientSelect, billingClientNames, filterByClient } from "@/components/Billing/BillingClientFilter";
 import { LoadingState } from "@/components/common/LoadingState";
 import type { BillingDocument, BillingDocumentType, BillingClient } from "@/types/billing";
 import { INDIAN_STATES } from "@/types/billing";
@@ -47,6 +48,17 @@ export default function BillingSystem() {
     addDocument, updateDocument, deleteDocument, convertDocument,
     recordPayment, updatePayment, updateSettings, getDocumentPayments, getNextDocNumber,
   } = useBillingData();
+
+  // Client filter: one client across Dashboard, Proformas, Tax Invoices,
+  // Credit Notes and Payments; kept in the address so it survives Back/refresh.
+  const [clientFilter, setClientFilter] = useUrlState("bclient", "");
+  const clientNames = useMemo(() => billingClientNames(documents), [documents]);
+  const clientDocs = useMemo(() => filterByClient(documents, clientFilter), [documents, clientFilter]);
+  const clientPayments = useMemo(() => {
+    if (!clientFilter) return payments;
+    const ids = new Set(clientDocs.map(d => d.id));
+    return payments.filter(p => ids.has(p.document_id));
+  }, [payments, clientDocs, clientFilter]);
 
   const queryClient = useQueryClient();
 
@@ -302,7 +314,7 @@ export default function BillingSystem() {
       case "dashboard":
         return (
           <BillingDashboard
-            documents={documents}
+            documents={clientDocs}
             onCreateInvoice={() => handleCreateDoc("proforma")}
             onViewDocument={handleViewDoc}
             onCardClick={handleDashboardCardClick}
@@ -311,7 +323,7 @@ export default function BillingSystem() {
       case "proformas":
         return (
           <BillingDocumentList
-            documents={documents}
+            documents={clientDocs}
             docType="proforma"
             onView={handleViewDoc}
             onCreate={() => handleCreateDoc("proforma")}
@@ -322,7 +334,7 @@ export default function BillingSystem() {
       case "invoices":
         return (
           <BillingDocumentList
-            documents={documents}
+            documents={clientDocs}
             docType="invoice"
             onView={handleViewDoc}
             onCreate={() => handleCreateDoc("invoice")}
@@ -333,7 +345,7 @@ export default function BillingSystem() {
       case "credit_notes":
         return (
           <BillingDocumentList
-            documents={documents}
+            documents={clientDocs}
             docType="credit_note"
             onView={handleViewDoc}
             onCreate={() => handleCreateDoc("credit_note")}
@@ -341,7 +353,7 @@ export default function BillingSystem() {
           />
         );
       case "payments":
-        return <BillingPaymentsList payments={payments} documents={documents} onUpdatePayment={updatePayment} />;
+        return <BillingPaymentsList payments={clientPayments} documents={documents} onUpdatePayment={updatePayment} />;
       case "settings":
         return <BillingSettingsPanel settings={settings} onSave={updateSettings} />;
       default:
@@ -353,6 +365,7 @@ export default function BillingSystem() {
     <DashboardLayout>
       <div className="space-y-4">
         {!viewDocId && !createDocType && (
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <Tabs value={view} onValueChange={v => navigate(v as BillingView)}>
             <TabsList className="bg-muted/50 h-auto flex-wrap gap-0.5">
               <TabsTrigger value="dashboard" className="gap-1.5 text-xs"><Home className="h-3.5 w-3.5" />Dashboard</TabsTrigger>
@@ -363,6 +376,10 @@ export default function BillingSystem() {
               <TabsTrigger value="settings" className="gap-1.5 text-xs"><Settings className="h-3.5 w-3.5" />Settings</TabsTrigger>
             </TabsList>
           </Tabs>
+          {view !== "settings" && (
+            <BillingClientSelect clients={clientNames} value={clientFilter} onChange={setClientFilter} />
+          )}
+          </div>
         )}
 
         {renderContent()}
