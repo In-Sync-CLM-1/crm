@@ -54,6 +54,7 @@ const BDOutreach = lazy(() => import("./pages/BDOutreach"));
 const LinkedInOutreach = lazy(() => import("./pages/LinkedInOutreach"));
 const LinkedInMessages = lazy(() => import("./pages/LinkedInMessages"));
 const JobSearch = lazy(() => import("./pages/JobSearch"));
+const ReleaseBoard = lazy(() => import("./pages/ReleaseBoard"));
 
 // Lazy loaded pages - Admin
 const ApprovalMatrix = lazy(() => import("./pages/ApprovalMatrix"));
@@ -62,7 +63,6 @@ const EmailSettings = lazy(() => import("./pages/EmailSettings"));
 // Lazy loaded pages - Other
 const BillingSystem = lazy(() => import("./pages/BillingSystem"));
 const Accounting = lazy(() => import("./pages/Accounting"));
-const SupportTickets = lazy(() => import("./pages/SupportTickets"));
 // GSTDashboard is now integrated into main Dashboard
 
 const App = () => (
@@ -242,6 +242,12 @@ const App = () => (
             </ProtectedRoute>
           } />
 
+          <Route path="/release-board" element={
+            <ProtectedRoute>
+              <ReleaseBoard />
+            </ProtectedRoute>
+          } />
+
           <Route path="/job-search" element={
             <ProtectedRoute>
               <JobSearch />
@@ -268,12 +274,6 @@ const App = () => (
           } />
 
           {/* GST Dashboard is now integrated into main Dashboard */}
-
-          <Route path="/support-tickets" element={
-            <ProtectedRoute>
-              <SupportTickets />
-            </ProtectedRoute>
-          } />
 
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

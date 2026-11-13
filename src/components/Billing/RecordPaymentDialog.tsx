@@ -51,7 +51,7 @@ export function RecordPaymentDialog({ open, onClose, doc, onRecordPayment }: Rec
         </DialogHeader>
 
         <div className="bg-muted/50 rounded-lg p-4 mb-4 space-y-1">
-          <div className="flex justify-between text-sm"><span>Invoice Total</span><strong>{formatCurrencyINR(doc.total_amount)}</strong></div>
+          <div className="flex justify-between text-sm"><span>{doc.doc_type === "proforma" ? "Proforma Total" : "Invoice Total"}</span><strong>{formatCurrencyINR(doc.total_amount)}</strong></div>
           <div className="flex justify-between text-sm"><span>Already Paid</span><strong className="text-emerald-600">{formatCurrencyINR(doc.amount_paid)}</strong></div>
           <div className="flex justify-between text-sm font-bold"><span>Balance Due</span><strong className="text-amber-600">{formatCurrencyINR(doc.balance_due)}</strong></div>
         </div>

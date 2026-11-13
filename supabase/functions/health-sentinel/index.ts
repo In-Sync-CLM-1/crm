@@ -13,7 +13,7 @@
 // Secrets it needs on the crm project:
 //   MGMT_TOKEN         — org-wide Supabase Management API access token (sbp_...)
 //   MGMT_TOKEN_ECHO    — Management API token for the echocommunicator@gmail.com
-//                        account (vendorverification, ticket).
+//                        account (vendor, ticket).
 //   MGMT_TOKEN_FMAMIT  — token for the fmamit@gmail.com free-tier account
 //                        (org "In-Sync-Free-Personal"). Covers BOTH smbconnect
 //                        AND expense — they share this one project-scoped-to-org
@@ -55,14 +55,13 @@ const META: Record<string, { name: string; dialer?: boolean; marketing?: boolean
   ejzjrvazegaxrhqizgaa: { name: "globalcrm", dialer: true, demoConfirm: true, web: "https://globalcrm.in-sync.co.in" },
   gwfofzqrfpwojejjodgz: { name: "event", web: "https://event.in-sync.co.in" },
   htdwkhtfdifwajdkkpul: { name: "ats", web: "https://ats-6t2.pages.dev" },
-  oygyrpjjwtwvrdvxjzbg: { name: "vendorverification", web: "https://vendor.in-sync.co.in" },
+  oygyrpjjwtwvrdvxjzbg: { name: "vendor", web: "https://vendor.in-sync.co.in" },
   sbplwrtlsbhwcvfvuxel: { name: "ticket", web: "https://ci.in-sync.co.in" },
   wdamzbyvsbergvxhefkl: { name: "smbconnect", feedCheck: true, web: "https://smbconnect.in" },
   ufwvyybrctjpwipbveqe: { name: "RMPL", web: "https://rmpl-sync.pages.dev" },
   upnhhrhobvdmpfnldvgb: { name: "website", web: "https://in-sync.co.in" },
   dhbeivfeuewzkdeqkjpa: { name: "work-sync", web: "https://work.in-sync.co.in" },
   ljokqicllbemfjytfhbi: { name: "expense", web: "https://expense.in-sync.co.in" },
-  mcwmrzgtrcrpkxhjugkp: { name: "field-sync", web: "https://field.in-sync.co.in" },
   jemtjynhelobhegppsbp: { name: "it-helpdesk", web: "https://helpdesk.in-sync.co.in" },
 };
 
@@ -96,6 +95,9 @@ const META: Record<string, { name: string; dialer?: boolean; marketing?: boolean
 const PARKED: { name: string; ref: string; web: string; parkedOn: string }[] = [
   { name: "wa", ref: "unmdhcjrplwntqjiciiz", web: "https://wa.in-sync.co.in", parkedOn: "2026-07-10" },
   { name: "email", ref: "xpndsoozxjrvcwhauunh", web: "https://email.in-sync.co.in", parkedOn: "2026-07-10" },
+  // field-sync parked again 2026-11-09 (no production data); schema kept as
+  // the migrations in the field-sync repo. Its META + MODULE_MAP entries removed.
+  { name: "field-sync", ref: "mcwmrzgtrcrpkxhjugkp", web: "https://field.in-sync.co.in", parkedOn: "2026-11-09" },
 ];
 
 type Status = "ok" | "fail" | "warn";
@@ -713,13 +715,13 @@ async function checkFrontend(ref: string, web: string): Promise<Check> {
     }
 
     // Find the app's OWN entry bundle (same-origin /assets/*.js), ignoring
-    // third-party scripts (Razorpay, help-widget, analytics, service worker).
+    // third-party scripts (Razorpay, analytics, service worker).
     const origin = new URL(web).origin;
     const srcs = [...html.matchAll(/<script[^>]+src="([^"]+\.js)"/g)].map((m) => m[1]);
     const own = srcs
       .map((s) => { try { return new URL(s, web).href; } catch { return ""; } })
       .filter((u) => u && new URL(u).origin === origin)
-      .filter((u) => !/registerSW|help-widget|sw\.js$/i.test(u));
+      .filter((u) => !/registerSW|sw\.js$/i.test(u));
     const bundles = own.filter((u) => /\/assets\//.test(u)).length ? own.filter((u) => /\/assets\//.test(u)) : own;
 
     if (bundles.length === 0) {
@@ -806,8 +808,8 @@ const MODULE_MAP: Record<string, ModSpec[]> = {
     ["Engagement scores", "engagement_scores"], ["Billing accounts", "billing_accounts"], ["Users", "profiles"], ["Roles", "user_roles"],
   ]),
   // (expense module map removed 2026-07-10 — PARKED, see the PARKED registry above.)
-  oygyrpjjwtwvrdvxjzbg: tbl([ // vendorverification (vendor empanelment)
-    ["Vendors", "vendors"], ["Vendor documents", "vendor_documents"], ["Verifications", "vendor_verifications"],
+  oygyrpjjwtwvrdvxjzbg: tbl([ // vendor (vendor empanelment)
+    ["Vendors", "vendors"], ["Vendor documents", "vendor_documents"], ["Verifications", "vendor_checks"],
     ["Vendor users", "vendor_users"], ["Vendor invitations", "vendor_invitations"], ["Categories", "vendor_categories"],
     ["Category documents", "category_documents"], ["Document types", "document_types"], ["Document analyses", "document_analyses"],
     ["Consent records", "consent_records"], ["Data requests", "data_requests"], ["Fraud alerts", "fraud_alerts"],
@@ -858,21 +860,6 @@ const MODULE_MAP: Record<string, ModSpec[]> = {
     ["Project travel logs", "project_expense_travel_logs"], ["Advances", "expense_advances"],
     ["Advance requests", "expense_advance_requests"], ["Org memberships", "org_memberships"],
     ["Teams", "teams"], ["Team members", "team_members"], ["API keys", "api_keys"],
-    ["Organizations", "organizations"], ["Users", "profiles"], ["Roles", "user_roles"],
-  ]),
-  mcwmrzgtrcrpkxhjugkp: tbl([ // field-sync (DSA/agent field visits) — added 2026-08-28
-    ["Customers / leads", "customers"], ["Leads", "leads"], ["Lead activities", "lead_activities"],
-    ["Visits", "visits"], ["Visit photos", "visit_photos"], ["Visit checklist templates", "visit_checklist_templates"],
-    ["Beats", "beats"], ["Beat customers", "beat_customers"], ["Daily plans", "daily_plans"],
-    ["Plan visits", "plan_visits"], ["Plan enrollments", "plan_enrollments"], ["Route deviations", "route_deviations"],
-    ["Orders", "orders"], ["Order collections", "order_collections"], ["Collections", "collections"],
-    ["Invoices", "invoices"], ["Field invoices", "field_invoices"], ["Payment transactions", "payment_transactions"],
-    ["Products", "products"], ["Subscription plans", "subscription_plans"], ["Attendance", "attendance"],
-    ["Agent locations", "agent_locations"], ["Location history", "location_history"],
-    ["Travel reimbursements", "travel_reimbursements"], ["DSAs", "dsas"], ["Sub-DSAs", "sub_dsas"],
-    ["Branches", "branches"], ["Dispositions", "dispositions"], ["Sub-dispositions", "sub_dispositions"],
-    ["Channel activity alerts", "channel_activity_alerts"], ["Consent records", "consent_records"],
-    ["Data requests", "data_requests"], ["Breach notifications", "breach_notifications"],
     ["Organizations", "organizations"], ["Users", "profiles"], ["Roles", "user_roles"],
   ]),
 };

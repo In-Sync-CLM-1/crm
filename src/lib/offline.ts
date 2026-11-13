@@ -1,7 +1,5 @@
 // Small offline-related helpers used across pages.
 
-import { db } from "@/lib/db";
-
 export const isOnline = (): boolean =>
   typeof navigator !== "undefined" ? navigator.onLine : true;
 
@@ -21,34 +19,4 @@ export function requireOnline(
     `${feature} can't run offline. Reconnect and try again.`
   );
   return false;
-}
-
-/**
- * Trim Dexie tables of stale 'synced' rows older than `maxAgeDays`. Pending /
- * failed rows are never trimmed — those still need to sync.
- *
- * Call opportunistically (e.g. after a successful sync). Doesn't run when the
- * device is offline; storage pressure is best handled when we're online.
- */
-export async function ttlOfflineTables(maxAgeDays = 30): Promise<{
-  tickets: number;
-  ticketComments: number;
-}> {
-  const cutoff = new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000);
-  const cutoffMs = cutoff.getTime();
-  const counts = {
-    tickets: 0,
-    ticketComments: 0,
-  };
-
-  const eligible = (row: { syncStatus?: string; updatedAt?: Date; createdAt?: Date }): boolean => {
-    if (row.syncStatus !== "synced") return false;
-    const ts = row.updatedAt ?? row.createdAt;
-    return !!ts && ts.getTime() < cutoffMs;
-  };
-
-  counts.tickets = await db.tickets.filter(eligible).delete();
-  counts.ticketComments = await db.ticketComments.filter(eligible).delete();
-
-  return counts;
 }

@@ -13,13 +13,12 @@ import { PaidCampaignsPanel } from "@/components/Dashboard/PaidCampaignsPanel";
 import { BDOutreachPanel } from "@/components/Dashboard/BDOutreachPanel";
 import { NewLeadsPanel } from "@/components/Dashboard/NewLeadsPanel";
 import { CampaignSpendChart } from "@/components/Dashboard/CampaignSpendChart";
-import { TicketsRaisedPanel } from "@/components/Dashboard/TicketsRaisedPanel";
 
 /**
  * The dashboard — and the only one. Amit specified its contents exactly:
  * organic campaign outcome by channel, paid outcome on Google and Meta,
  * month-wise revenue, the newest leads with their source, campaign spend,
- * tickets raised, BD outreach, and next month's projections. Nothing else.
+ * BD outreach, and next month's projections. Nothing else.
  *
  * The Revenue and GST views that used to hang off this page are gone with the
  * other dashboards, and the date filter went with them: every panel here is
@@ -90,10 +89,7 @@ export default function Dashboard() {
         </div>
 
         {/* Cost and load */}
-        <div className="grid gap-3 lg:grid-cols-2">
-          <CampaignSpendChart data={overview?.revenue_months} isLoading={overviewLoading} />
-          <TicketsRaisedPanel data={overview?.tickets} isLoading={overviewLoading} />
-        </div>
+        <CampaignSpendChart data={overview?.revenue_months} isLoading={overviewLoading} />
       </div>
     </DashboardLayout>
   );
