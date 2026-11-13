@@ -55,6 +55,8 @@ Deno.serve(async (req) => {
       const named = wentLiveWaiver ? waiver!.summary.match(/^Went live on (\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}) UTC/) : null;
       if (named && !deploy) went_live_at = `${named[1]}T${named[2]}:00Z`;
       if (status === 'live' && test?.result !== 'pass') status = 'live_untested';
+      // A change closed on purpose without going live is recorded as a waiver starting "Closed without going live"; it is left off the board.
+      if (waiver && /^Closed without going live/.test(waiver.summary ?? '') && !deploy && !live) status = 'closed';
       const last = list.reduce((a, b) => (a.recorded_at > b.recorded_at ? a : b));
       const [repo, pr] = k.split('#');
       return {
@@ -65,7 +67,7 @@ Deno.serve(async (req) => {
         waiver: waiver ? { by: waiver.actor, at: waiver.recorded_at } : null,
         url: `https://github.com/${repo}/pull/${pr}`,
       };
-    }).sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+    }).filter((c) => c.status !== 'closed').sort((a, b) => b.updated_at.localeCompare(a.updated_at));
 
     const WS = Deno.env.get('WORKSYNC_URL'), WK = Deno.env.get('WORKSYNC_KEY'), OWNER = Deno.env.get('OWNER_WORKSYNC_ID');
 
