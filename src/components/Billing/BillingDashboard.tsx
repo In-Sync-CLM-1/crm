@@ -10,6 +10,7 @@ import { TrendingUp, Clock, AlertTriangle, IndianRupee, Plus, FileX2 } from "luc
 import { formatCurrencyINR, statusLabel, getCurrentFinancialYear, getFinancialYearForDate, formatFinancialYear } from "@/utils/billingUtils";
 import { DOC_TYPE_LABELS, DOC_TYPE_COLORS, STATUS_COLORS } from "@/types/billing";
 import type { BillingDocument } from "@/types/billing";
+import { BillingTotalsStrip } from "@/components/Billing/BillingClientFilter";
 
 const PIE_COLORS = ["#1a5276", "#2e86c1", "#3498db", "#85c1e9", "#aed6f1"];
 
@@ -133,7 +134,7 @@ export function BillingDashboard({ documents, onCreateInvoice, onViewDocument, o
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-2xl font-bold">Billing Dashboard</h2>
           <p className="text-sm text-muted-foreground mt-0.5">Financial overview</p>
@@ -155,6 +156,9 @@ export function BillingDashboard({ documents, onCreateInvoice, onViewDocument, o
           <Button onClick={onCreateInvoice}><Plus className="h-4 w-4 mr-1" />New Proforma Invoice</Button>
         </div>
       </div>
+
+      {/* Totals for the chosen client (or all clients) in the chosen period */}
+      <BillingTotalsStrip documents={billable} />
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
