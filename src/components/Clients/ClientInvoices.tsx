@@ -17,6 +17,7 @@ import { useNotification } from "@/hooks/useNotification";
 import { EmptyState } from "@/components/common/EmptyState";
 import { DocumentPreview } from "@/components/common/DocumentPreview";
 import { format } from "date-fns";
+import { openStoredFile } from "@/lib/storedFiles";
 
 interface ClientInvoicesProps {
   clientId: string;
@@ -832,7 +833,7 @@ export function ClientInvoices({ clientId, orgId }: ClientInvoicesProps) {
                         )}
                         {invoice.file_url && (
                           <Button variant="ghost" size="icon" asChild title="Download" className="h-8 w-8">
-                            <a href={invoice.file_url} download target="_blank" rel="noopener noreferrer">
+                            <a href="#" onClick={(e) => { e.preventDefault(); e.stopPropagation(); openStoredFile(invoice.file_url); }}>
                               <Download className="h-4 w-4" />
                             </a>
                           </Button>

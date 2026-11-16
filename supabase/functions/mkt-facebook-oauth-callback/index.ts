@@ -11,9 +11,17 @@
  * revoked, so this is a one-time setup, not a recurring task.
  */
 import { getSupabaseClient } from '../_shared/supabaseClient.ts';
+import { consumeConnectState, stateFlow } from '../_shared/connectState.ts';
 
 const REDIRECT_URI = 'https://mlvgqudcwlkolsbighnn.supabase.co/functions/v1/mkt-facebook-oauth-callback';
 const FB_API_VERSION = 'v19.0';
+// What the posting, Instagram, boost, ads and insights functions use (all already granted to the In-Sync app).
+const FB_SCOPES = [
+  'pages_show_list', 'pages_read_engagement', 'pages_read_user_content', 'pages_manage_posts',
+  'pages_manage_engagement', 'pages_manage_metadata', 'pages_manage_ads', 'read_insights', 'publish_video',
+  'instagram_basic', 'instagram_content_publish', 'instagram_manage_insights', 'instagram_manage_comments',
+  'ads_management', 'ads_read', 'business_management',
+].join(',');
 
 function html(body: string, status = 200) {
   return new Response(`<!doctype html><html><body style="font-family:sans-serif;padding:40px;text-align:center">${body}</body></html>`, {
@@ -30,8 +38,26 @@ Deno.serve(async (req) => {
   const clientId = Deno.env.get('FB_APP_ID')!;
   const clientSecret = Deno.env.get('FB_APP_SECRET')!;
 
+  const state = url.searchParams.get('state');
+
+  // Consent starter: ?connect=1&state=<code issued by scripts/social-connect-link.mjs> → 302 to Facebook.
+  if (url.searchParams.get('connect') && !code) {
+    if (stateFlow(state) !== 'facebook') return html(`<h2>This connect link is not valid. Ask for a new one.</h2>`, 403);
+    const consent = new URL(`https://www.facebook.com/${FB_API_VERSION}/dialog/oauth`);
+    consent.searchParams.set('client_id', clientId);
+    consent.searchParams.set('redirect_uri', REDIRECT_URI);
+    consent.searchParams.set('state', state!);
+    consent.searchParams.set('scope', FB_SCOPES);
+    return Response.redirect(consent.toString(), 302);
+  }
+
   if (error) return html(`<h2>Facebook declined the request</h2><p>${error}</p>`, 400);
   if (!code) return html(`<h2>Missing authorization code</h2>`, 400);
+
+  // Only a connect link issued by us (single use, expires in an hour) may change the connection.
+  if (stateFlow(state) !== 'facebook' || !(await consumeConnectState(getSupabaseClient(), 'mkt_social_config', state))) {
+    return html(`<h2>This connect link is not valid or has expired. Ask for a new one.</h2>`, 403);
+  }
 
   try {
     // 1. Exchange code for a short-lived user access token

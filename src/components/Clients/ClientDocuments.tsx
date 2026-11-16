@@ -15,6 +15,7 @@ import { useNotification } from "@/hooks/useNotification";
 import { EmptyState } from "@/components/common/EmptyState";
 import { DocumentPreview } from "@/components/common/DocumentPreview";
 import { format } from "date-fns";
+import { openStoredFile } from "@/lib/storedFiles";
 
 interface ClientDocumentsProps {
   clientId: string;
@@ -261,7 +262,7 @@ export function ClientDocuments({ clientId, orgId }: ClientDocumentsProps) {
                     <TableCell className="text-right space-x-1" onClick={(e) => e.stopPropagation()}>
                       {doc.file_url && (
                         <Button variant="ghost" size="icon" asChild title="Download">
-                          <a href={doc.file_url} download target="_blank" rel="noopener noreferrer">
+                          <a href="#" onClick={(e) => { e.preventDefault(); openStoredFile(doc.file_url); }}>
                             <Download className="h-4 w-4" />
                           </a>
                         </Button>

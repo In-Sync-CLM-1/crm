@@ -19,6 +19,7 @@ import { DocumentPreview } from "@/components/common/DocumentPreview";
 import { EntitySelector, SelectedEntity } from "./EntitySelector";
 import { format } from "date-fns";
 import { useUrlState } from "@/hooks/useUrlState";
+import { openStoredFile } from "@/lib/storedFiles";
 
 const documentTypes = [
   { value: "contract", label: "Contract" },
@@ -401,7 +402,7 @@ export function DocumentsTab() {
                       <TableCell className="text-right space-x-1" onClick={(e) => e.stopPropagation()}>
                         {doc.file_url && (
                           <Button variant="ghost" size="icon" asChild title="Download">
-                            <a href={doc.file_url} download target="_blank" rel="noopener noreferrer">
+                            <a href="#" onClick={(e) => { e.preventDefault(); openStoredFile(doc.file_url); }}>
                               <Download className="h-4 w-4" />
                             </a>
                           </Button>

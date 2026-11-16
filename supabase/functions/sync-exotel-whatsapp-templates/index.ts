@@ -61,7 +61,7 @@ Deno.serve(async (req) => {
     const orgId = profile.org_id;
 
     // Check rate limit
-    const withinLimit = await checkSyncRateLimit(supabaseClient, orgId);
+    const withinLimit = await checkSyncRateLimit(getSupabaseClient(), orgId);
     if (!withinLimit) {
       return new Response(
         JSON.stringify({ 
