@@ -23,6 +23,7 @@ import { SmartInvoiceUploadDialog } from "./SmartInvoiceUploadDialog";
 import { MonthlyTaxSummary } from "@/components/Clients/MonthlyTaxSummary";
 import { format } from "date-fns";
 import { useUrlState } from "@/hooks/useUrlState";
+import { openStoredFile } from "@/lib/storedFiles";
 
 const invoiceStatuses = [
   { value: "draft", label: "Draft", variant: "outline" as const },
@@ -846,7 +847,7 @@ export function InvoicesTab() {
                         )}
                         {inv.file_url && (
                           <Button variant="ghost" size="icon" asChild title="Download">
-                            <a href={inv.file_url} download target="_blank" rel="noopener noreferrer">
+                            <a href="#" onClick={(e) => { e.preventDefault(); e.stopPropagation(); openStoredFile(inv.file_url); }}>
                               <Download className="h-4 w-4" />
                             </a>
                           </Button>

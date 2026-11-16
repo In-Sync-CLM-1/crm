@@ -16,6 +16,7 @@
  * told apart by state=org vs anything else.
  */
 import { getSupabaseClient } from '../_shared/supabaseClient.ts';
+import { consumeConnectState, stateFlow } from '../_shared/connectState.ts';
 
 const REDIRECT_URI = 'https://mlvgqudcwlkolsbighnn.supabase.co/functions/v1/mkt-linkedin-oauth-callback';
 const LINKEDIN_VERSION = '202503';
@@ -206,15 +207,17 @@ Deno.serve(async (req) => {
   const connect = url.searchParams.get('connect');
   const error = url.searchParams.get('error_description') || url.searchParams.get('error');
 
-  // Consent starter: /mkt-linkedin-oauth-callback?connect=org → 302 to LinkedIn
+  // Consent starter: ?connect=org&state=<code issued by scripts/social-connect-link.mjs> → 302 to LinkedIn.
+  // The code is checked again when LinkedIn sends the person back.
   if (connect === 'org') {
     const clientId = Deno.env.get('LINKEDIN_ORG_CLIENT_ID');
     if (!clientId) return html(`<h2>LINKEDIN_ORG_CLIENT_ID secret not set</h2>`, 500);
+    if (stateFlow(state) !== 'org') return html(`<h2>This connect link is not valid. Ask for a new one.</h2>`, 403);
     const consent = new URL('https://www.linkedin.com/oauth/v2/authorization');
     consent.searchParams.set('response_type', 'code');
     consent.searchParams.set('client_id', clientId);
     consent.searchParams.set('redirect_uri', REDIRECT_URI);
-    consent.searchParams.set('state', 'org');
+    consent.searchParams.set('state', state!);
     consent.searchParams.set('scope', ORG_SCOPES);
     return Response.redirect(consent.toString(), 302);
   }
@@ -222,8 +225,14 @@ Deno.serve(async (req) => {
   if (error) return html(`<h2>LinkedIn declined the request</h2><p>${error}</p>`, 400);
   if (!code) return html(`<h2>Missing authorization code</h2>`, 400);
 
+  // Only a connect link issued by us (single use, expires in an hour) may change the connection.
+  const flow = stateFlow(state);
+  if ((flow !== 'org' && flow !== 'member') || !(await consumeConnectState(supabaseClient(), 'mkt_linkedin_config', state))) {
+    return html(`<h2>This connect link is not valid or has expired. Ask for a new one.</h2>`, 403);
+  }
+
   try {
-    return state === 'org' ? await handleOrgCallback(code) : await handleMemberCallback(code);
+    return flow === 'org' ? await handleOrgCallback(code) : await handleMemberCallback(code);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return html(`<h2>Unexpected error</h2><pre>${msg}</pre>`, 500);

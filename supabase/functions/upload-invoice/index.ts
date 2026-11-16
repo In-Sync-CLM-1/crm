@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { refuseUnlessStaff } from "../_shared/authHelpers.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { encode as base64Encode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 
@@ -103,6 +104,8 @@ async function parseWithAnthropic(base64Data: string, mimeType: string): Promise
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: cors });
+  const refused = await refuseUnlessStaff(req, cors);
+  if (refused) return refused;
 
   try {
     const workerUrl    = Deno.env.get("R2_INVOICE_WORKER_URL")!;

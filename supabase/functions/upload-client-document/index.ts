@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { refuseUnlessStaff } from "../_shared/authHelpers.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -7,6 +8,8 @@ const cors = {
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: cors });
+  const refused = await refuseUnlessStaff(req, cors);
+  if (refused) return refused;
 
   try {
     const workerUrl    = Deno.env.get("R2_INVOICE_WORKER_URL")!;

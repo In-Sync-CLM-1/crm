@@ -116,6 +116,10 @@ verify_jwt = true
 [functions.upload-client-document]
 verify_jwt = true
 
+# Expiring links to client documents and invoices, for signed-in staff only.
+[functions.file-link]
+verify_jwt = true
+
 [functions.upload-email-attachment]
 verify_jwt = true
 

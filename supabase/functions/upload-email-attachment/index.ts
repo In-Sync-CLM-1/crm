@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { refuseUnlessStaff } from "../_shared/authHelpers.ts";
 import { uploadToFilesR2, deleteFromFilesR2 } from "../_shared/r2Files.ts";
 
 const cors = {
@@ -8,6 +9,8 @@ const cors = {
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: cors });
+  const refused = await refuseUnlessStaff(req, cors);
+  if (refused) return refused;
 
   try {
     if (req.method === "DELETE") {

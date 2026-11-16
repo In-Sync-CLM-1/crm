@@ -49,3 +49,20 @@ export async function getUserFromRequest(req: Request): Promise<AuthResult> {
     supabaseClient,
   };
 }
+
+/**
+ * For functions only staff screens call: refuses anyone without a real sign-in
+ * (the public site key alone is not enough). Returns a 401 response to send back,
+ * or null when the caller is a signed-in member of an organisation.
+ */
+export async function refuseUnlessStaff(req: Request, cors: Record<string, string>): Promise<Response | null> {
+  try {
+    await getUserFromRequest(req);
+    return null;
+  } catch {
+    return new Response(JSON.stringify({ error: 'Sign in required' }), {
+      status: 401,
+      headers: { ...cors, 'Content-Type': 'application/json' },
+    });
+  }
+}

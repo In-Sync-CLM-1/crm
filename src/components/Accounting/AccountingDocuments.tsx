@@ -8,6 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useOrgContext } from "@/hooks/useOrgContext";
 import { format } from "date-fns";
 import type { JournalEntry } from "@/types/accounting";
+import { openStoredFile } from "@/lib/storedFiles";
 
 interface BankStatement {
   id: string;
@@ -122,10 +123,9 @@ export function AccountingDocuments() {
                       </td>
                       <td className="px-2 py-2">
                         <a
-                          href={e.invoice_url!}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                          href="#"
                           title="Open invoice"
+                          onClick={(ev) => { ev.preventDefault(); openStoredFile(e.invoice_url); }}
                         >
                           <Button variant="ghost" size="icon" className="h-7 w-7">
                             <ExternalLink className="h-3.5 w-3.5" />

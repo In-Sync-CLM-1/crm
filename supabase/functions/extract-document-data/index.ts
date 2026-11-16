@@ -2,10 +2,12 @@ import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { encode as base64Encode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 import { corsHeaders } from '../_shared/corsHeaders.ts';
+import { refuseUnlessStaff } from '../_shared/authHelpers.ts';
+import { fetchStoredFile } from '../_shared/fileLinks.ts';
 
 
 async function fetchFileAsBase64(url: string): Promise<{ base64: string; mimeType: string }> {
-  const response = await fetch(url);
+  const response = await fetchStoredFile(url);
   if (!response.ok) {
     throw new Error(`Failed to fetch file: ${response.status}`);
   }
@@ -35,6 +37,8 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
+  const refused = await refuseUnlessStaff(req, corsHeaders);
+  if (refused) return refused;
 
   try {
     const { fileUrl, documentType } = await req.json();

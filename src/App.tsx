@@ -10,7 +10,6 @@ import { ServiceWorkerUpdateHandler } from "@/components/Offline/ServiceWorkerUp
 
 // Static imports - public/auth pages only
 import Login from "./pages/Login";
-import SignUp from "./pages/SignUp";
 import ResetPassword from "./pages/ResetPassword";
 import ProtectedRoute from "./components/Auth/ProtectedRoute";
 import Install from "./pages/Install";
@@ -78,7 +77,8 @@ const App = () => (
           {/* Public routes - static imports */}
           <Route path="/" element={<Login />} />
           <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<SignUp />} />
+          {/* Self sign-up is off (code audit 2026-11-15); accounts are created by an administrator. */}
+          <Route path="/signup" element={<Navigate to="/login" replace />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/install" element={<Install />} />
           <Route path="/offline" element={<OfflinePage />} />

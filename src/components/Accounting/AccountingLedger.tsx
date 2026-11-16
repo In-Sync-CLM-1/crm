@@ -12,6 +12,7 @@ import { isProsyncIssuedDoc } from "@/utils/billingUtils";
 import type { LedgerRow, ChartOfAccount, JournalEntry } from "@/types/accounting";
 import { format } from "date-fns";
 import { getFinancialYearRange } from "@/utils/financialYear";
+import { openStoredFile } from "@/lib/storedFiles";
 
 type LedgerMode = "account" | "party";
 
@@ -376,12 +377,10 @@ export function AccountingLedger({ defaultAccountCode }: { defaultAccountCode?: 
                         <td className="px-2 py-2 text-center">
                           {row.invoice_url ? (
                             <a
-                              href={row.invoice_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
+                              href="#"
                               title="View invoice"
                               className="text-muted-foreground hover:text-foreground inline-flex"
-                              onClick={e => e.stopPropagation()}
+                              onClick={e => { e.preventDefault(); e.stopPropagation(); openStoredFile(row.invoice_url); }}
                             >
                               <Paperclip className="h-3.5 w-3.5" />
                             </a>

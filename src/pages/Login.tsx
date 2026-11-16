@@ -101,10 +101,7 @@ export default function Login() {
         </Button>
 
         <p className="text-center text-sm text-muted-foreground">
-          Don't have an account?{" "}
-          <Link to="/signup" className="text-primary hover:underline">
-            Sign up
-          </Link>
+          Accounts are created by your administrator.
         </p>
       </form>
 

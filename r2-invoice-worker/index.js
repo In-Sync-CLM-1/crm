@@ -1,8 +1,17 @@
 const CORS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, PUT, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, HEAD, PUT, OPTIONS",
   "Access-Control-Allow-Headers": "authorization, content-type, x-upload-secret",
 };
+
+async function validLink(env, key, params) {
+  const exp = Number(params.get("exp"));
+  const sig = params.get("sig") || "";
+  if (!env.LINK_SECRET || !Number.isFinite(exp) || exp < Date.now() / 1000 || !/^[0-9a-f]{64}$/.test(sig)) return false;
+  const k = await crypto.subtle.importKey("raw", new TextEncoder().encode(env.LINK_SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
+  const bytes = new Uint8Array(sig.match(/../g).map((h) => parseInt(h, 16)));
+  return crypto.subtle.verify("HMAC", k, bytes, new TextEncoder().encode(`${key}\n${exp}`));
+}
 
 export default {
   async fetch(request, env) {
@@ -30,13 +39,17 @@ export default {
       });
     }
 
-    // GET /{key}  — serve the file
-    if (request.method === "GET" && key) {
-      const obj = await env.BUCKET.get(key);
+    // GET /{key}?exp=…&sig=…  — serve the file, only through a link that has not expired.
+    // Links are made by the file-link server function for signed-in staff (code audit 2026-11-15).
+    if ((request.method === "GET" || request.method === "HEAD") && key) {
+      if (!(await validLink(env, decodeURIComponent(key), url.searchParams))) {
+        return new Response("This link has expired. Open the file again from CRM.", { status: 403, headers: CORS });
+      }
+      const obj = await env.BUCKET.get(decodeURIComponent(key));
       if (!obj) return new Response("Not found", { status: 404, headers: CORS });
 
       const ct = obj.httpMetadata?.contentType || "application/octet-stream";
-      return new Response(obj.body, {
+      return new Response(request.method === "HEAD" ? null : obj.body, {
         headers: { ...CORS, "Content-Type": ct, "Cache-Control": "private, max-age=3600" },
       });
     }

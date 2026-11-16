@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { FileWarning, Loader2, ExternalLink } from "lucide-react";
+import { useSignedFileUrl } from "@/lib/storedFiles";
 
 interface DocumentPreviewProps {
   fileUrl: string;
@@ -10,12 +11,19 @@ type Status = "checking" | "ok" | "missing" | "error";
 
 const IMAGE_RE = /\.(jpe?g|png|gif|webp|svg)(\?|$)/i;
 
-export function DocumentPreview({ fileUrl, className = "w-full h-full rounded-md border" }: DocumentPreviewProps) {
+export function DocumentPreview({ fileUrl: storedUrl, className = "w-full h-full rounded-md border" }: DocumentPreviewProps) {
+  // Customer files open through a link that expires; "" while it is being made, null if refused.
+  const fileUrl = useSignedFileUrl(storedUrl);
   const [status, setStatus] = useState<Status>("checking");
 
   useEffect(() => {
     let cancelled = false;
     setStatus("checking");
+    if (fileUrl === "") return;
+    if (fileUrl === null) {
+      setStatus("missing");
+      return;
+    }
 
     fetch(fileUrl, { method: "HEAD" })
       .then((res) => {
@@ -55,7 +63,7 @@ export function DocumentPreview({ fileUrl, className = "w-full h-full rounded-md
             : "There was a problem reaching the file. Please try again."}
         </p>
         <a
-          href={fileUrl}
+          href={fileUrl ?? "#"}
           target="_blank"
           rel="noopener noreferrer"
           className="text-sm text-primary inline-flex items-center gap-1 hover:underline mt-2"
@@ -66,15 +74,15 @@ export function DocumentPreview({ fileUrl, className = "w-full h-full rounded-md
     );
   }
 
-  if (IMAGE_RE.test(fileUrl)) {
+  if (IMAGE_RE.test(storedUrl)) {
     return (
       <img
-        src={fileUrl}
+        src={fileUrl ?? undefined}
         className={`${className} object-contain bg-muted`}
         alt="Document"
       />
     );
   }
 
-  return <iframe src={fileUrl} className={className} title="Document Viewer" />;
+  return <iframe src={fileUrl ?? undefined} className={className} title="Document Viewer" />;
 }
