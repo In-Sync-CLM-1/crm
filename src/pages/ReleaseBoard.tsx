@@ -18,7 +18,7 @@ type Change = {
   test: { result: string; summary: string; at: string } | null;
   deploy: { result: string; summary: string; at: string } | null;
   live: { result: string; summary: string; at: string } | null;
-  waiver: { by: string | null; at: string } | null;
+  waiver: { by: string | null; at: string; summary?: string } | null;
 };
 type Task = { id: string; number: string; title: string; org: string; status: string; due: string | null; state: string; worker_note: string | null; worker_at: string | null; pr_url: string | null };
 type Board = { generated_at: string; changes: Change[]; tasks: Task[] };
@@ -32,7 +32,9 @@ const STATUS: Record<string, { label: string; cls: string; problem?: boolean; mo
   live_problem: { label: "Live, check failed", cls: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200", problem: true },
   blocked: { label: "Blocked from going live", cls: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200", problem: true },
   failed: { label: "Tests failed, being fixed", cls: "bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200", moving: true },
+  held: { label: "Passed, held for you", cls: "bg-orange-100 text-orange-900 dark:bg-orange-900/40 dark:text-orange-200", moving: true },
   passed: { label: "Passed, going live", cls: "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200", moving: true },
+  closed: { label: "Closed, not going live", cls: "bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300" },
   waived: { label: "Testing waived", cls: "bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-200" },
   testing: { label: "Testing", cls: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200", moving: true },
 };
@@ -227,7 +229,7 @@ export default function ReleaseBoard() {
                         <a href={c.url} target="_blank" rel="noreferrer" className="text-xs text-primary inline-flex items-center gap-1">#{c.pr} <ExternalLink size={12} /></a>
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        {c.test && <>Tests: {c.test.summary}. </>}{c.waiver && <>Testing waived by {c.waiver.by ?? "unknown"}. </>}{c.live && <>Live site: {c.live.summary}.</>}
+                        {c.test && <>Tests: {c.test.summary}. </>}{c.waiver && (c.status === "closed" ? <>{c.waiver.summary} </> : <>Testing waived by {c.waiver.by ?? "unknown"}. </>)}{c.live && <>Live site: {c.live.summary}.</>}
                       </div>
                     </div>
                   ))}

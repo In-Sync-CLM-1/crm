@@ -49,13 +49,14 @@ Deno.serve(async (req) => {
       else if (deploy?.result === 'allowed') { status = 'live'; went_live_at = deploy.recorded_at; }
       else if (wentLiveWaiver) { status = 'live'; went_live_at = waiver!.recorded_at; }
       else if (waiver) status = 'waived';
-      else if (test?.result === 'pass') status = 'passed';
+      // passed, but parts could not be tested: it does not go live until the owner decides
+      else if (test?.result === 'pass') status = /held for the owner/.test(test.summary ?? '') ? 'held' : 'passed';
       else if (test) status = 'failed';
       // the actual time it went live, when the waiver names it ("Went live on 2026-11-10 03:57 UTC ...")
       const named = wentLiveWaiver ? waiver!.summary.match(/^Went live on (\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}) UTC/) : null;
       if (named && !deploy) went_live_at = `${named[1]}T${named[2]}:00Z`;
       if (status === 'live' && test?.result !== 'pass') status = 'live_untested';
-      // A change closed on purpose without going live is recorded as a waiver starting "Closed without going live"; it is left off the board.
+      // A change closed without going live (replaced or dropped) is recorded as a waiver starting "Closed without going live"; the board shows it as closed.
       if (waiver && /^Closed without going live/.test(waiver.summary ?? '') && !deploy && !live) status = 'closed';
       const last = list.reduce((a, b) => (a.recorded_at > b.recorded_at ? a : b));
       const [repo, pr] = k.split('#');
@@ -64,10 +65,10 @@ Deno.serve(async (req) => {
         status, went_live_at, updated_at: last.recorded_at, test: test ? { result: test.result, summary: test.summary, at: test.recorded_at } : null,
         deploy: deploy ? { result: deploy.result, summary: deploy.summary, at: deploy.recorded_at } : null,
         live: live ? { result: live.result, summary: live.summary, at: live.recorded_at } : null,
-        waiver: waiver ? { by: waiver.actor, at: waiver.recorded_at } : null,
+        waiver: waiver ? { by: waiver.actor, at: waiver.recorded_at, summary: waiver.summary } : null,
         url: `https://github.com/${repo}/pull/${pr}`,
       };
-    }).filter((c) => c.status !== 'closed').sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+    }).sort((a, b) => b.updated_at.localeCompare(a.updated_at));
 
     const WS = Deno.env.get('WORKSYNC_URL'), WK = Deno.env.get('WORKSYNC_KEY'), OWNER = Deno.env.get('OWNER_WORKSYNC_ID');
 
