@@ -49,7 +49,8 @@ Deno.serve(async (req) => {
       else if (deploy?.result === 'allowed') { status = 'live'; went_live_at = deploy.recorded_at; }
       else if (wentLiveWaiver) { status = 'live'; went_live_at = waiver!.recorded_at; }
       else if (waiver) status = 'waived';
-      else if (test?.result === 'pass') status = 'passed';
+      // passed, but parts could not be tested: it does not go live until the owner decides
+      else if (test?.result === 'pass') status = /held for the owner/.test(test.summary ?? '') ? 'held' : 'passed';
       else if (test) status = 'failed';
       // the actual time it went live, when the waiver names it ("Went live on 2026-11-10 03:57 UTC ...")
       const named = wentLiveWaiver ? waiver!.summary.match(/^Went live on (\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}) UTC/) : null;

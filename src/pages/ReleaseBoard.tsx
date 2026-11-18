@@ -32,6 +32,7 @@ const STATUS: Record<string, { label: string; cls: string; problem?: boolean; mo
   live_problem: { label: "Live, check failed", cls: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200", problem: true },
   blocked: { label: "Blocked from going live", cls: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200", problem: true },
   failed: { label: "Tests failed, being fixed", cls: "bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200", moving: true },
+  held: { label: "Passed, held for you", cls: "bg-orange-100 text-orange-900 dark:bg-orange-900/40 dark:text-orange-200", moving: true },
   passed: { label: "Passed, going live", cls: "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200", moving: true },
   waived: { label: "Testing waived", cls: "bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-200" },
   testing: { label: "Testing", cls: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200", moving: true },
