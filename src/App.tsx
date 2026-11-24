@@ -24,8 +24,6 @@ const PageLoader = () => (
 
 // Lazy loaded pages - CRM
 const Dashboard = lazy(() => import("./pages/Dashboard"));
-const ClientHub = lazy(() => import("./pages/ClientHub"));
-const ClientDetail = lazy(() => import("./pages/ClientDetail"));
 
 // Lazy loaded pages - Campaigns
 const Templates = lazy(() => import("./pages/Templates"));
@@ -60,8 +58,6 @@ const ApprovalMatrix = lazy(() => import("./pages/ApprovalMatrix"));
 const EmailSettings = lazy(() => import("./pages/EmailSettings"));
 
 // Lazy loaded pages - Other
-const BillingSystem = lazy(() => import("./pages/BillingSystem"));
-const Accounting = lazy(() => import("./pages/Accounting"));
 // GSTDashboard is now integrated into main Dashboard
 
 const App = () => (
@@ -90,17 +86,7 @@ const App = () => (
             </ProtectedRoute>
           } />
 
-          <Route path="/clients" element={
-            <ProtectedRoute>
-              <ClientHub />
-            </ProtectedRoute>
-          } />
 
-          <Route path="/clients/:id" element={
-            <ProtectedRoute>
-              <ClientDetail />
-            </ProtectedRoute>
-          } />
 
           {/* Campaign Routes */}
           <Route path="/templates" element={
@@ -261,17 +247,7 @@ const App = () => (
             </ProtectedRoute>
           } />
 
-          <Route path="/billing-system" element={
-            <ProtectedRoute>
-              <BillingSystem />
-            </ProtectedRoute>
-          } />
 
-          <Route path="/accounting" element={
-            <ProtectedRoute>
-              <Accounting />
-            </ProtectedRoute>
-          } />
 
           {/* GST Dashboard is now integrated into main Dashboard */}
 
