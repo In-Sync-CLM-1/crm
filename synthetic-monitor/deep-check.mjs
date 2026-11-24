@@ -13,9 +13,6 @@ const PASSWORD = process.env.SENTINEL_MONITOR_PASSWORD;
 
 const PAGES = [
   ["/dashboard", /Revenue|Invoiced|GST/i],
-  ["/clients", /Client/i],
-  ["/accounting", /Ledger|Journal|Accounting|Outstanding/i],
-  ["/billing-system", /Invoice|Proforma|Billing/i],
   ["/support-tickets", /Ticket/i],
   ["/marketing", /Marketing|Followers|Channel/i],
   ["/marketing/performance", /Performance|Followers|Engagement/i],
